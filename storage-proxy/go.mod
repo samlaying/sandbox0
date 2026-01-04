@@ -1,4 +1,4 @@
-module github.com/sandbox0-ai/storage-proxy
+module github.com/sandbox0-ai/infra/storage-proxy
 
 go 1.23.0
 

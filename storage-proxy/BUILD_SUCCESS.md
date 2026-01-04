@@ -157,7 +157,7 @@ make run
 
 ### 编译问题修复
 
-1. ✅ **模块路径**: 统一使用 `github.com/sandbox0-ai/storage-proxy`
+1. ✅ **模块路径**: 统一使用 `github.com/sandbox0-ai/infra/storage-proxy`
 2. ✅ **JuiceFS API**: 
    - 修复 `meta.NewClient` 返回值
    - 修复 `chunk.NewCachedStore` 参数

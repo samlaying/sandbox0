@@ -42,7 +42,7 @@ Storage Proxy is a secure, high-performance service that manages all persistent 
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.23+
 - Protocol Buffers compiler (protoc)
 - Docker (for containerized deployment)
 - Kubernetes cluster (for production deployment)

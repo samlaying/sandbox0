@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	pb "github.com/sandbox0-ai/storage-proxy/proto/fs"
-	"github.com/sandbox0-ai/storage-proxy/pkg/volume"
+	pb "github.com/sandbox0-ai/infra/storage-proxy/proto/fs"
+	"github.com/sandbox0-ai/infra/storage-proxy/pkg/volume"
 	"github.com/sirupsen/logrus"
 )
 
