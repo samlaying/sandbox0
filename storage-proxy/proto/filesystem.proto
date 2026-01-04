@@ -74,7 +74,8 @@ message OpenResponse {
 // Release (close) file
 message ReleaseRequest {
   string volume_id = 1;  // Volume identifier
-  uint64 handle_id = 2;  // File handle to release
+  uint64 inode = 2;      // Inode identifier
+  uint64 handle_id = 3;  // File handle to release
 }
 
 // Create file

@@ -2,11 +2,13 @@
 
 ## 编译状态
 
-**状态**: ✅ **编译成功**
+**状态**: ✅ **编译成功 - Read/Write 已完整实现**
 
 **日期**: 2026-01-05
 
-**二进制文件**: `bin/storage-proxy` (132MB)
+**二进制文件**: `bin/storage-proxy` (127MB)
+
+**最新更新**: 使用 JuiceFS SDK 完整实现 Read/Write 操作
 
 ## 编译验证
 
@@ -203,17 +205,28 @@ make run
 
 ## 注意事项
 
+### 完整实现 ✅
+
+1. **Read/Write 操作**: ✅ **已完整实现**
+   - 使用 JuiceFS VFS 层进行读写
+   - 正确的 handle 管理（通过 VFS）
+   - Chunk-based 读写逻辑（JuiceFS SDK 内部处理）
+   - 支持大文件的分块读写
+   - 自动缓存管理
+
+2. **文件操作**:
+   - ✅ Open: 使用 VFS.Open 创建正确的 reader/writer handle
+   - ✅ Read: 使用 VFS.Read 从 chunk store 读取数据
+   - ✅ Write: 使用 VFS.Write 写入数据到 chunk store
+   - ✅ Release: 使用 VFS.Release 清理文件句柄
+   - ✅ Create: 使用 VFS.Create 创建新文件并返回 handle
+
 ### 当前限制
 
-1. **Read/Write 操作**: 简化实现，返回空数据
-   - 完整实现需要 VFS 层的 handle 管理
-   - 需要 chunk-based 读写逻辑
-   - 可在后续版本中完善
-
-2. **Token 刷新**: 需要手动刷新 (24小时过期)
+1. **Token 刷新**: 需要手动刷新 (24小时过期)
    - 可添加自动刷新机制
 
-3. **分布式缓存**: 每个 Pod 独立缓存
+2. **分布式缓存**: 每个 Pod 独立缓存
    - 可集成 Redis 实现共享缓存
 
 ### 建议

@@ -157,7 +157,7 @@ func (s *FileSystemServer) Lookup(ctx context.Context, req *pb.LookupRequest) (*
 	}, nil
 }
 
-// Open implements FUSE open
+// Open implements FUSE open using JuiceFS VFS layer
 func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.OpenResponse, error) {
 	claims, _ := auth.GetClaims(ctx)
 
@@ -167,24 +167,28 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 	}
 
 	inode := meta.Ino(req.Inode)
-	var attr meta.Attr
 
-	// Open file in JuiceFS
+	// Open file using VFS (which creates proper handle with reader/writer)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Open(vfsCtx, inode, req.Flags, &attr)
-	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
-	}
 
-	// Generate a handle ID (simple sequential ID)
-	handleID := uint64(time.Now().UnixNano())
+	// VFS.Open returns (Entry, handleID, errno)
+	entry, handleID, errno := volCtx.VFS.Open(vfsCtx, inode, req.Flags)
+	if errno != 0 {
+		s.logger.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"inode":     req.Inode,
+			"flags":     req.Flags,
+			"error":     errno,
+		}).Error("Open failed")
+		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
+	}
 
 	if claims != nil {
 		s.auditor.Log(ctx, audit.Event{
 			VolumeID:  req.VolumeId,
 			SandboxID: claims.SandboxID,
 			Operation: "open",
-			Inode:     uint64(inode),
+			Inode:     uint64(entry.Inode),
 			Status:    "success",
 		})
 	}
@@ -194,7 +198,7 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 	}, nil
 }
 
-// Read implements FUSE read - Note: This is simplified, real implementation would use VFS layer
+// Read implements FUSE read using JuiceFS VFS layer
 func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.ReadResponse, error) {
 	startTime := time.Now()
 	claims, _ := auth.GetClaims(ctx)
@@ -204,30 +208,65 @@ func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.R
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// For now, return empty data - full implementation would use VFS.Read
-	// which requires proper handle management and chunk reading
-	s.logger.Warn("Read operation not fully implemented - returning empty data")
-	_ = volCtx // suppress unused variable warning
+	// Allocate buffer for read
+	buf := make([]byte, req.Size)
 
+	// Create VFS context
+	vfsCtx := vfs.NewLogContext(meta.Background())
+
+	// Read from JuiceFS VFS (convert offset to uint64)
+	n, errno := volCtx.VFS.Read(vfsCtx, meta.Ino(req.Inode), buf, uint64(req.Offset), req.HandleId)
+	if errno != 0 {
+		s.logger.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"inode":     req.Inode,
+			"offset":    req.Offset,
+			"size":      req.Size,
+			"handle_id": req.HandleId,
+			"error":     errno,
+		}).Error("Read failed")
+
+		if claims != nil {
+			s.auditor.Log(ctx, audit.Event{
+				VolumeID:  req.VolumeId,
+				SandboxID: claims.SandboxID,
+				Operation: "read",
+				Inode:     req.Inode,
+				Size:      0,
+				Latency:   time.Since(startTime),
+				Status:    "error",
+			})
+		}
+		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
+	}
+
+	// Check if EOF
+	eof := false
+	if n < len(buf) {
+		eof = true
+		buf = buf[:n]
+	}
+
+	// Audit log
 	if claims != nil {
 		s.auditor.Log(ctx, audit.Event{
 			VolumeID:  req.VolumeId,
 			SandboxID: claims.SandboxID,
 			Operation: "read",
 			Inode:     req.Inode,
-			Size:      0,
+			Size:      int64(n),
 			Latency:   time.Since(startTime),
 			Status:    "success",
 		})
 	}
 
 	return &pb.ReadResponse{
-		Data: []byte{},
-		Eof:  true,
+		Data: buf,
+		Eof:  eof,
 	}, nil
 }
 
-// Write implements FUSE write - Note: This is simplified
+// Write implements FUSE write using JuiceFS VFS layer
 func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb.WriteResponse, error) {
 	startTime := time.Now()
 	claims, _ := auth.GetClaims(ctx)
@@ -237,10 +276,36 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// For now, acknowledge write - full implementation would use VFS.Write
-	s.logger.Warn("Write operation not fully implemented")
-	_ = volCtx // suppress unused variable warning
+	// Create VFS context
+	vfsCtx := vfs.NewLogContext(meta.Background())
 
+	// Write to JuiceFS VFS (convert offset to uint64)
+	errno := volCtx.VFS.Write(vfsCtx, meta.Ino(req.Inode), req.Data, uint64(req.Offset), req.HandleId)
+	if errno != 0 {
+		s.logger.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"inode":     req.Inode,
+			"offset":    req.Offset,
+			"size":      len(req.Data),
+			"handle_id": req.HandleId,
+			"error":     errno,
+		}).Error("Write failed")
+
+		if claims != nil {
+			s.auditor.Log(ctx, audit.Event{
+				VolumeID:  req.VolumeId,
+				SandboxID: claims.SandboxID,
+				Operation: "write",
+				Inode:     req.Inode,
+				Size:      0,
+				Latency:   time.Since(startTime),
+				Status:    "error",
+			})
+		}
+		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
+	}
+
+	// Audit log
 	if claims != nil {
 		s.auditor.Log(ctx, audit.Event{
 			VolumeID:  req.VolumeId,
@@ -258,7 +323,7 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 	}, nil
 }
 
-// Create implements FUSE create
+// Create implements FUSE create using JuiceFS VFS layer
 func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*pb.NodeResponse, error) {
 	claims, _ := auth.GetClaims(ctx)
 
@@ -267,20 +332,21 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Create file in JuiceFS
+	// Create file using VFS (which creates proper handle with reader/writer)
 	parent := meta.Ino(req.Parent)
-	var inode meta.Ino
-	var attr meta.Attr
-
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Create(vfsCtx, parent, req.Name, uint16(req.Mode), 0, req.Flags, &inode, &attr)
-	if st != 0 {
-		s.logger.WithError(syscall.Errno(st)).WithFields(logrus.Fields{
+
+	// VFS.Create returns (Entry, handleID, errno)
+	entry, handleID, errno := volCtx.VFS.Create(vfsCtx, parent, req.Name, uint16(req.Mode), 0, req.Flags)
+	if errno != 0 {
+		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
 			"parent":    req.Parent,
 			"name":      req.Name,
+			"mode":      req.Mode,
+			"error":     errno,
 		}).Error("Create failed")
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
 	}
 
 	if claims != nil {
@@ -295,10 +361,10 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 	}
 
 	return &pb.NodeResponse{
-		Inode:      uint64(inode),
+		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(&attr),
-		HandleId:   uint64(time.Now().UnixNano()),
+		Attr:       convertAttr(entry.Attr),
+		HandleId:   handleID,
 	}, nil
 }
 
@@ -498,17 +564,23 @@ func (s *FileSystemServer) Fsync(ctx context.Context, req *pb.FsyncRequest) (*pb
 	return &pb.Empty{}, nil
 }
 
-// Release implements FUSE release (close)
+// Release implements FUSE release (close) using JuiceFS VFS layer
 func (s *FileSystemServer) Release(ctx context.Context, req *pb.ReleaseRequest) (*pb.Empty, error) {
-	// Release handle (cleanup if needed)
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Close the inode (simplified - would need proper handle tracking)
-	// For now, just return success
-	_ = volCtx
+	// Release the file handle in VFS
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	volCtx.VFS.Release(vfsCtx, meta.Ino(req.Inode), req.HandleId)
+
+	s.logger.WithFields(logrus.Fields{
+		"volume_id": req.VolumeId,
+		"inode":     req.Inode,
+		"handle_id": req.HandleId,
+	}).Debug("Released file handle")
+
 	return &pb.Empty{}, nil
 }
 
