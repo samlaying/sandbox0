@@ -8,8 +8,9 @@ proto:
 		proto/filesystem.proto
 
 # Build binary
-build:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/storage-proxy ./cmd/storage-proxy
+build: proto
+	#CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/storage-proxy ./cmd/storage-proxy
+	go build -o bin/storage-proxy ./cmd/storage-proxy
 
 # Build Docker image
 docker:

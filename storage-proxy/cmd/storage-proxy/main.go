@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sandbox0/storage-proxy/pkg/audit"
-	"github.com/sandbox0/storage-proxy/pkg/auth"
-	"github.com/sandbox0/storage-proxy/pkg/config"
-	grpcserver "github.com/sandbox0/storage-proxy/pkg/grpc"
-	httpserver "github.com/sandbox0/storage-proxy/pkg/http"
-	"github.com/sandbox0/storage-proxy/pkg/volume"
-	pb "github.com/sandbox0/storage-proxy/proto/fs"
+	"github.com/sandbox0-ai/storage-proxy/pkg/audit"
+	"github.com/sandbox0-ai/storage-proxy/pkg/auth"
+	"github.com/sandbox0-ai/storage-proxy/pkg/config"
+	grpcserver "github.com/sandbox0-ai/storage-proxy/pkg/grpc"
+	httpserver "github.com/sandbox0-ai/storage-proxy/pkg/http"
+	"github.com/sandbox0-ai/storage-proxy/pkg/volume"
+	pb "github.com/sandbox0-ai/storage-proxy/proto/fs"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -127,7 +127,7 @@ func main() {
 	// Shutdown HTTP server
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := httpServer.Shutdown(ctx); err != nil {
 		logger.WithError(err).Error("HTTP server shutdown error")
 	}
@@ -145,4 +145,3 @@ func main() {
 
 	logger.Info("Shutdown complete")
 }
-

@@ -2,13 +2,12 @@ package http
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	pb "github.com/sandbox0/storage-proxy/proto/fs"
-	"github.com/sandbox0/storage-proxy/pkg/volume"
+	pb "github.com/sandbox0-ai/storage-proxy/proto/fs"
+	"github.com/sandbox0-ai/storage-proxy/pkg/volume"
 	"github.com/sirupsen/logrus"
 )
 
@@ -79,10 +78,6 @@ func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
 
 // handleVolumeOperations handles volume-specific operations
 func (s *Server) handleVolumeOperations(w http.ResponseWriter, r *http.Request) {
-	// Parse volume ID from path
-	path := r.URL.Path
-	// Example: /api/v1/volumes/{volume_id}/mount
-	
 	w.Header().Set("Content-Type", "application/json")
 	
 	switch r.Method {
