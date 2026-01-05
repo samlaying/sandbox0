@@ -1,0 +1,172 @@
+# Procd
+
+Procd is the core container component (PID=1) of Sandbox0, responsible for process management, network isolation, file operations, and SandboxVolume mounting within the sandbox.
+
+## Overview
+
+Procd runs as the init process inside each sandbox pod and provides:
+
+1. **Process Management**: Unified process abstraction supporting REPL and Shell process types
+2. **SandboxVolume Management**: Persistent storage mounting via FUSE and gRPC to Storage Proxy
+3. **Network Isolation**: Dynamic network policies with IP/CIDR filtering, domain filtering, and DNS spoofing protection
+4. **File Operations**: File read/write, directory operations, and file system watching
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        Procd Architecture                                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   Procd (PID=1)                                                              │
+│   ┌───────────────────────────────────────────────────────────────────────┐  │
+│   │                        HTTP Server (Port: 8080)                       │  │
+│   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │  │
+│   │  │  Context    │ │SandboxVolume│ │   Network   │ │   File      │      │  │
+│   │  │   APIs      │ │    APIs     │ │    APIs     │ │   APIs      │      │  │
+│   │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘      │  │
+│   └───────────────────────────────────────────────────────────────────────┘  │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌───────────────────────────────────────────────────────────────────────┐  │
+│   │                        Core Managers                                  │  │
+│   │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │  │
+│   │  │  Context    │ │SandboxVolume│ │  Network    │ │   File      │      │  │
+│   │  │  Manager    │ │  Manager    │ │  Manager    │ │  Manager    │      │  │
+│   │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘      │  │
+│   └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Building
+
+```bash
+# Build binary
+make build
+
+# Build for Linux
+make build-linux
+
+# Build Docker image
+make docker-build
+
+# Run tests
+make test
+
+# Run linter
+make lint
+```
+
+## Configuration
+
+Environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SANDBOX_ID` | Sandbox identifier | - |
+| `TEMPLATE_ID` | Template identifier | - |
+| `NODE_NAME` | Kubernetes node name | - |
+| `PROCD_HTTP_PORT` | HTTP server port | 8080 |
+| `PROCD_LOG_LEVEL` | Log level (debug/info/warn/error) | info |
+| `PROCD_ROOT_PATH` | Root path for file operations | /workspace |
+| `PROCD_MAX_CONTEXTS` | Maximum number of contexts | 100 |
+| `STORAGE_PROXY_BASE_URL` | Storage Proxy base URL | storage-proxy.sandbox0-system.svc.cluster.local |
+| `STORAGE_PROXY_REPLICAS` | Number of Storage Proxy replicas | 3 |
+| `NETWORK_ENABLE_TCP_PROXY` | Enable TCP proxy for domain filtering | false |
+| `NETWORK_TCP_PROXY_PORT` | TCP proxy port | 1080 |
+
+## API Endpoints
+
+### Health
+- `GET /healthz` - Health check
+- `GET /readyz` - Readiness check
+
+### Context Management
+- `GET /api/v1/contexts` - List contexts
+- `POST /api/v1/contexts` - Create context
+- `GET /api/v1/contexts/{id}` - Get context
+- `DELETE /api/v1/contexts/{id}` - Delete context
+- `POST /api/v1/contexts/{id}/restart` - Restart context
+- `POST /api/v1/contexts/{id}/input` - Write input
+- `GET /api/v1/contexts/{id}/ws` - WebSocket for I/O
+
+### Network
+- `GET /api/v1/network/policy` - Get current policy
+- `PUT /api/v1/network/policy` - Update policy
+- `POST /api/v1/network/policy/reset` - Reset to default
+- `POST /api/v1/network/policy/allow/cidr` - Add allow CIDR
+- `POST /api/v1/network/policy/allow/domain` - Add allow domain
+- `POST /api/v1/network/policy/deny/cidr` - Add deny CIDR
+
+### SandboxVolume
+- `POST /api/v1/sandboxvolumes/mount` - Mount volume
+- `POST /api/v1/sandboxvolumes/unmount` - Unmount volume
+- `GET /api/v1/sandboxvolumes/status` - Get mount status
+
+### Files
+- `GET /api/v1/files/{path}` - Read file
+- `GET /api/v1/files/{path}?stat=true` - Get file info
+- `GET /api/v1/files/{path}?list=true` - List directory
+- `POST /api/v1/files/{path}` - Write file
+- `POST /api/v1/files/{path}?mkdir=true` - Create directory
+- `POST /api/v1/files/move` - Move file
+- `DELETE /api/v1/files/{path}` - Delete file
+- `GET /api/v1/files/watch` - WebSocket for file watching
+
+## Security
+
+### Network Isolation
+
+Procd implements network isolation at the pod level using nftables:
+
+- **IP/CIDR filtering**: Precise control over outbound traffic destinations
+- **Domain filtering**: Support for domain and wildcard domain filtering (via TCP proxy)
+- **DNS spoofing protection**: Independent DNS resolution
+- **Private IP blacklist**: Default blocking of private network ranges
+- **Packet marking**: Storage Proxy traffic bypasses firewall rules (SO_MARK=0x2)
+
+### Required Capabilities
+
+```yaml
+securityContext:
+  capabilities:
+    add:
+    - NET_ADMIN  # Required for nftables configuration
+```
+
+### Recommended: Kata Containers
+
+For enhanced security isolation, use Kata Containers runtime:
+
+```yaml
+spec:
+  runtimeClassName: kata
+```
+
+## Monitoring
+
+Procd exposes Prometheus metrics:
+
+```
+# Process metrics
+procd_contexts_total              # Current context count
+procd_contexts_by_type            # Count by type
+
+# SandboxVolume metrics
+procd_sandboxvolumes_mounted      # Mounted volume count
+procd_sandboxvolume_mount_duration_ms
+
+# Network metrics
+procd_network_rules_total         # Firewall rule count
+procd_network_policy_updates
+
+# File metrics
+procd_file_operations_total       # File operation count
+procd_file_watchers_active        # Active watcher count
+```
+
+## License
+
+Proprietary - Sandbox0 Inc.
+

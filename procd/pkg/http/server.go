@@ -1,0 +1,177 @@
+// Package http provides the HTTP server for Procd.
+package http
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/sandbox0-ai/infra/procd/pkg/config"
+	ctxpkg "github.com/sandbox0-ai/infra/procd/pkg/context"
+	"github.com/sandbox0-ai/infra/procd/pkg/file"
+	"github.com/sandbox0-ai/infra/procd/pkg/http/handlers"
+	"github.com/sandbox0-ai/infra/procd/pkg/network"
+	"github.com/sandbox0-ai/infra/procd/pkg/volume"
+	"go.uber.org/zap"
+)
+
+// Server is the Procd HTTP server.
+type Server struct {
+	router     *mux.Router
+	httpServer *http.Server
+	logger     *zap.Logger
+	cfg        *config.Config
+
+	// Managers
+	contextManager *ctxpkg.Manager
+	networkManager *network.Manager
+	volumeManager  *volume.Manager
+	fileManager    *file.Manager
+}
+
+// NewServer creates a new HTTP server.
+func NewServer(
+	cfg *config.Config,
+	contextManager *ctxpkg.Manager,
+	networkManager *network.Manager,
+	volumeManager *volume.Manager,
+	fileManager *file.Manager,
+	logger *zap.Logger,
+) *Server {
+	s := &Server{
+		router:         mux.NewRouter(),
+		cfg:            cfg,
+		contextManager: contextManager,
+		networkManager: networkManager,
+		volumeManager:  volumeManager,
+		fileManager:    fileManager,
+		logger:         logger,
+	}
+
+	s.setupRoutes()
+	return s
+}
+
+func (s *Server) setupRoutes() {
+	// Middleware
+	s.router.Use(s.loggingMiddleware)
+	s.router.Use(s.recoveryMiddleware)
+
+	// Health check
+	s.router.HandleFunc("/healthz", s.healthHandler).Methods("GET")
+	s.router.HandleFunc("/readyz", s.readyHandler).Methods("GET")
+
+	// API v1
+	api := s.router.PathPrefix("/api/v1").Subrouter()
+
+	// Context/Process handlers
+	contextHandler := handlers.NewContextHandler(s.contextManager, s.logger)
+	api.HandleFunc("/contexts", contextHandler.List).Methods("GET")
+	api.HandleFunc("/contexts", contextHandler.Create).Methods("POST")
+	api.HandleFunc("/contexts/{id}", contextHandler.Get).Methods("GET")
+	api.HandleFunc("/contexts/{id}", contextHandler.Delete).Methods("DELETE")
+	api.HandleFunc("/contexts/{id}/restart", contextHandler.Restart).Methods("POST")
+	api.HandleFunc("/contexts/{id}/input", contextHandler.WriteInput).Methods("POST")
+	api.HandleFunc("/contexts/{id}/ws", contextHandler.WebSocket).Methods("GET")
+
+	// Network handlers
+	networkHandler := handlers.NewNetworkHandler(s.networkManager, s.logger)
+	api.HandleFunc("/network/policy", networkHandler.GetPolicy).Methods("GET")
+	api.HandleFunc("/network/policy", networkHandler.UpdatePolicy).Methods("PUT")
+	api.HandleFunc("/network/policy/reset", networkHandler.ResetPolicy).Methods("POST")
+	api.HandleFunc("/network/policy/allow/cidr", networkHandler.AddAllowCIDR).Methods("POST")
+	api.HandleFunc("/network/policy/allow/domain", networkHandler.AddAllowDomain).Methods("POST")
+	api.HandleFunc("/network/policy/deny/cidr", networkHandler.AddDenyCIDR).Methods("POST")
+
+	// SandboxVolume handlers
+	volumeHandler := handlers.NewVolumeHandler(s.volumeManager, s.logger)
+	api.HandleFunc("/sandboxvolumes/mount", volumeHandler.Mount).Methods("POST")
+	api.HandleFunc("/sandboxvolumes/unmount", volumeHandler.Unmount).Methods("POST")
+	api.HandleFunc("/sandboxvolumes/status", volumeHandler.Status).Methods("GET")
+
+	// File handlers
+	fileHandler := handlers.NewFileHandler(s.fileManager, s.logger)
+	api.HandleFunc("/files/watch", fileHandler.Watch).Methods("GET")
+	api.HandleFunc("/files/move", fileHandler.Move).Methods("POST")
+	api.PathPrefix("/files/").HandlerFunc(fileHandler.Handle)
+}
+
+// Start starts the HTTP server.
+func (s *Server) Start() error {
+	addr := fmt.Sprintf(":%d", s.cfg.HTTPPort)
+
+	s.httpServer = &http.Server{
+		Addr:         addr,
+		Handler:      s.router,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	s.logger.Info("Starting HTTP server",
+		zap.String("addr", addr),
+	)
+
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+}
+
+func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+}
+
+func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap response writer to capture status code
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(wrapped, r)
+
+		s.logger.Info("HTTP request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", wrapped.statusCode),
+			zap.Duration("duration", time.Since(start)),
+		)
+	})
+}
+
+func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				s.logger.Error("Panic recovered",
+					zap.Any("error", err),
+					zap.String("path", r.URL.Path),
+				)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}

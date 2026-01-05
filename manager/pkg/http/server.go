@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sandbox0ai/infra/manager/pkg/service"
+	"github.com/sandbox0-ai/infra/manager/pkg/service"
 	"go.uber.org/zap"
 )
 

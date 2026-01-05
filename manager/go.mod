@@ -1,4 +1,4 @@
-module github.com/sandbox0ai/infra/manager
+module github.com/sandbox0-ai/infra/manager
 
 go 1.21
 

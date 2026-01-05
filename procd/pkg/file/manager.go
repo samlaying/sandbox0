@@ -1,0 +1,276 @@
+// Package file provides file system operations for Procd.
+package file
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+// FileType represents the type of a file.
+type FileType string
+
+const (
+	FileTypeFile    FileType = "file"
+	FileTypeDir     FileType = "dir"
+	FileTypeSymlink FileType = "symlink"
+)
+
+// FileInfo represents information about a file.
+type FileInfo struct {
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	Type       FileType  `json:"type"`
+	Size       int64     `json:"size"`
+	Mode       string    `json:"mode"`
+	ModTime    time.Time `json:"mod_time"`
+	IsLink     bool      `json:"is_link"`
+	LinkTarget string    `json:"link_target,omitempty"`
+}
+
+// MaxFileSize is the maximum file size allowed for write operations.
+const MaxFileSize = 100 * 1024 * 1024 // 100MB
+
+// Manager handles file system operations.
+type Manager struct {
+	mu              sync.RWMutex
+	rootPath        string
+	watcherMgr      *WatcherManager
+	allowExecutable bool
+}
+
+// NewManager creates a new file manager.
+func NewManager(rootPath string) (*Manager, error) {
+	// Ensure root path exists
+	if err := os.MkdirAll(rootPath, 0755); err != nil {
+		return nil, fmt.Errorf("create root path: %w", err)
+	}
+
+	watcherMgr, err := NewWatcherManager()
+	if err != nil {
+		return nil, fmt.Errorf("create watcher manager: %w", err)
+	}
+
+	return &Manager{
+		rootPath:        rootPath,
+		watcherMgr:      watcherMgr,
+		allowExecutable: true,
+	}, nil
+}
+
+// sanitizePath validates and sanitizes the path to prevent path traversal.
+func (m *Manager) sanitizePath(path string) (string, error) {
+	cleanPath := filepath.Clean(filepath.Join(m.rootPath, path))
+
+	rel, err := filepath.Rel(m.rootPath, cleanPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", ErrPathOutsideRoot
+	}
+
+	return cleanPath, nil
+}
+
+// ReadFile reads a file.
+func (m *Manager) ReadFile(path string) ([]byte, error) {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// WriteFile writes data to a file.
+func (m *Manager) WriteFile(path string, data []byte, perm os.FileMode) error {
+	if len(data) > MaxFileSize {
+		return ErrFileTooLarge
+	}
+
+	if !m.allowExecutable && perm&0111 != 0 {
+		return ErrPermissionDenied
+	}
+
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return err
+	}
+
+	// Ensure parent directory exists
+	dir := filepath.Dir(cleanPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	// Atomic write using temp file
+	tmpPath := cleanPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpPath, cleanPath)
+}
+
+// Stat returns file information.
+func (m *Manager) Stat(path string) (*FileInfo, error) {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Lstat(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrFileNotFound
+		}
+		return nil, err
+	}
+
+	fileInfo := &FileInfo{
+		Name:    info.Name(),
+		Path:    path,
+		Size:    info.Size(),
+		Mode:    fmt.Sprintf("%04o", info.Mode().Perm()),
+		ModTime: info.ModTime(),
+	}
+
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		fileInfo.Type = FileTypeSymlink
+		fileInfo.IsLink = true
+		if target, err := os.Readlink(cleanPath); err == nil {
+			fileInfo.LinkTarget = target
+		}
+	case info.IsDir():
+		fileInfo.Type = FileTypeDir
+	default:
+		fileInfo.Type = FileTypeFile
+	}
+
+	return fileInfo, nil
+}
+
+// ListDir lists the contents of a directory.
+func (m *Manager) ListDir(path string) ([]*FileInfo, error) {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(cleanPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrDirNotFound
+		}
+		return nil, err
+	}
+
+	var result []*FileInfo
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		fileInfo := &FileInfo{
+			Name:    entry.Name(),
+			Path:    filepath.Join(path, entry.Name()),
+			Size:    info.Size(),
+			Mode:    fmt.Sprintf("%04o", info.Mode().Perm()),
+			ModTime: info.ModTime(),
+		}
+
+		if entry.IsDir() {
+			fileInfo.Type = FileTypeDir
+		} else if info.Mode()&os.ModeSymlink != 0 {
+			fileInfo.Type = FileTypeSymlink
+			fileInfo.IsLink = true
+		} else {
+			fileInfo.Type = FileTypeFile
+		}
+
+		result = append(result, fileInfo)
+	}
+
+	return result, nil
+}
+
+// MakeDir creates a directory.
+func (m *Manager) MakeDir(path string, perm os.FileMode, recursive bool) error {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return err
+	}
+
+	if recursive {
+		return os.MkdirAll(cleanPath, perm)
+	}
+
+	return os.Mkdir(cleanPath, perm)
+}
+
+// Move moves/renames a file or directory.
+func (m *Manager) Move(src, dst string) error {
+	cleanSrc, err := m.sanitizePath(src)
+	if err != nil {
+		return err
+	}
+
+	cleanDst, err := m.sanitizePath(dst)
+	if err != nil {
+		return err
+	}
+
+	// Ensure destination directory exists
+	dstDir := filepath.Dir(cleanDst)
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return err
+	}
+
+	return os.Rename(cleanSrc, cleanDst)
+}
+
+// Remove removes a file or directory.
+func (m *Manager) Remove(path string) error {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return err
+	}
+
+	return os.RemoveAll(cleanPath)
+}
+
+// WatchDir starts watching a directory for changes.
+func (m *Manager) WatchDir(path string, recursive bool) (*Watcher, error) {
+	cleanPath, err := m.sanitizePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.watcherMgr.WatchDir(cleanPath, recursive)
+}
+
+// UnwatchDir stops watching a directory.
+func (m *Manager) UnwatchDir(watchID string) error {
+	return m.watcherMgr.UnwatchDir(watchID)
+}
+
+// GetRootPath returns the root path.
+func (m *Manager) GetRootPath() string {
+	return m.rootPath
+}
+
+// Close closes the file manager.
+func (m *Manager) Close() error {
+	return m.watcherMgr.Close()
+}

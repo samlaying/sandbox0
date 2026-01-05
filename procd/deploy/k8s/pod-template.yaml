@@ -1,0 +1,162 @@
+# Example Pod template for Procd
+# This is typically embedded in SandboxTemplate CRD
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sandbox-example
+  labels:
+    sandbox0.ai/template-id: python-dev
+    sandbox0.ai/pool-type: idle
+spec:
+  # Recommended: Use Kata Containers for enhanced isolation
+  # runtimeClassName: kata
+
+  # Terminate pod gracefully
+  terminationGracePeriodSeconds: 30
+
+  # Security context for the pod
+  securityContext:
+    runAsNonRoot: false  # Root needed for nftables setup
+    fsGroup: 1000
+
+  containers:
+  - name: procd
+    image: sandbox0/procd:latest
+    imagePullPolicy: IfNotPresent
+
+    # Port configuration
+    ports:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+
+    # Environment variables
+    env:
+    - name: SANDBOX_ID
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: TEMPLATE_ID
+      value: "python-dev"
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+    - name: STORAGE_PROXY_BASE_URL
+      value: "storage-proxy.sandbox0-system.svc.cluster.local"
+    - name: STORAGE_PROXY_REPLICAS
+      value: "3"
+    - name: PROCD_LOG_LEVEL
+      value: "info"
+    - name: PROCD_ROOT_PATH
+      value: "/workspace"
+
+    # Resource limits
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+    # Security context for container
+    securityContext:
+      capabilities:
+        add:
+        - NET_ADMIN  # Required for nftables configuration
+        drop:
+        - ALL
+
+    # Health checks
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+    readinessProbe:
+      httpGet:
+        path: /readyz
+        port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+    # Volume mounts
+    volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+    - name: dev-fuse
+      mountPath: /dev/fuse
+
+  volumes:
+  - name: workspace
+    emptyDir:
+      sizeLimit: 10Gi
+  - name: dev-fuse
+    hostPath:
+      path: /dev/fuse
+      type: CharDevice
+
+  # Tolerations for dedicated nodes (optional)
+  # tolerations:
+  # - key: "sandbox0.ai/node"
+  #   operator: "Equal"
+  #   value: "sandbox"
+  #   effect: "NoSchedule"
+
+---
+# NetworkPolicy for procd pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: procd-network-policy
+  namespace: sandbox0-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      sandbox0.ai/template-id: python-dev
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from internal-gateway
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: sandbox0-system
+      podSelector:
+        matchLabels:
+          app: internal-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow storage-proxy
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: sandbox0-system
+      podSelector:
+        matchLabels:
+          app: storage-proxy
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+
