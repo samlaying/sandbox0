@@ -1,8 +1,10 @@
-# Procd - Volume Management (RemoteFS Client)
+# Procd - SandboxVolume Client (RemoteFS Client)
 
 ## 一、设计目标
 
-Procd 的 VolumeManager 负责将远程文件系统挂载到 Pod 内的指定路径。实际的存储操作（S3、PostgreSQL）完全由 **Storage Proxy** 处理，Procd 只是一个客户端。
+Procd 的 SandboxVolumeManager 负责将远程文件系统（SandboxVolume）挂载到 Pod 内的指定路径。
+
+**注意**：SandboxVolume 是 sandbox0 的持久化存储概念，用于区别 k8s 原生的 Volume/PVC。
 
 ### 核心原则
 
@@ -17,16 +19,26 @@ Procd 的 VolumeManager 负责将远程文件系统挂载到 Pod 内的指定路
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Procd Volume Architecture                                 │
+│                    Procd SandboxVolume Architecture                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
+│  Storage Proxy                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ SandboxVolume Management                                             │   │
+│  │  - Create/Delete SandboxVolume                                       │   │
+│  │  - Attach/Detach to Sandbox                                          │   │
+│  │  - Snapshot/Restore                                                  │   │
+│  │  - Calls Procd to mount/unmount                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
 │  Procd (PID=1, in Pod)                                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │ VolumeManager                                                          │   │
+│  │ SandboxVolumeManager                                                  │   │
 │  │ ┌───────────────────────────────────────────────────────────────┐   │   │
-│  │ │ Mount/Unmount API                                              │   │   │
-│  │ │  - Mount(volumeID, mountPoint, token)                         │   │   │
-│  │ │  - Unmount(volumeID)                                           │   │   │
+│  │ │ Mount/Unmount API (HTTP)                                       │   │   │
+│  │ │  - POST /api/v1/sandboxvolumes/mount                           │   │   │
+│  │ │  - POST /api/v1/sandboxvolumes/unmount                         │   │   │
 │  │ └───────────────────────────────────────────────────────────────┘   │   │
 │  │                           │                                            │   │
 │  │                           ▼                                            │   │
@@ -50,7 +62,7 @@ Procd 的 VolumeManager 负责将远程文件系统挂载到 Pod 内的指定路
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │ gRPC (mark=0x2)                        │
 │                                    ▼                                        │
-│                          Storage Proxy                                     │
+│                          Storage Proxy (JuiceFS Backend)                   │
 │                          (Has all credentials)                            │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -60,13 +72,13 @@ Procd 的 VolumeManager 负责将远程文件系统挂载到 Pod 内的指定路
 
 ## 三、数据结构定义
 
-### 3.1 VolumeManager
+### 3.1 SandboxVolumeManager
 
 ```go
-// VolumeManager manages remote filesystem mounts in Procd
-type VolumeManager struct {
+// SandboxVolumeManager manages remote filesystem mounts in Procd
+type SandboxVolumeManager struct {
     mu     sync.RWMutex
-    mounts map[string]*MountContext  // volumeID -> MountContext
+    mounts map[string]*MountContext  // sandboxvolumeID -> MountContext
 
     // Configuration
     proxyURL string  // Storage Proxy gRPC address
@@ -74,42 +86,42 @@ type VolumeManager struct {
 
 // MountContext represents an active mount
 type MountContext struct {
-    VolumeID   string
-    MountPoint string
-    Token      string  // JWT auth token (in-memory only)
+    SandboxVolumeID   string
+    MountPoint        string
+    Token             string  // JWT auth token from Storage Proxy (in-memory only)
 
     // FUSE
-    fuseConn  *fuse.Conn
-    fuseServerCancel context.CancelFunc
+    fuseConn           *fuse.Conn
+    fuseServerCancel   context.CancelFunc
 
     // gRPC client
-    grpcClient fs.FileSystemClient
+    grpcClient         fs.FileSystemClient
 
-    MountedAt time.Time
+    MountedAt          time.Time
 }
 ```
 
 ### 3.2 Mount Request/Response
 
 ```go
-// MountRequest request to mount a volume
+// MountRequest request to mount a sandboxvolume
 type MountRequest struct {
-    VolumeID   string `json:"volume_id"`
-    SandboxID  string `json:"sandbox_id"`
-    MountPoint string `json:"mount_point"`  // e.g., "/workspace"
-    Token      string `json:"token"`        // JWT auth token from Manager
+    SandboxVolumeID string `json:"sandboxvolume_id"`  // SandboxVolume ID
+    SandboxID       string `json:"sandbox_id"`
+    MountPoint      string `json:"mount_point"`       // e.g., "/workspace"
+    Token           string `json:"token"`             // JWT auth token from Storage Proxy
 }
 
 // MountResponse response for mount request
 type MountResponse struct {
-    VolumeID   string `json:"volume_id"`
-    MountPoint string `json:"mount_point"`
-    MountedAt  string `json:"mounted_at"`  // ISO timestamp
+    SandboxVolumeID string `json:"sandboxvolume_id"`
+    MountPoint      string `json:"mount_point"`
+    MountedAt       string `json:"mounted_at"`  // ISO timestamp
 }
 
-// UnmountRequest request to unmount a volume
+// UnmountRequest request to unmount a sandboxvolume
 type UnmountRequest struct {
-    VolumeID string `json:"volume_id"`
+    SandboxVolumeID string `json:"sandboxvolume_id"`
 }
 ```
 
@@ -122,10 +134,10 @@ type UnmountRequest struct {
 ```go
 // RemoteFS implements fuse.Filesystem via gRPC client
 type RemoteFS struct {
-    client   fs.FileSystemClient  // gRPC client
-    volumeID string
-    token    string
-    rootInode string
+    client           fs.FileSystemClient  // gRPC client
+    sandboxvolumeID  string
+    token            string
+    rootInode        string
 }
 
 // RemoteFSNode represents a file/directory node
@@ -387,19 +399,19 @@ func fuseAttrFrom(attr *fs.GetAttrResponse) fuse.Attr {
 
 ---
 
-## 五、VolumeManager 实现
+## 五、SandboxVolumeManager 实现
 
-### 5.1 Mount Volume
+### 5.1 Mount SandboxVolume
 
 ```go
 // Mount mounts a remote filesystem
-func (vm *VolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountResponse, error) {
+func (vm *SandboxVolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountResponse, error) {
     vm.mu.Lock()
     defer vm.mu.Unlock()
 
     // Check if already mounted
-    if _, exists := vm.mounts[req.VolumeID]; exists {
-        return nil, fmt.Errorf("volume %s already mounted", req.VolumeID)
+    if _, exists := vm.mounts[req.SandboxVolumeID]; exists {
+        return nil, fmt.Errorf("sandboxvolume %s already mounted", req.SandboxVolumeID)
     }
 
     // Create gRPC connection with packet marking
@@ -412,10 +424,10 @@ func (vm *VolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountRe
 
     // Create RemoteFS
     remoteFS := &RemoteFS{
-        client:   client,
-        volumeID: req.VolumeID,
-        token:    req.Token,
-        rootInode: "1",  // Root inode is always "1"
+        client:           client,
+        sandboxvolumeID:  req.SandboxVolumeID,
+        token:            req.Token,
+        rootInode:        "1",  // Root inode is always "1"
     }
 
     // Ensure mount point directory exists
@@ -458,8 +470,8 @@ func (vm *VolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountRe
     }
 
     // Store mount context
-    vm.mounts[req.VolumeID] = &MountContext{
-        VolumeID:          req.VolumeID,
+    vm.mounts[req.SandboxVolumeID] = &MountContext{
+        SandboxVolumeID:  req.SandboxVolumeID,
         MountPoint:        req.MountPoint,
         Token:             req.Token,
         FuseConn:          fuseConn,
@@ -468,12 +480,12 @@ func (vm *VolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountRe
         MountedAt:         time.Now(),
     }
 
-    log.Printf("Mounted volume %s at %s", req.VolumeID, req.MountPoint)
+    log.Printf("Mounted sandboxvolume %s at %s", req.SandboxVolumeID, req.MountPoint)
 
     return &MountResponse{
-        VolumeID:   req.VolumeID,
-        MountPoint: req.MountPoint,
-        MountedAt:  time.Now().Format(time.RFC3339),
+        SandboxVolumeID: req.SandboxVolumeID,
+        MountPoint:      req.MountPoint,
+        MountedAt:       time.Now().Format(time.RFC3339),
     }, nil
 }
 ```
@@ -482,7 +494,7 @@ func (vm *VolumeManager) Mount(ctx context.Context, req *MountRequest) (*MountRe
 
 ```go
 // createGRPCConnection creates gRPC connection with packet marking
-func (vm *VolumeManager) createGRPCConnection() (*grpc.ClientConn, error) {
+func (vm *SandboxVolumeManager) createGRPCConnection() (*grpc.ClientConn, error) {
     // Custom dialer that sets SO_MARK socket option
     dialer := &net.Dialer{
         Control: func(network, address string, c syscall.RawConn) error {
@@ -511,17 +523,17 @@ func (vm *VolumeManager) createGRPCConnection() (*grpc.ClientConn, error) {
 }
 ```
 
-### 5.3 Unmount Volume
+### 5.3 Unmount SandboxVolume
 
 ```go
-// Unmount unmounts a volume
-func (vm *VolumeManager) Unmount(ctx context.Context, volumeID string) error {
+// Unmount unmounts a sandboxvolume
+func (vm *SandboxVolumeManager) Unmount(ctx context.Context, sandboxvolumeID string) error {
     vm.mu.Lock()
     defer vm.mu.Unlock()
 
-    mountCtx, exists := vm.mounts[volumeID]
+    mountCtx, exists := vm.mounts[sandboxvolumeID]
     if !exists {
-        return fmt.Errorf("volume %s not mounted", volumeID)
+        return fmt.Errorf("sandboxvolume %s not mounted", sandboxvolumeID)
     }
 
     // Cancel FUSE server
@@ -542,9 +554,9 @@ func (vm *VolumeManager) Unmount(ctx context.Context, volumeID string) error {
         closer.Close()
     }
 
-    delete(vm.mounts, volumeID)
+    delete(vm.mounts, sandboxvolumeID)
 
-    log.Printf("Unmounted volume %s", volumeID)
+    log.Printf("Unmounted sandboxvolume %s", sandboxvolumeID)
 
     return nil
 }
@@ -554,14 +566,14 @@ func (vm *VolumeManager) Unmount(ctx context.Context, volumeID string) error {
 
 ## 六、HTTP API
 
-### 6.1 Mount Volume
+### 6.1 Mount SandboxVolume
 
 ```http
-POST /api/v1/volumes/mount
+POST /api/v1/sandboxvolumes/mount
 Content-Type: application/json
 
 {
-    "volume_id": "vol-abc123",
+    "sandboxvolume_id": "sbv-abc123",
     "sandbox_id": "sb-def456",
     "mount_point": "/workspace",
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -569,25 +581,25 @@ Content-Type: application/json
 
 Response: 200 OK
 {
-    "volume_id": "vol-abc123",
+    "sandboxvolume_id": "sbv-abc123",
     "mount_point": "/workspace",
     "mounted_at": "2024-01-01T00:00:00Z"
 }
 
 Error Response: 409 Conflict
 {
-    "error": "volume_vol-abc123_already_mounted"
+    "error": "sandboxvolume_sbv-abc123_already_mounted"
 }
 ```
 
-### 6.2 Unmount Volume
+### 6.2 Unmount SandboxVolume
 
 ```http
-POST /api/v1/volumes/unmount
+POST /api/v1/sandboxvolumes/unmount
 Content-Type: application/json
 
 {
-    "volume_id": "vol-abc123"
+    "sandboxvolume_id": "sbv-abc123"
 }
 
 Response: 200 OK
@@ -595,20 +607,20 @@ Response: 200 OK
 
 Error Response: 404 Not Found
 {
-    "error": "volume_not_mounted"
+    "error": "sandboxvolume_not_mounted"
 }
 ```
 
 ### 6.3 Get Mount Status
 
 ```http
-GET /api/v1/volumes/status
+GET /api/v1/sandboxvolumes/status
 
 Response: 200 OK
 {
     "mounts": [
         {
-            "volume_id": "vol-abc123",
+            "sandboxvolume_id": "sbv-abc123",
             "mount_point": "/workspace",
             "mounted_at": "2024-01-01T00:00:00Z",
             "mounted_duration_sec": 3600
@@ -619,33 +631,39 @@ Response: 200 OK
 
 ---
 
-## 七、与 Manager 的交互
+## 七、与 Storage Proxy 的交互
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Manager → Procd Mount Flow                                │
+│              Internal Gateway Coordinated Mount Flow                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  1. Manager claims idle Pod                                                  │
-│     PATCH /api/v1/pods/{pod_id}                                             │
+│  1. User requests to attach SandboxVolume to Sandbox                        │
+│     POST /api/v1/sandboxvolumes/{id}/attach                                 │
 │     {                                                                       │
-│       "labels": {"state": "active", "sandbox_id": "sb-123"}                  │
+│       "sandbox_id": "sb-123",                                               │
+│       "mount_point": "/workspace"                                           │
 │     }                                                                       │
 │                                                                              │
-│  2. Manager generates storage token                                          │
-│     token = GenerateStorageToken(volumeID, sandboxID)                        │
-│     → JWT signed with JWT_SECRET                                            │
-│                                                                              │
-│  3. Manager calls Procd API to mount volume                                  │
-│     POST http://procd-{pod-id}:8080/api/v1/volumes/mount                     │
+│  2. Internal Gateway calls Storage Proxy to prepare mount                   │
+│     POST http://storage-proxy:8081/api/v1/sandboxvolumes/{id}/attach        │
 │     {                                                                       │
-│       "volume_id": "vol-456",                                               │
+│       "sandbox_id": "sb-123",                                               │
+│       "mount_point": "/workspace"                                           │
+│     }                                                                       │
+│     → Returns token for gRPC authentication                                │
+│                                                                              │
+│  3. Internal Gateway calls Procd API to mount sandboxvolume                 │
+│     POST http://procd-{pod-id}:8080/api/v1/sandboxvolumes/mount              │
+│     {                                                                       │
+│       "sandboxvolume_id": "sbv-456",                                        │
 │       "sandbox_id": "sb-123",                                               │
 │       "mount_point": "/workspace",                                          │
-│       "token": "eyJhbGc..."                                                 │
+│       "token": "eyJhbGc...",                                                │
+│       "storage_proxy_address": "storage-proxy:8080"                         │
 │     }                                                                       │
 │                                                                              │
-│  4. Procd VolumeManager mounts RemoteFS                                      │
+│  4. Procd SandboxVolumeManager mounts RemoteFS                              │
 │     ├─ Create gRPC connection (with SO_MARK=0x2)                            │
 │     ├─ Mount FUSE at /workspace                                             │
 │     ├─ Start FUSE server (forwards to gRPC)                                 │
@@ -654,13 +672,18 @@ Response: 200 OK
 │  5. User can now access files in /workspace                                 │
 │     All file operations: User → FUSE → gRPC → Storage Proxy → S3/PG          │
 │                                                                              │
-│  6. On sandbox deletion                                                      │
-│     Manager calls Procd API to unmount                                       │
-│     POST http://procd-{pod-id}:8080/api/v1/volumes/unmount                   │
-│     {"volume_id": "vol-456"}                                                 │
+│  6. On sandbox deletion or volume detach                                    │
+│     Internal Gateway calls:                                                 │
+│     a) Storage Proxy to detach: POST /api/v1/sandboxvolumes/{id}/detach     │
+│     b) Procd to unmount: POST /api/v1/sandboxvolumes/unmount                │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Architecture Benefits:**
+- **No circular dependency**: Storage Proxy and Procd are independent
+- **Internal Gateway as coordinator**: Orchestrates the mount/attach flow
+- **Clear separation**: Storage Proxy manages metadata, Procd manages FUSE mount
 
 ---
 
@@ -702,9 +725,9 @@ env:
 
 ```go
 var (
-    ErrVolumeAlreadyMounted = errors.New("volume_already_mounted")
-    ErrVolumeNotMounted    = errors.New("volume_not_mounted")
-    ErrInvalidMountPoint   = errors.New("invalid_mount_point")
+    ErrSandboxVolumeAlreadyMounted = errors.New("sandboxvolume_already_mounted")
+    ErrSandboxVolumeNotMounted    = errors.New("sandboxvolume_not_mounted")
+    ErrInvalidMountPoint          = errors.New("invalid_mount_point")
     ErrMountTimeout        = errors.New("mount_timeout")
     ErrUnmountFailed       = errors.New("unmount_failed")
     ErrConnectionFailed    = errors.New("grpc_connection_failed")

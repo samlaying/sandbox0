@@ -20,7 +20,7 @@ Internal Gateway 是 sandbox0 的统一入口，负责：
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                        HTTP Server (Port: 8443)                       │  │
 │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │  │
-│  │  │   Sandbox   │ │   Process   │ │   Volume    │ │   Template  │     │  │
+│  │  │   Sandbox   │ │   Process   │ │SandboxVolume│ │   Template  │     │  │
 │  │  │   APIs      │ │   APIs      │ │   APIs      │ │   APIs      │     │  │
 │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘     │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
@@ -34,17 +34,28 @@ Internal Gateway 是 sandbox0 的统一入口，负责：
 │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘     │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                    │                                         │
-│              ┌─────────────────────┼─────────────────────┐                 │
-│              ▼                     ▼                     ▼                 │
-│  ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐        │
-│  │      Manager      │ │      Procd        │ │    PostgreSQL     │        │
-│  │   (Port: 8080)    │ │   (Dynamic)       │ │                   │        │
-│  │                   │ │                   │ │  - API Keys       │        │
-│  │  - Sandbox        │ │  - Process        │ │  - Teams/Users    │        │
-│  │    Management     │ │    Management     │ │  - Quotas         │        │
-│  │  - Template       │ │  - File System    │ │  - Audit Logs     │        │
-│  │    Management     │ │  - Context        │ │                   │        │
-│  └───────────────────┘ └───────────────────┘ └───────────────────┘        │
+│              ┌─────────────────────┼─────────────────────┬───────────────┐   │
+│              ▼                     ▼                     ▼               │   │
+│  ┌───────────────────┐ ┌───────────────────┐ ┌─────────────────────┐     │   │
+│  │      Manager      │ │      Procd        │ │   Storage Proxy     │     │   │
+│  │   (Port: 8080)    │ │   (Dynamic)       │ │   (Port: 8081)     │     │   │
+│  │                   │ │                   │ │                     │     │   │
+│  │  - Sandbox        │ │  - Process        │ │  - SandboxVolume   │     │   │
+│  │    Management     │ │    Management     │ │    Management      │     │   │
+│  │  - Template       │ │  - File System    │ │  - JuiceFS Storage │     │   │
+│  │    Management     │ │  - Context        │ │  - Snapshot/Restore│     │   │
+│  └───────────────────┘ └───────────────────┘ └─────────────────────┘     │   │
+│                                                              │             │   │
+│                                                              ▼             │   │
+│                                                    ┌───────────────────┐   │   │
+│                                                    │    PostgreSQL      │   │   │
+│                                                    │  - API Keys       │   │   │
+│                                                    │  - Teams/Users    │   │   │
+│                                                    │  - Quotas         │   │   │
+│                                                    │  - Audit Logs     │   │   │
+│                                                    │  - SandboxVolume  │   │   │
+│                                                    │    Metadata       │   │   │
+│                                                    └───────────────────┘   │   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,11 +116,15 @@ Internal Gateway 是 sandbox0 的统一入口，负责：
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  Volume Management (→ Manager)                                       │   │
-│  │  ├─ POST   /api/v1/volumes                              创建卷      │   │
-│  │  ├─ GET    /api/v1/volumes                              列出卷      │   │
-│  │  ├─ GET    /api/v1/volumes/{id}                         获取卷      │   │
-│  │  └─ DELETE /api/v1/volumes/{id}                         删除卷      │   │
+│  │  SandboxVolume Management (→ Storage Proxy)                         │   │
+│  │  ├─ POST   /api/v1/sandboxvolumes                    创建持久卷      │   │
+│  │  ├─ GET    /api/v1/sandboxvolumes                    列出持久卷      │   │
+│  │  ├─ GET    /api/v1/sandboxvolumes/{id}               获取持久卷      │   │
+│  │  ├─ DELETE /api/v1/sandboxvolumes/{id}               删除持久卷      │   │
+│  │  ├─ POST   /api/v1/sandboxvolumes/{id}/attach        挂载到沙箱      │   │
+│  │  ├─ POST   /api/v1/sandboxvolumes/{id}/detach        卸载            │   │
+│  │  ├─ POST   /api/v1/sandboxvolumes/{id}/snapshot      创建快照       │   │
+│  │  └─ POST   /api/v1/sandboxvolumes/{id}/restore       恢复快照       │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -180,11 +195,11 @@ const (
     PermTemplateWrite   = "template:write"
     PermTemplateDelete  = "template:delete"
 
-    // 卷权限
-    PermVolumeCreate    = "volume:create"
-    PermVolumeRead      = "volume:read"
-    PermVolumeWrite     = "volume:write"
-    PermVolumeDelete    = "volume:delete"
+    // 持久卷权限
+    PermSandboxVolumeCreate    = "sandboxvolume:create"
+    PermSandboxVolumeRead      = "sandboxvolume:read"
+    PermSandboxVolumeWrite     = "sandboxvolume:write"
+    PermSandboxVolumeDelete    = "sandboxvolume:delete"
 )
 
 // 预定义角色
@@ -198,18 +213,86 @@ var RolePermissions = map[string][]string{
         PermSandboxWrite,
         PermSandboxDelete,
         PermTemplateRead,
-        PermVolumeCreate,
-        PermVolumeRead,
-        PermVolumeWrite,
-        PermVolumeDelete,
+        PermSandboxVolumeCreate,
+        PermSandboxVolumeRead,
+        PermSandboxVolumeWrite,
+        PermSandboxVolumeDelete,
     },
     "viewer": {
         PermSandboxRead,
         PermTemplateRead,
-        PermVolumeRead,
+        PermSandboxVolumeRead,
     },
 }
 ```
+
+---
+
+## 4.4 SandboxVolume Attach/Detach 协调流程
+
+Internal Gateway 作为协调者，负责协调 Storage Proxy 和 Procd 完成 SandboxVolume 的挂载和卸载。
+
+### Attach Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 Internal Gateway Attach Coordination                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Client Request                                                           │
+│     POST /api/v1/sandboxvolumes/{id}/attach                                 │
+│     { "sandbox_id": "sb-123", "mount_point": "/workspace" }                  │
+│                                                                              │
+│  2. Internal Gateway → Storage Proxy (prepare mount)                        │
+│     POST http://storage-proxy:8081/api/v1/sandboxvolumes/{id}/attach        │
+│     Response: { "token": "eyJ...", "storage_proxy_address": "..." }          │
+│                                                                              │
+│  3. Internal Gateway → Procd (mount with token)                             │
+│     POST http://procd-{pod-id}:8080/api/v1/sandboxvolumes/mount              │
+│     {                                                                       │
+│       "sandboxvolume_id": "sbv-456",                                        │
+│       "sandbox_id": "sb-123",                                               │
+│       "mount_point": "/workspace",                                          │
+│       "token": "eyJ...",                                                     │
+│       "storage_proxy_address": "storage-proxy:8080"                         │
+│     }                                                                       │
+│     Response: { "mounted_at": "2024-01-01T00:00:00Z" }                       │
+│                                                                              │
+│  4. Return to Client                                                         │
+│     Response: 200 OK                                                         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Detach Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 Internal Gateway Detach Coordination                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Client Request                                                           │
+│     POST /api/v1/sandboxvolumes/{id}/detach                                 │
+│     { "sandbox_id": "sb-123" }                                               │
+│                                                                              │
+│  2. Internal Gateway → Procd (unmount first)                                │
+│     POST http://procd-{pod-id}:8080/api/v1/sandboxvolumes/unmount            │
+│     Response: { "unmounted_at": "2024-01-01T00:00:00Z" }                     │
+│                                                                              │
+│  3. Internal Gateway → Storage Proxy (detach record)                        │
+│     POST http://storage-proxy:8081/api/v1/sandboxvolumes/{id}/detach        │
+│     Response: { "detached": true }                                           │
+│                                                                              │
+│  4. Return to Client                                                         │
+│     Response: 200 OK                                                         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**优势：**
+- **无循环依赖**：Storage Proxy 和 Procd 互不依赖
+- **清晰职责**：Internal Gateway 负责编排，Storage Proxy 管理元数据，Procd 管理挂载
+- **易于扩展**：未来可添加更多协调逻辑（如重试、回滚）
 
 ---
 
@@ -315,11 +398,11 @@ type QuotaManager struct {
 type QuotaType string
 
 const (
-    QuotaSandboxCount     QuotaType = "sandbox_count"      // 沙箱数量
-    QuotaSandboxCPU       QuotaType = "sandbox_cpu"        // CPU配额
-    QuotaSandboxMemory    QuotaType = "sandbox_memory"     // 内存配额
-    QuotaVolumeStorage    QuotaType = "volume_storage"     // 存储配额
-    QuotaAPICalls         QuotaType = "api_calls"          // API调用次数
+    QuotaSandboxCount        QuotaType = "sandbox_count"         // 沙箱数量
+    QuotaSandboxCPU          QuotaType = "sandbox_cpu"           // CPU配额
+    QuotaSandboxMemory       QuotaType = "sandbox_memory"        // 内存配额
+    QuotaSandboxVolumeStorage QuotaType = "sandboxvolume_storage" // 持久卷存储配额
+    QuotaAPICalls            QuotaType = "api_calls"             // API调用次数
 )
 ```
 
@@ -458,7 +541,7 @@ CREATE TABLE audit_logs (
 
 1. **统一入口**：所有外部请求统一经过gateway，便于管理
 2. **简化认证**：主要使用API Key，JWT为可选SSO支持
-3. **清晰路由**：Manager管理沙箱/模板/卷，Procd管理进程/文件
+3. **清晰路由**：Manager管理沙箱/模板，Storage Proxy管理持久卷，Procd管理进程/文件
 4. **灵活扩展**：中间件模式，易于添加新功能
 5. **完整可观测**：Metrics、Tracing、Logging全覆盖
 6. **低依赖**：仅依赖PGSQL，无额外中间件

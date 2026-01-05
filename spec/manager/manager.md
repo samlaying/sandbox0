@@ -6,7 +6,6 @@ Manager 是 sandbox0 的核心管理服务，负责：
 1. **沙箱模板管理**：通过 K8s Operator 维护 `SandboxTemplate` CRD
 2. **沙箱实例认领**：提供 HTTP API 接收 internal-gateway 请求来实例化沙箱
 3. **资源调度**：根据模板配置和资源水位进行沙箱调度
-4. **持久卷管理**：管理 Volume 元数据（存储在 PostgreSQL），协调 Procd 挂载
 
 ---
 
@@ -79,11 +78,10 @@ Manager 是 sandbox0 的核心管理服务，负责：
 │     ├── 过期清理（List Pods 过滤 expires_at < now）                           │
 │     └── 回收释放（active → idle 改 labels）                                  │
 │                                                                              │
-│  5. Volume Storage (Unified PostgreSQL + S3)                                │
-│     ├── PostgreSQL - Volume 元数据 + JuiceFS 文件系统元数据（统一存储）        │
-│     │   ├── Manager tables: volumes, snapshots, teams, etc.                 │
-│     │   └── JuiceFS tables: jfs_node, jfs_edge, jfs_chunk, etc.            │
-│     └── S3 - JuiceFS 数据块（实际文件内容）                                    │
+│  5. SandboxVolume (Managed by Storage Proxy)                                │
+│     ├── 元数据管理（PostgreSQL）                                              │
+│     ├── JuiceFS文件系统（S3-backed POSIX）                                    │
+│     └─→ 通过Storage Proxy API访问                                            │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -305,67 +303,7 @@ Response: 201 Created
 }
 ```
 
-#### Volume 管理
-
-```http
-# Create Volume
-POST /api/v1/volumes
-Content-Type: application/json
-
-{
-    "name": "my-workspace",
-    "team_id": "team-123",
-    "capacity": "10Gi",
-    "juicefs": {
-        "meta_url": "postgres://postgres:5432/sandbox0?sslmode=disable",
-        "s3_bucket": "sandbox0-volumes",
-        "s3_prefix": "teams/team-123/volumes/vol-abc123",
-        "cache_size": "10Gi"
-    }
-}
-
-Response: 201 Created
-{
-    "id": "vol-abc123",
-    "name": "my-workspace",
-    "team_id": "team-123",
-    "juicefs": {
-        "meta_url": "postgres://postgres:5432/sandbox0?sslmode=disable",
-        "s3_bucket": "sandbox0-volumes",
-        "s3_prefix": "teams/team-123/volumes/vol-abc123",
-        "cache_size": "10Gi"
-    },
-    "created_at": "2024-01-01T00:00:00Z"
-}
-
-# Get Volume
-GET /api/v1/volumes/{volume_id}
-
-# List Volumes
-GET /api/v1/volumes?team_id=team-123
-
-# Delete Volume
-DELETE /api/v1/volumes/{volume_id}
-
-# Attach Volume to Sandbox (triggers Procd mount)
-POST /api/v1/volumes/{volume_id}/attach
-Content-Type: application/json
-
-{
-    "sandbox_id": "sb-abc123",
-    "mount_point": "/workspace",
-    "read_only": false,
-    "snapshot_id": "snap-001"
-}
-
-Response: 200 OK
-{
-    "volume_id": "vol-abc123",
-    "sandbox_id": "sb-abc123",
-    "mount_point": "/workspace",
-    "procd_address": "sb-abc123-pod:8080"
-}
-```
+**Note**: SandboxVolume管理API已移至Storage Proxy，见storage-proxy规范。
 
 ---
 
@@ -499,7 +437,7 @@ func (cc *CleanupController) enforceMaxIdle(ctx context.Context, template *crd.S
 ### 5.1 ProcdClient 接口
 
 ```go
-// ProcdClient Procd客户端接口 (用于网络策略和Volume挂载)
+// ProcdClient Procd客户端接口 (用于网络策略管理)
 type ProcdClient interface {
     // UpdateNetworkPolicy 更新网络策略
     UpdateNetworkPolicy(ctx context.Context, procdAddr string, policy *NetworkPolicy) error
@@ -509,29 +447,6 @@ type ProcdClient interface {
 
     // GetNetworkPolicy 获取当前网络策略
     GetNetworkPolicy(ctx context.Context, procdAddr string) (*NetworkPolicy, error)
-
-    // MountVolume 挂载 Volume
-    MountVolume(ctx context.Context, procdAddr string, req *VolumeMountRequest) (*VolumeMountResponse, error)
-
-    // UnmountVolume 卸载 Volume
-    UnmountVolume(ctx context.Context, procdAddr string, volumeID string) error
-}
-
-// VolumeMountRequest Volume 挂载请求
-type VolumeMountRequest struct {
-    VolumeID    string            `json:"volume_id"`
-    SandboxID   string            `json:"sandbox_id"`
-    MountPoint  string            `json:"mount_point"`
-    ReadOnly    bool              `json:"read_only,omitempty"`
-    SnapshotID  string            `json:"snapshot_id,omitempty"`
-    JuiceFSOpts map[string]string `json:"juicefs_opts,omitempty"`
-}
-
-// VolumeMountResponse Volume 挂载响应
-type VolumeMountResponse struct {
-    VolumeID       string `json:"volume_id"`
-    MountPoint     string `json:"mount_point"`
-    JuiceFSVersion string `json:"juicefs_version"`
 }
 ```
 
@@ -563,89 +478,6 @@ func (s *SandboxService) applyNetworkPolicy(ctx context.Context, template *crd.S
 }
 ```
 
-### 5.3 Volume 挂载
-
-```go
-// VolumeService Volume 管理服务
-type VolumeService struct {
-    db          *sql.DB           // PostgreSQL
-    procdClient ProcdClient
-}
-
-// AttachVolume 将 Volume 挂载到 Sandbox
-func (s *VolumeService) AttachVolume(ctx context.Context, req *AttachVolumeRequest) (*AttachVolumeResponse, error) {
-    // 1. 从 PostgreSQL 加载 Volume 元数据
-    volume, err := s.loadVolume(ctx, req.VolumeID)
-    if err != nil {
-        return nil, fmt.Errorf("load volume: %w", err)
-    }
-
-    // 2. 验证访问权限
-    if !s.canAccess(volume, req.TeamID, req.SandboxID) {
-        return nil, fmt.Errorf("access denied")
-    }
-
-    // 3. 获取 Sandbox 的 Procd 地址
-    procdAddr, err := s.getProcdAddress(ctx, req.SandboxID)
-    if err != nil {
-        return nil, fmt.Errorf("get procd address: %w", err)
-    }
-
-    // 4. 构造 Procd 挂载请求
-    mountReq := &VolumeMountRequest{
-        VolumeID:   req.VolumeID,
-        SandboxID:  req.SandboxID,
-        MountPoint: req.MountPoint,
-        ReadOnly:   req.ReadOnly,
-        SnapshotID: req.SnapshotID,
-        JuiceFSOpts: map[string]string{
-            "cache_size": volume.JuiceFS.CacheSize,
-            "prefetch":   strconv.Itoa(volume.JuiceFS.Prefetch),
-        },
-    }
-
-    // 5. 调用 Procd API 挂载 Volume
-    mountResp, err := s.procdClient.MountVolume(ctx, procdAddr, mountReq)
-    if err != nil {
-        return nil, fmt.Errorf("mount volume via procd: %w", err)
-    }
-
-    // 6. 更新 Volume 挂载状态
-    if err := s.updateVolumeMountStatus(ctx, req.VolumeID, req.SandboxID, true); err != nil {
-        return nil, fmt.Errorf("update volume mount status: %w", err)
-    }
-
-    return &AttachVolumeResponse{
-        VolumeID:      mountResp.VolumeID,
-        SandboxID:     req.SandboxID,
-        MountPoint:    mountResp.MountPoint,
-        ProcdAddress:  procdAddr,
-    }, nil
-}
-
-// loadVolume 从 PostgreSQL 加载 Volume 元数据
-func (s *VolumeService) loadVolume(ctx context.Context, volumeID string) (*Volume, error) {
-    var volume Volume
-    query := `
-        SELECT id, name, team_id, juicefs_config, capacity, encryption_key_id,
-               read_only, allowed_sandbox_ids, tags, metadata,
-               created_at, updated_at, last_accessed_at, size_bytes, file_count, mount_count
-        FROM volumes
-        WHERE id = $1
-    `
-    err := s.db.QueryRowContext(ctx, query, volumeID).Scan(
-        &volume.ID, &volume.Name, &volume.TeamID, &volume.JuiceFS, &volume.Capacity,
-        &volume.EncryptionKeyID, &volume.ReadOnly, pq.Array(&volume.AllowedSandboxIDs),
-        pq.Array(&volume.Tags), &volume.Metadata, &volume.CreatedAt, &volume.UpdatedAt,
-        &volume.LastAccessedAt, &volume.SizeBytes, &volume.FileCount, &volume.MountCount,
-    )
-    if err != nil {
-        return nil, err
-    }
-    return &volume, nil
-}
-```
-
 ---
 
 ## 六、与 E2B 功能对比
@@ -655,7 +487,7 @@ func (s *VolumeService) loadVolume(ctx context.Context, volumeID string) (*Volum
 | 模板定义 | JSON + Dockerfile | CRD | K8s 原生 |
 | 多容器 | 不支持 | ✅ Sidecar | 更灵活 |
 | 卷挂载 | 单一 S3 | **JuiceFS (S3-backed POSIX)** | 完整 POSIX 语义 |
-| Volume管理 | 内置 | **PostgreSQL (unified metadata) + S3 (data)** | 统一元数据存储 |
+| Volume管理 | 内置 | **Storage Proxy (独立服务)** | 元数据与JuiceFS统一管理 |
 | 资源配额 | CPU/Memory/Disk | CPU/Memory/GPU | 支持 GPU |
 | 水池管理 | 内置 | **ReplicaSet + Cleanup Controller** | k8s 原生，高可靠 |
 | 状态存储 | 内置 | **Pod annotations (informer cache)** | 无额外依赖 |
