@@ -43,12 +43,32 @@ func (p *PythonREPL) Start() error {
 
 	config := p.GetConfig()
 
-	// Try IPython first, fall back to python3
+	// Try Python interpreters in order of preference:
+	// 1. ipython - best interactive experience
+	// 2. python3 - modern Python 3.x
+	// 3. python - usually points to default Python
+	// 4. python2 - legacy Python 2.x (for compatibility)
 	var cmd *exec.Cmd
-	if _, err := exec.LookPath("ipython"); err == nil {
-		cmd = exec.Command("ipython", "--simple-prompt", "-i", "--no-banner", "--colors=NoColor")
-	} else {
-		cmd = exec.Command("python3", "-i", "-u")
+	pythonCandidates := []struct {
+		name string
+		args []string
+	}{
+		{"ipython", []string{"--simple-prompt", "-i", "--no-banner", "--colors=NoColor"}},
+		{"python3", []string{"-i", "-u"}},
+		{"python", []string{"-i", "-u"}},
+		{"python2", []string{"-i", "-u"}},
+	}
+
+	for _, candidate := range pythonCandidates {
+		if path, err := exec.LookPath(candidate.name); err == nil {
+			cmd = exec.Command(path, candidate.args...)
+			break
+		}
+	}
+
+	if cmd == nil {
+		p.SetState(process.ProcessStateCrashed)
+		return fmt.Errorf("%w: no Python interpreter found (tried: ipython, python3, python, python2)", process.ErrProcessStartFailed)
 	}
 
 	// Set working directory
