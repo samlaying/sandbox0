@@ -432,6 +432,173 @@ func (s *FileSystemServer) Release(ctx context.Context, req *pb.ReleaseRequest) 
 	return &pb.Empty{}, nil
 }
 
+// Rmdir implements FUSE rmdir (remove directory)
+func (s *FileSystemServer) Rmdir(ctx context.Context, req *pb.RmdirRequest) (*pb.Empty, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Remove directory in JuiceFS
+	parent := meta.Ino(req.Parent)
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.Meta.Rmdir(vfsCtx, parent, req.Name)
+	if st != 0 {
+		if st == syscall.ENOTEMPTY {
+			return nil, status.Error(codes.FailedPrecondition, "directory not empty")
+		}
+		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+	}
+
+	return &pb.Empty{}, nil
+}
+
+// StatFs implements FUSE statfs (filesystem statistics)
+func (s *FileSystemServer) StatFs(ctx context.Context, req *pb.StatFsRequest) (*pb.StatFsResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Get filesystem statistics from JuiceFS
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	var totalSpace, availSpace, iused, iavail uint64
+	st := volCtx.Meta.StatFS(vfsCtx, meta.RootInode, &totalSpace, &availSpace, &iused, &iavail)
+	if st != 0 {
+		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+	}
+
+	// Convert to filesystem blocks (4KB blocks)
+	const blockSize = 4096
+	blocks := totalSpace / blockSize
+	bavail := availSpace / blockSize
+
+	return &pb.StatFsResponse{
+		Blocks:  blocks,
+		Bfree:   bavail,
+		Bavail:  bavail,
+		Files:   iused + iavail,
+		Ffree:   iavail,
+		Bsize:   blockSize,
+		Namelen: 255,
+		Frsize:  blockSize,
+	}, nil
+}
+
+// Symlink implements FUSE symlink (create symbolic link)
+func (s *FileSystemServer) Symlink(ctx context.Context, req *pb.SymlinkRequest) (*pb.NodeResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Create symbolic link in JuiceFS
+	parent := meta.Ino(req.Parent)
+	var inode meta.Ino
+	var attr meta.Attr
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.Meta.Symlink(vfsCtx, parent, req.Name, req.Target, &inode, &attr)
+	if st != 0 {
+		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+	}
+
+	return &pb.NodeResponse{
+		Inode:      uint64(inode),
+		Generation: 0,
+		Attr:       convertAttr(&attr),
+	}, nil
+}
+
+// Readlink implements FUSE readlink (read symbolic link target)
+func (s *FileSystemServer) Readlink(ctx context.Context, req *pb.ReadlinkRequest) (*pb.ReadlinkResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Read symbolic link from JuiceFS
+	inode := meta.Ino(req.Inode)
+	var target []byte
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.Meta.ReadLink(vfsCtx, inode, &target)
+	if st != 0 {
+		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+	}
+
+	return &pb.ReadlinkResponse{
+		Target: string(target),
+	}, nil
+}
+
+// Link implements FUSE link (create hard link)
+func (s *FileSystemServer) Link(ctx context.Context, req *pb.LinkRequest) (*pb.NodeResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Create hard link in JuiceFS
+	inode := meta.Ino(req.Inode)
+	newParent := meta.Ino(req.NewParent)
+	var attr meta.Attr
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.Meta.Link(vfsCtx, inode, newParent, req.NewName, &attr)
+	if st != 0 {
+		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+	}
+
+	return &pb.NodeResponse{
+		Inode:      uint64(inode),
+		Generation: 0,
+		Attr:       convertAttr(&attr),
+	}, nil
+}
+
+// Access implements FUSE access (check file access permissions)
+func (s *FileSystemServer) Access(ctx context.Context, req *pb.AccessRequest) (*pb.Empty, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	// Create JuiceFS context with caller's uid/gid for permission checking
+	inode := meta.Ino(req.Inode)
+
+	// Default to root user if no uid/gid provided (backward compatibility)
+	uid := req.Uid
+	gids := req.Gids
+	if len(gids) == 0 {
+		gids = []uint32{0}
+	}
+
+	// Create context with user credentials
+	vfsCtx := vfs.NewLogContext(meta.NewContext(0, uid, gids))
+
+	// Use JuiceFS's Access method which implements full POSIX permission checking
+	// This checks:
+	// - Root user (uid=0) always has access
+	// - Owner/group/other permission bits
+	// - ACL rules if present
+	// - Sticky bit for directories
+	st := volCtx.Meta.Access(vfsCtx, inode, uint8(req.Mask), nil)
+	if st != 0 {
+		s.logger.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"inode":     req.Inode,
+			"mask":      req.Mask,
+			"uid":       uid,
+			"gids":      gids,
+			"error":     st,
+		}).Debug("Access denied")
+		return nil, status.Error(codes.PermissionDenied, syscall.Errno(st).Error())
+	}
+
+	return &pb.Empty{}, nil
+}
+
 // Helper: convert meta.Attr to protobuf GetAttrResponse
 func convertAttr(attr *meta.Attr) *pb.GetAttrResponse {
 	return &pb.GetAttrResponse{

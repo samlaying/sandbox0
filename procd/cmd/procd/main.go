@@ -62,6 +62,9 @@ func main() {
 		logger.Fatal("Failed to create network manager", zap.Error(err))
 	}
 
+	// Create shared token provider for storage-proxy communication
+	tokenProvider := procdhttp.NewTokenProvider()
+
 	volumeCfg := &volume.Config{
 		ProxyBaseURL:  cfg.StorageProxyBaseURL,
 		ProxyReplicas: cfg.StorageProxyReplicas,
@@ -69,7 +72,7 @@ func main() {
 		CacheMaxBytes: cfg.CacheMaxBytes,
 		CacheTTL:      cfg.CacheTTL,
 	}
-	volumeManager := volume.NewManager(volumeCfg, logger)
+	volumeManager := volume.NewManager(volumeCfg, tokenProvider, logger)
 
 	fileManager, err := file.NewManager(cfg.RootPath)
 	if err != nil {
@@ -114,6 +117,7 @@ func main() {
 		volumeManager,
 		fileManager,
 		authValidator,
+		tokenProvider,
 		logger,
 	)
 

@@ -52,25 +52,6 @@ syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0x24, 0x2)
 
 ---
 
-## 问题 6: Storage Proxy 与 JuiceFS 元数据耦合
-
-### 严重程度: 低 (架构关注点)
-
-### 问题描述
-当前设计（storage-proxy.md:77-78）：
-```
-PostgreSQL (juicefs metadata + sandboxvolume metadata)
-```
-
-### 潜在问题
-- 业务元数据与 JuiceFS 系统元数据耦合在同一数据库
-- 如果需要将 JuiceFS 迁移到独立的 Redis/MySQL，需要进行数据库拆分
-- JuiceFS 版本升级可能与业务表结构冲突
-
-### 建议缓解方案
-使用 PostgreSQL schema 隔离：`juicefs.*` vs `sandbox0.*`
-
----
 
 ## 问题 7: Snapshot/Restore 性能与限制
 

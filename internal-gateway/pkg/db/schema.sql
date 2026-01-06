@@ -63,27 +63,6 @@ CREATE TABLE IF NOT EXISTS sandboxes (
 CREATE INDEX IF NOT EXISTS idx_sandboxes_team_id ON sandboxes(team_id);
 CREATE INDEX IF NOT EXISTS idx_sandboxes_status ON sandboxes(status);
 
--- Audit Logs table
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id BIGSERIAL PRIMARY KEY,
-    team_id TEXT NOT NULL,
-    user_id TEXT,
-    api_key_id TEXT,
-    request_id TEXT NOT NULL,
-    method TEXT NOT NULL,
-    path TEXT NOT NULL,
-    status_code INTEGER NOT NULL,
-    latency_ms INTEGER,
-    user_agent TEXT,
-    client_ip TEXT,
-    metadata JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_team_id ON audit_logs(team_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_request_id ON audit_logs(request_id);
-
 -- Rate Limits table (for distributed rate limiting)
 CREATE TABLE IF NOT EXISTS rate_limits (
     team_id TEXT NOT NULL,

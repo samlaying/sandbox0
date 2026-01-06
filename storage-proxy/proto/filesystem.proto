@@ -14,12 +14,20 @@ service FileSystem {
   rpc Create(CreateRequest) returns (NodeResponse);
   rpc Mkdir(MkdirRequest) returns (NodeResponse);
   rpc Unlink(UnlinkRequest) returns (Empty);
+  rpc Rmdir(RmdirRequest) returns (Empty);
 
   // Metadata operations
   rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);
   rpc Lookup(LookupRequest) returns (NodeResponse);
   rpc ReadDir(ReadDirRequest) returns (ReadDirResponse);
+  rpc StatFs(StatFsRequest) returns (StatFsResponse);
+  rpc Access(AccessRequest) returns (Empty);
+
+  // Link operations
+  rpc Symlink(SymlinkRequest) returns (NodeResponse);
+  rpc Readlink(ReadlinkRequest) returns (ReadlinkResponse);
+  rpc Link(LinkRequest) returns (NodeResponse);
 
   // Extended operations
   rpc Rename(RenameRequest) returns (Empty);
@@ -173,6 +181,13 @@ message UnlinkRequest {
   string name = 3;       // File name to delete
 }
 
+// Remove directory (delete empty directory)
+message RmdirRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 parent = 2;     // Parent directory inode
+  string name = 3;       // Directory name to delete
+}
+
 // Rename entry
 message RenameRequest {
   string volume_id = 1;  // Volume identifier
@@ -226,6 +241,56 @@ message MountVolumeResponse {
 
 message UnmountVolumeRequest {
   string volume_id = 1;
+}
+
+// Filesystem statistics
+message StatFsRequest {
+  string volume_id = 1;  // Volume identifier
+}
+
+message StatFsResponse {
+  uint64 blocks = 1;      // Total data blocks in filesystem
+  uint64 bfree = 2;       // Free blocks in filesystem
+  uint64 bavail = 3;      // Free blocks available to unprivileged user
+  uint64 files = 4;       // Total file nodes in filesystem
+  uint64 ffree = 5;       // Free file nodes in filesystem
+  uint32 bsize = 6;       // Block size
+  uint32 namelen = 7;     // Maximum filename length
+  uint32 frsize = 8;      // Fragment size
+}
+
+// Symbolic link operations
+message SymlinkRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 parent = 2;     // Parent directory inode
+  string name = 3;       // Link name
+  string target = 4;     // Target path
+}
+
+message ReadlinkRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Symlink inode
+}
+
+message ReadlinkResponse {
+  string target = 1;     // Target path
+}
+
+// Hard link operations
+message LinkRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Existing file inode
+  uint64 new_parent = 3; // New parent directory inode
+  string new_name = 4;   // New link name
+}
+
+// Access check
+message AccessRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Inode to check
+  uint32 mask = 3;       // Access mode mask (R_OK=4, W_OK=2, X_OK=1, F_OK=0)
+  uint32 uid = 4;        // User ID making the request
+  repeated uint32 gids = 5;  // Group IDs of the user
 }
 
 message Empty {}

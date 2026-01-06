@@ -20,6 +20,32 @@ import (
 	"go.uber.org/zap"
 )
 
+// TokenProvider provides internal token for gRPC authentication.
+// It is thread-safe and can be shared between HTTP server and volume manager.
+type TokenProvider struct {
+	mu    sync.RWMutex
+	token string
+}
+
+// NewTokenProvider creates a new token provider.
+func NewTokenProvider() *TokenProvider {
+	return &TokenProvider{}
+}
+
+// GetInternalToken returns the current internal token.
+func (p *TokenProvider) GetInternalToken() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.token
+}
+
+// SetInternalToken sets the internal token.
+func (p *TokenProvider) SetInternalToken(token string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.token = token
+}
+
 // Server is the Procd HTTP server.
 type Server struct {
 	router     *mux.Router
@@ -33,9 +59,8 @@ type Server struct {
 	volumeManager  *volume.Manager
 	fileManager    *file.Manager
 
-	// Internal token for storage-proxy communication
-	internalTokenMu sync.RWMutex
-	internalToken   string
+	// Token provider for storage-proxy communication
+	tokenProvider *TokenProvider
 
 	// Internal auth validator
 	authValidator *internalauth.Validator
@@ -49,6 +74,7 @@ func NewServer(
 	volumeManager *volume.Manager,
 	fileManager *file.Manager,
 	authValidator *internalauth.Validator,
+	tokenProvider *TokenProvider,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
@@ -59,6 +85,7 @@ func NewServer(
 		volumeManager:  volumeManager,
 		fileManager:    fileManager,
 		authValidator:  authValidator,
+		tokenProvider:  tokenProvider,
 		logger:         logger,
 	}
 
@@ -195,9 +222,9 @@ func (s *Server) internalTokenMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		s.internalTokenMu.Lock()
-		s.internalToken = token
-		s.internalTokenMu.Unlock()
+		if s.tokenProvider != nil {
+			s.tokenProvider.SetInternalToken(token)
+		}
 
 		s.logger.Debug("Updated internal token for storage-proxy",
 			zap.String("path", r.URL.Path),
@@ -255,9 +282,10 @@ func (s *Server) extractAuthToken(r *http.Request) string {
 // GetInternalToken returns the current internal token for storage-proxy communication.
 // This method is thread-safe and can be called by gRPC clients.
 func (s *Server) GetInternalToken() string {
-	s.internalTokenMu.RLock()
-	defer s.internalTokenMu.RUnlock()
-	return s.internalToken
+	if s.tokenProvider == nil {
+		return ""
+	}
+	return s.tokenProvider.GetInternalToken()
 }
 
 type responseWriter struct {

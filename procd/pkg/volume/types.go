@@ -29,10 +29,28 @@ var (
 
 // MountRequest represents a request to mount a SandboxVolume.
 type MountRequest struct {
-	SandboxVolumeID string `json:"sandboxvolume_id"`
-	SandboxID       string `json:"sandbox_id"`
-	MountPoint      string `json:"mount_point"`
-	Token           string `json:"token"`
+	SandboxVolumeID string        `json:"sandboxvolume_id"`
+	SandboxID       string        `json:"sandbox_id"`
+	MountPoint      string        `json:"mount_point"`
+	VolumeConfig    *VolumeConfig `json:"volume_config,omitempty"`
+}
+
+// VolumeConfig represents JuiceFS volume configuration.
+type VolumeConfig struct {
+	MetaURL        string `json:"meta_url"`
+	S3Bucket       string `json:"s3_bucket"`
+	S3Prefix       string `json:"s3_prefix"`
+	S3Region       string `json:"s3_region"`
+	S3Endpoint     string `json:"s3_endpoint"`
+	S3AccessKey    string `json:"s3_access_key"`
+	S3SecretKey    string `json:"s3_secret_key"`
+	S3SessionToken string `json:"s3_session_token"`
+	CacheDir       string `json:"cache_dir"`
+	CacheSize      string `json:"cache_size"`
+	Prefetch       int32  `json:"prefetch"`
+	BufferSize     string `json:"buffer_size"`
+	Writeback      bool   `json:"writeback"`
+	ReadOnly       bool   `json:"read_only"`
 }
 
 // MountResponse represents the response for a mount request.
@@ -59,13 +77,13 @@ type MountStatus struct {
 type MountContext struct {
 	SandboxVolumeID string
 	MountPoint      string
-	Token           string
 
-	// FUSE connection (would be *fuse.Conn in real implementation)
-	fuseConnected bool
+	// gRPC connection and client
+	GrpcConn   interface{} // *grpc.ClientConn
+	GrpcClient interface{} // pb.FileSystemClient
 
-	// gRPC client (would be fs.FileSystemClient in real implementation)
-	grpcConnected bool
+	// FUSE server
+	FuseServer interface{} // *fuse.Server
 
 	MountedAt time.Time
 
