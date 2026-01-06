@@ -1,11 +1,10 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"syscall"
-
-	"flag"
 
 	"github.com/fsnotify/fsnotify"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"

@@ -36,16 +36,15 @@ fmt:
 # Clean build artifacts
 clean:
 	rm -rf bin/
-	rm -rf vendor/
 
 # Download dependencies
 deps:
-	$(GOMOD) download
-	$(GOMOD) tidy
+	cd .. && go mod download
+	cd .. && go mod tidy
 
 # Vendor dependencies
 vendor:
-	$(GOMOD) vendor
+	cd .. && go mod vendor
 
 # Build Docker image
 docker-build:

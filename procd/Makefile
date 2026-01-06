@@ -33,7 +33,6 @@ build-linux:
 clean:
 	@echo "Cleaning..."
 	@rm -rf bin/
-	@rm -rf vendor/
 
 # Run tests
 test:
@@ -62,13 +61,13 @@ fmt:
 
 # Tidy go modules
 tidy:
-	@echo "Tidying go modules..."
-	go mod tidy
+	@echo "Tidying go modules from root..."
+	cd .. && go mod tidy
 
 # Vendor dependencies
 vendor:
-	@echo "Vendoring dependencies..."
-	go mod vendor
+	@echo "Vendoring dependencies from root..."
+	cd .. && go mod vendor
 
 # Generate mocks (if needed)
 generate:
