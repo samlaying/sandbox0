@@ -75,26 +75,11 @@ func (a *GRPCAuthenticator) authenticate(ctx context.Context) (*internalauth.Cla
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
 	}
 
-	// Try multiple header names for flexibility
-	// 1. Authorization: Bearer <token>
-	// 2. x-internal-token: <token>
 	var tokenString string
-
-	// Check Authorization header
-	if authHeaders := md["authorization"]; len(authHeaders) > 0 {
-		auth := authHeaders[0]
-		if strings.HasPrefix(auth, "Bearer ") {
-			tokenString = strings.TrimPrefix(auth, "Bearer ")
-		}
+	// Check x-internal-token header
+	if tokenHeaders := md["x-internal-token"]; len(tokenHeaders) > 0 {
+		tokenString = tokenHeaders[0]
 	}
-
-	// Check x-internal-token header if Authorization not found
-	if tokenString == "" {
-		if tokenHeaders := md["x-internal-token"]; len(tokenHeaders) > 0 {
-			tokenString = tokenHeaders[0]
-		}
-	}
-
 	if tokenString == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authentication token")
 	}

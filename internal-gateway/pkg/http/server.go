@@ -140,19 +140,17 @@ func (s *Server) setupRoutes() {
 			templates.POST("/:id/pool/warm", s.authMiddleware.RequirePermission(auth.PermTemplateWrite), s.warmPool)
 		}
 
-		//// === SandboxVolume Management (→ Storage Proxy, with coordination) ===
+		//// === SandboxVolume Management (→ Storage Proxy) ===
 		//sandboxvolumes := v1.Group("/sandboxvolumes")
 		//{
 		//	sandboxvolumes.POST("", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeCreate), s.createSandboxVolume)
 		//	sandboxvolumes.GET("", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeRead), s.listSandboxVolumes)
 		//	sandboxvolumes.GET("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeRead), s.getSandboxVolume)
 		//	sandboxvolumes.DELETE("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeDelete), s.deleteSandboxVolume)
-		//	// Attach/Detach use coordination service
-		//	sandboxvolumes.POST("/:id/attach", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.attachSandboxVolume)
-		//	sandboxvolumes.POST("/:id/detach", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.detachSandboxVolume)
 		//	// Snapshot/Restore (→ Storage Proxy)
-		//	sandboxvolumes.POST("/:id/snapshot", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.createSnapshot)
-		//	sandboxvolumes.POST("/:id/restore", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.restoreSnapshot)
+		//	sandboxvolumes.POST("/:id/snapshot", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.createSandboxVolumeSnapshot)
+		//	sandboxvolumes.POST("/:id/restore", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.restoreSandboxVolumeSnapshot)
+		//  sandboxvolumes.POST("/:id/clone", s.authMiddleware.RequirePermission(auth.PermSandboxVolumeWrite), s.cloneSandboxVolume)
 		//}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	httpserver "github.com/sandbox0-ai/infra/manager/pkg/http"
 	"github.com/sandbox0-ai/infra/manager/pkg/service"
 	"github.com/sandbox0-ai/infra/pkg/env"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -109,9 +110,28 @@ func main() {
 		cfg.CleanupInterval,
 	)
 
+	// Initialize internal auth validator
+	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(cfg.InternalAuthPublicKeyPath)
+	if err != nil {
+		logger.Fatal("Failed to load internal auth public key",
+			zap.String("path", cfg.InternalAuthPublicKeyPath),
+			zap.Error(err),
+		)
+	}
+
+	validatorConfig := internalauth.DefaultValidatorConfig("manager", publicKey)
+	validatorConfig.AllowedCallers = []string{"internal-gateway"}
+	authValidator := internalauth.NewValidator(validatorConfig)
+
+	logger.Info("Internal authentication enabled",
+		zap.String("target", "manager"),
+		zap.Strings("allowed_callers", validatorConfig.AllowedCallers),
+	)
+
 	// Create HTTP server
 	httpServer := httpserver.NewServer(
 		sandboxService,
+		authValidator,
 		logger,
 		cfg.HTTPPort,
 	)

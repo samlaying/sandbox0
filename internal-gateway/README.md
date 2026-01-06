@@ -8,7 +8,6 @@ Internal Gateway is the unified entry point for sandbox0, responsible for authen
 - **Authorization**: Role-based access control (RBAC)
 - **Rate Limiting**: Per-team rate limiting with token bucket algorithm
 - **Request Routing**: Routes requests to Manager, Procd, or Storage Proxy
-- **SandboxVolume Coordination**: Orchestrates attach/detach operations between Storage Proxy and Procd
 - **Audit Logging**: Full request audit trail to PostgreSQL
 - **Metrics**: Prometheus metrics for monitoring
 - **Health Checks**: Kubernetes-compatible health endpoints
@@ -29,50 +28,6 @@ Internal Gateway is the unified entry point for sandbox0, responsible for authen
 │  (Port 8080)  │               │  (Dynamic)    │               │  (Port 8081)  │
 └───────────────┘               └───────────────┘               └───────────────┘
 ```
-
-## API Routes
-
-### Sandbox Management (→ Manager)
-- `POST /api/v1/sandboxes` - Create sandbox
-- `GET /api/v1/sandboxes` - List sandboxes
-- `GET /api/v1/sandboxes/{id}` - Get sandbox
-- `DELETE /api/v1/sandboxes/{id}` - Delete sandbox
-
-### Process/Context Management (→ Procd)
-- `POST /api/v1/sandboxes/{id}/contexts` - Create context
-- `POST /api/v1/sandboxes/{id}/contexts/{ctx_id}/execute` - Execute code
-- `WS /api/v1/sandboxes/{id}/contexts/{ctx_id}/ws` - WebSocket connection
-
-### File System (→ Procd)
-- `GET /api/v1/sandboxes/{id}/files/*` - Read file/directory
-- `POST /api/v1/sandboxes/{id}/files/*` - Write file/create directory
-- `DELETE /api/v1/sandboxes/{id}/files/*` - Delete file/directory
-
-### Template Management (→ Manager)
-- `GET /api/v1/templates` - List templates
-- `POST /api/v1/templates` - Create template
-
-### SandboxVolume Management (→ Storage Proxy + Procd)
-- `POST /api/v1/sandboxvolumes` - Create volume
-- `POST /api/v1/sandboxvolumes/{id}/attach` - Attach to sandbox (coordinated)
-- `POST /api/v1/sandboxvolumes/{id}/detach` - Detach from sandbox (coordinated)
-- `POST /api/v1/sandboxvolumes/{id}/snapshot` - Create snapshot
-- `POST /api/v1/sandboxvolumes/{id}/restore` - Restore from snapshot
-
-## Configuration
-
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `GATEWAY_HTTP_PORT` | HTTP server port | 8443 |
-| `GATEWAY_LOG_LEVEL` | Log level (debug/info/warn/error) | info |
-| `DATABASE_URL` | PostgreSQL connection string | required |
-| `MANAGER_URL` | Manager service URL | http://manager:8080 |
-| `STORAGE_PROXY_URL` | Storage Proxy service URL | http://storage-proxy:8081 |
-| `JWT_SECRET` | JWT signing secret | required for JWT auth |
-| `RATE_LIMIT_RPS` | Requests per second per team | 100 |
-| `RATE_LIMIT_BURST` | Burst size per team | 200 |
-| `ENABLE_METRICS` | Enable Prometheus metrics | true |
-| `ENABLE_AUDIT` | Enable audit logging | true |
 
 ## Building
 

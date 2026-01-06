@@ -2,12 +2,9 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 	"syscall"
 	"time"
 
-	"github.com/sandbox0-ai/infra/pkg/internalauth"
-	"github.com/sandbox0-ai/infra/storage-proxy/pkg/audit"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/volume"
 	pb "github.com/sandbox0-ai/infra/storage-proxy/proto/fs"
 	"github.com/sirupsen/logrus"
@@ -22,30 +19,28 @@ import (
 type FileSystemServer struct {
 	pb.UnimplementedFileSystemServer
 
-	volMgr  *volume.Manager
-	auditor *audit.Logger
-	logger  *logrus.Logger
+	volMgr *volume.Manager
+	logger *logrus.Logger
 }
 
 // NewFileSystemServer creates a new file system server
-func NewFileSystemServer(volMgr *volume.Manager, auditor *audit.Logger, logger *logrus.Logger) *FileSystemServer {
+func NewFileSystemServer(volMgr *volume.Manager, logger *logrus.Logger) *FileSystemServer {
 	return &FileSystemServer{
-		volMgr:  volMgr,
-		auditor: auditor,
-		logger:  logger,
+		volMgr: volMgr,
+		logger: logger,
 	}
 }
 
-// getAuditInfo extracts audit information from context claims
-// In internalauth, UserID represents the sandbox ID making the request
-func getAuditInfo(ctx context.Context) (sandboxID, teamID string) {
-	claims := internalauth.ClaimsFromContext(ctx)
-	if claims == nil {
-		return "", ""
-	}
-	// In storage-proxy context, UserID represents the SandboxID
-	return claims.UserID, claims.TeamID
-}
+// // getAuditInfo extracts audit information from context claims
+// // In internalauth, UserID represents the sandbox ID making the request
+// func getAuditInfo(ctx context.Context) (sandboxID, teamID string) {
+// 	claims := internalauth.ClaimsFromContext(ctx)
+// 	if claims == nil {
+// 		return "", ""
+// 	}
+// 	// In storage-proxy context, UserID represents the SandboxID
+// 	return claims.UserID, claims.TeamID
+// }
 
 // MountVolume mounts a volume
 func (s *FileSystemServer) MountVolume(ctx context.Context, req *pb.MountVolumeRequest) (*pb.MountVolumeResponse, error) {
@@ -91,8 +86,6 @@ func (s *FileSystemServer) UnmountVolume(ctx context.Context, req *pb.UnmountVol
 
 // GetAttr implements FUSE getattr
 func (s *FileSystemServer) GetAttr(ctx context.Context, req *pb.GetAttrRequest) (*pb.GetAttrResponse, error) {
-	// Extract audit info from context
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	// Get volume context
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
@@ -114,24 +107,11 @@ func (s *FileSystemServer) GetAttr(ctx context.Context, req *pb.GetAttrRequest) 
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	// Audit log
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "getattr",
-			Inode:     uint64(inode),
-			Status:    "success",
-		})
-	}
-
 	return convertAttr(&attr), nil
 }
 
 // Lookup implements FUSE lookup
 func (s *FileSystemServer) Lookup(ctx context.Context, req *pb.LookupRequest) (*pb.NodeResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -151,18 +131,6 @@ func (s *FileSystemServer) Lookup(ctx context.Context, req *pb.LookupRequest) (*
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "lookup",
-			Inode:     uint64(parent),
-			Path:      req.Name,
-			Status:    "success",
-		})
-	}
-
 	return &pb.NodeResponse{
 		Inode:      uint64(inode),
 		Generation: 0,
@@ -172,7 +140,6 @@ func (s *FileSystemServer) Lookup(ctx context.Context, req *pb.LookupRequest) (*
 
 // Open implements FUSE open using JuiceFS VFS layer
 func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.OpenResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -185,7 +152,7 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 	vfsCtx := vfs.NewLogContext(meta.Background())
 
 	// VFS.Open returns (Entry, handleID, errno)
-	entry, handleID, errno := volCtx.VFS.Open(vfsCtx, inode, req.Flags)
+	_, handleID, errno := volCtx.VFS.Open(vfsCtx, inode, req.Flags)
 	if errno != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
@@ -196,17 +163,6 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "open",
-			Inode:     uint64(entry.Inode),
-			Status:    "success",
-		})
-	}
-
 	return &pb.OpenResponse{
 		HandleId: handleID,
 	}, nil
@@ -214,8 +170,6 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 
 // Read implements FUSE read using JuiceFS VFS layer
 func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.ReadResponse, error) {
-	startTime := time.Now()
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -240,18 +194,6 @@ func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.R
 			"error":     errno,
 		}).Error("Read failed")
 
-		if sandboxID != "" {
-			s.auditor.Log(ctx, audit.Event{
-				VolumeID:  req.VolumeId,
-				SandboxID: sandboxID,
-				TeamID:    teamID,
-				Operation: "read",
-				Inode:     req.Inode,
-				Size:      0,
-				Latency:   time.Since(startTime),
-				Status:    "error",
-			})
-		}
 		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
 	}
 
@@ -262,20 +204,6 @@ func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.R
 		buf = buf[:n]
 	}
 
-	// Audit log
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "read",
-			Inode:     req.Inode,
-			Size:      int64(n),
-			Latency:   time.Since(startTime),
-			Status:    "success",
-		})
-	}
-
 	return &pb.ReadResponse{
 		Data: buf,
 		Eof:  eof,
@@ -284,8 +212,6 @@ func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.R
 
 // Write implements FUSE write using JuiceFS VFS layer
 func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb.WriteResponse, error) {
-	startTime := time.Now()
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -307,33 +233,7 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 			"error":     errno,
 		}).Error("Write failed")
 
-		if sandboxID != "" {
-			s.auditor.Log(ctx, audit.Event{
-				VolumeID:  req.VolumeId,
-				SandboxID: sandboxID,
-				TeamID:    teamID,
-				Operation: "write",
-				Inode:     req.Inode,
-				Size:      0,
-				Latency:   time.Since(startTime),
-				Status:    "error",
-			})
-		}
 		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
-	}
-
-	// Audit log
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "write",
-			Inode:     req.Inode,
-			Size:      int64(len(req.Data)),
-			Latency:   time.Since(startTime),
-			Status:    "success",
-		})
 	}
 
 	return &pb.WriteResponse{
@@ -343,7 +243,6 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 
 // Create implements FUSE create using JuiceFS VFS layer
 func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*pb.NodeResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -367,18 +266,6 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "create",
-			Inode:     uint64(parent),
-			Path:      req.Name,
-			Status:    "success",
-		})
-	}
-
 	return &pb.NodeResponse{
 		Inode:      uint64(entry.Inode),
 		Generation: 0,
@@ -389,7 +276,6 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 
 // Mkdir implements FUSE mkdir
 func (s *FileSystemServer) Mkdir(ctx context.Context, req *pb.MkdirRequest) (*pb.NodeResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -407,18 +293,6 @@ func (s *FileSystemServer) Mkdir(ctx context.Context, req *pb.MkdirRequest) (*pb
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "mkdir",
-			Inode:     uint64(parent),
-			Path:      req.Name,
-			Status:    "success",
-		})
-	}
-
 	return &pb.NodeResponse{
 		Inode:      uint64(inode),
 		Generation: 0,
@@ -428,7 +302,6 @@ func (s *FileSystemServer) Mkdir(ctx context.Context, req *pb.MkdirRequest) (*pb
 
 // Unlink implements FUSE unlink
 func (s *FileSystemServer) Unlink(ctx context.Context, req *pb.UnlinkRequest) (*pb.Empty, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -443,24 +316,11 @@ func (s *FileSystemServer) Unlink(ctx context.Context, req *pb.UnlinkRequest) (*
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "unlink",
-			Inode:     uint64(parent),
-			Path:      req.Name,
-			Status:    "success",
-		})
-	}
-
 	return &pb.Empty{}, nil
 }
 
 // ReadDir implements FUSE readdir
 func (s *FileSystemServer) ReadDir(ctx context.Context, req *pb.ReadDirRequest) (*pb.ReadDirResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -488,17 +348,6 @@ func (s *FileSystemServer) ReadDir(ctx context.Context, req *pb.ReadDirRequest) 
 		})
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "readdir",
-			Inode:     uint64(inode),
-			Status:    "success",
-		})
-	}
-
 	return &pb.ReadDirResponse{
 		Entries: result,
 		Eof:     false,
@@ -507,7 +356,6 @@ func (s *FileSystemServer) ReadDir(ctx context.Context, req *pb.ReadDirRequest) 
 
 // Rename implements FUSE rename
 func (s *FileSystemServer) Rename(ctx context.Context, req *pb.RenameRequest) (*pb.Empty, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -526,24 +374,11 @@ func (s *FileSystemServer) Rename(ctx context.Context, req *pb.RenameRequest) (*
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "rename",
-			Inode:     uint64(oldParent),
-			Path:      fmt.Sprintf("%s -> %s", req.OldName, req.NewName),
-			Status:    "success",
-		})
-	}
-
 	return &pb.Empty{}, nil
 }
 
 // SetAttr implements FUSE setattr
 func (s *FileSystemServer) SetAttr(ctx context.Context, req *pb.SetAttrRequest) (*pb.SetAttrResponse, error) {
-	sandboxID, teamID := getAuditInfo(ctx)
 
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
 	if err != nil {
@@ -558,17 +393,6 @@ func (s *FileSystemServer) SetAttr(ctx context.Context, req *pb.SetAttrRequest) 
 	st := volCtx.Meta.SetAttr(vfsCtx, inode, uint16(req.Valid), 0, &attr)
 	if st != 0 {
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
-	}
-
-	if sandboxID != "" {
-		s.auditor.Log(ctx, audit.Event{
-			VolumeID:  req.VolumeId,
-			SandboxID: sandboxID,
-			TeamID:    teamID,
-			Operation: "setattr",
-			Inode:     uint64(inode),
-			Status:    "success",
-		})
 	}
 
 	return &pb.SetAttrResponse{

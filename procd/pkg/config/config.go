@@ -34,6 +34,9 @@ type Config struct {
 	// Cache configuration
 	CacheMaxBytes int64
 	CacheTTL      time.Duration
+
+	// Internal auth configuration
+	InternalAuthPublicKeyPath string
 }
 
 // NetworkConfig holds network isolation configuration.
@@ -81,6 +84,8 @@ func DefaultConfig() *Config {
 
 		CacheMaxBytes: int64(env.GetEnvInt("CACHE_MAX_BYTES", 100*1024*1024)),
 		CacheTTL:      time.Duration(env.GetEnvInt("CACHE_TTL_SECONDS", 30)) * time.Second,
+
+		InternalAuthPublicKeyPath: env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY_PATH", "/config/internal_jwt_public.key"),
 	}
 }
 

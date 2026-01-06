@@ -22,7 +22,6 @@ type Config struct {
 	DefaultCacheDir   string
 
 	// Security
-	JWTSecret        string // Deprecated: Use InternalAuthPublicKey instead
 	InternalAuthPublicKey string // Ed25519 public key for internal auth (base64 encoded)
 
 	// Cache
@@ -57,7 +56,6 @@ func LoadFromEnv() *Config {
 		DefaultCacheSize:  env.GetEnv("DEFAULT_CACHE_SIZE", "1G"),
 		DefaultCacheDir:   env.GetEnv("DEFAULT_CACHE_DIR", "/var/lib/storage-proxy/cache"),
 
-		JWTSecret:             env.GetEnv("JWT_SECRET", ""),
 		InternalAuthPublicKey: env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY", ""),
 
 		CacheRoot: env.GetEnv("CACHE_ROOT", "/var/lib/storage-proxy/cache"),
@@ -77,7 +75,7 @@ func LoadFromEnv() *Config {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	// Require either new internal auth or legacy JWT secret
-	if c.InternalAuthPublicKey == "" && c.JWTSecret == "" {
+	if c.InternalAuthPublicKey == "" {
 		return ErrMissingAuthConfig
 	}
 	return nil
@@ -85,8 +83,7 @@ func (c *Config) Validate() error {
 
 // Errors
 var (
-	ErrMissingJWTSecret  = &ConfigError{"JWT_SECRET is required"}                                        // Deprecated
-	ErrMissingAuthConfig = &ConfigError{"INTERNAL_AUTH_PUBLIC_KEY or JWT_SECRET (legacy) is required"}
+	ErrMissingAuthConfig = &ConfigError{"INTERNAL_AUTH_PUBLIC_KEY is required"}
 )
 
 // ConfigError represents a configuration error

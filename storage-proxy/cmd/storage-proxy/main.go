@@ -14,7 +14,6 @@ import (
 
 	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
-	"github.com/sandbox0-ai/infra/storage-proxy/pkg/audit"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/auth"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/config"
 	grpcserver "github.com/sandbox0-ai/infra/storage-proxy/pkg/grpc"
@@ -74,18 +73,6 @@ func main() {
 	// Create volume manager
 	volMgr := volume.NewManager(logrusLogger)
 
-	// Create audit logger
-	var auditor *audit.Logger
-	if cfg.AuditLog {
-		auditor, err = audit.NewLogger(cfg.AuditFile, logrusLogger)
-		if err != nil {
-			logrusLogger.WithError(err).Fatal("Failed to create audit logger")
-		}
-		defer auditor.Close()
-	} else {
-		auditor, _ = audit.NewLogger("", logrusLogger)
-	}
-
 	// Create authenticator based on config
 	var grpcInterceptor grpc.UnaryServerInterceptor
 
@@ -128,7 +115,7 @@ func main() {
 	)
 
 	// Register FileSystem service
-	fsServer := grpcserver.NewFileSystemServer(volMgr, auditor, logrusLogger)
+	fsServer := grpcserver.NewFileSystemServer(volMgr, logrusLogger)
 	pb.RegisterFileSystemServer(grpcServer, fsServer)
 
 	// Register health service

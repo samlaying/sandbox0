@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/pkg/env"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/procd/pkg/config"
 	ctxpkg "github.com/sandbox0-ai/infra/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/procd/pkg/file"
@@ -75,6 +76,24 @@ func main() {
 		logger.Fatal("Failed to create file manager", zap.Error(err))
 	}
 
+	// Initialize internal auth validator
+	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(cfg.InternalAuthPublicKeyPath)
+	if err != nil {
+		logger.Fatal("Failed to load internal auth public key",
+			zap.String("path", cfg.InternalAuthPublicKeyPath),
+			zap.Error(err),
+		)
+	}
+
+	validatorConfig := internalauth.DefaultValidatorConfig("procd", publicKey)
+	validatorConfig.AllowedCallers = []string{"internal-gateway", "manager"}
+	authValidator := internalauth.NewValidator(validatorConfig)
+
+	logger.Info("Internal authentication enabled",
+		zap.String("target", "procd"),
+		zap.Strings("allowed_callers", validatorConfig.AllowedCallers),
+	)
+
 	// Setup network
 	if err := networkManager.Setup(); err != nil {
 		logger.Fatal("Failed to setup network", zap.Error(err))
@@ -94,6 +113,7 @@ func main() {
 		networkManager,
 		volumeManager,
 		fileManager,
+		authValidator,
 		logger,
 	)
 

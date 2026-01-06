@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/manager/pkg/service"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 )
 
@@ -14,6 +16,7 @@ import (
 type Server struct {
 	router         *gin.Engine
 	sandboxService *service.SandboxService
+	authValidator  *internalauth.Validator
 	logger         *zap.Logger
 	port           int
 }
@@ -21,6 +24,7 @@ type Server struct {
 // NewServer creates a new HTTP server
 func NewServer(
 	sandboxService *service.SandboxService,
+	authValidator *internalauth.Validator,
 	logger *zap.Logger,
 	port int,
 ) *Server {
@@ -34,6 +38,7 @@ func NewServer(
 	server := &Server{
 		router:         router,
 		sandboxService: sandboxService,
+		authValidator:  authValidator,
 		logger:         logger,
 		port:           port,
 	}
@@ -45,12 +50,13 @@ func NewServer(
 
 // setupRoutes sets up the HTTP routes
 func (s *Server) setupRoutes() {
-	// Health check
+	// Health check (no auth required)
 	s.router.GET("/healthz", s.healthCheck)
 	s.router.GET("/readyz", s.readinessCheck)
 
-	// API v1
+	// API v1 (requires auth)
 	v1 := s.router.Group("/api/v1")
+	v1.Use(s.authMiddleware())
 	{
 		// Sandbox management
 		sandboxes := v1.Group("/sandboxes")
@@ -222,4 +228,68 @@ func requestLogger(logger *zap.Logger) gin.HandlerFunc {
 			zap.String("client_ip", c.ClientIP()),
 		)
 	}
+}
+
+// authMiddleware validates internal authentication tokens
+func (s *Server) authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Extract token from multiple possible headers
+		token := s.extractAuthToken(c.Request)
+		if token == "" {
+			s.logger.Warn("Missing authentication token",
+				zap.String("path", c.Request.URL.Path),
+				zap.String("method", c.Request.Method),
+			)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "missing authentication token",
+			})
+			c.Abort()
+			return
+		}
+
+		// Validate token
+		claims, err := s.authValidator.Validate(token)
+		if err != nil {
+			s.logger.Warn("Authentication failed",
+				zap.String("path", c.Request.URL.Path),
+				zap.String("method", c.Request.Method),
+				zap.Error(err),
+			)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": fmt.Sprintf("unauthorized: %v", err),
+			})
+			c.Abort()
+			return
+		}
+
+		// Add claims to request context for handlers
+		ctx := internalauth.WithClaims(c.Request.Context(), claims)
+		c.Request = c.Request.WithContext(ctx)
+
+		s.logger.Debug("Request authenticated",
+			zap.String("path", c.Request.URL.Path),
+			zap.String("team_id", claims.TeamID),
+			zap.String("caller", claims.Caller),
+		)
+
+		c.Next()
+	}
+}
+
+// extractAuthToken extracts authentication token from request headers
+// Supports both X-Internal-Token and Authorization: Bearer <token>
+func (s *Server) extractAuthToken(r *http.Request) string {
+	// Try X-Internal-Token header first
+	if token := r.Header.Get("X-Internal-Token"); token != "" {
+		return token
+	}
+
+	// Try Authorization header with Bearer prefix
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		if strings.HasPrefix(auth, "Bearer ") {
+			return strings.TrimPrefix(auth, "Bearer ")
+		}
+	}
+
+	return ""
 }

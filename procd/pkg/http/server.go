@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/procd/pkg/config"
 	ctxpkg "github.com/sandbox0-ai/infra/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/procd/pkg/file"
@@ -30,6 +32,13 @@ type Server struct {
 	networkManager *network.Manager
 	volumeManager  *volume.Manager
 	fileManager    *file.Manager
+
+	// Internal token for storage-proxy communication
+	internalTokenMu sync.RWMutex
+	internalToken   string
+
+	// Internal auth validator
+	authValidator *internalauth.Validator
 }
 
 // NewServer creates a new HTTP server.
@@ -39,6 +48,7 @@ func NewServer(
 	networkManager *network.Manager,
 	volumeManager *volume.Manager,
 	fileManager *file.Manager,
+	authValidator *internalauth.Validator,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
@@ -48,6 +58,7 @@ func NewServer(
 		networkManager: networkManager,
 		volumeManager:  volumeManager,
 		fileManager:    fileManager,
+		authValidator:  authValidator,
 		logger:         logger,
 	}
 
@@ -56,16 +67,20 @@ func NewServer(
 }
 
 func (s *Server) setupRoutes() {
-	// Middleware
+	// Global middleware (applied to all routes)
 	s.router.Use(s.loggingMiddleware)
 	s.router.Use(s.recoveryMiddleware)
 
-	// Health check
+	// Health check endpoints (no auth required)
 	s.router.HandleFunc("/healthz", s.healthHandler).Methods("GET")
 	s.router.HandleFunc("/readyz", s.readyHandler).Methods("GET")
 
-	// API v1
+	// API v1 (auth required if enabled)
 	api := s.router.PathPrefix("/api/v1").Subrouter()
+
+	// Apply auth middleware to all API routes
+	api.Use(s.authMiddleware)
+	api.Use(s.internalTokenMiddleware)
 
 	// Context/Process handlers
 	contextHandler := handlers.NewContextHandler(s.contextManager, s.logger)
@@ -164,6 +179,85 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// internalTokenMiddleware extracts and stores the internal token from request headers.
+// This token is used for authenticating requests to storage-proxy gRPC service.
+func (s *Server) internalTokenMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract token from x-internaltoken2storageproxy header
+		token := r.Header.Get("x-internaltoken2storageproxy")
+		if token == "" {
+			s.logger.Warn("Missing internal token",
+				zap.String("path", r.URL.Path),
+			)
+			http.Error(w, "missing internal token", http.StatusUnauthorized)
+			return
+		}
+
+		s.internalTokenMu.Lock()
+		s.internalToken = token
+		s.internalTokenMu.Unlock()
+
+		s.logger.Debug("Updated internal token for storage-proxy",
+			zap.String("path", r.URL.Path),
+		)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// authMiddleware validates incoming requests using internalauth.
+// This middleware should only be applied to API routes, not health checks.
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract token from multiple possible headers
+		token := s.extractAuthToken(r)
+		if token == "" {
+			s.logger.Warn("Missing authentication token",
+				zap.String("path", r.URL.Path),
+				zap.String("method", r.Method),
+			)
+			http.Error(w, "missing authentication token", http.StatusUnauthorized)
+			return
+		}
+
+		// Validate token
+		claims, err := s.authValidator.Validate(token)
+		if err != nil {
+			s.logger.Warn("Authentication failed",
+				zap.String("path", r.URL.Path),
+				zap.String("method", r.Method),
+				zap.Error(err),
+			)
+			http.Error(w, fmt.Sprintf("unauthorized: %v", err), http.StatusUnauthorized)
+			return
+		}
+
+		// Add claims to request context for handlers
+		r = r.WithContext(internalauth.WithClaims(r.Context(), claims))
+
+		s.logger.Debug("Request authenticated",
+			zap.String("path", r.URL.Path),
+			zap.String("team_id", claims.TeamID),
+			zap.String("caller", claims.Caller),
+		)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// extractAuthToken extracts authentication token from request headers.
+func (s *Server) extractAuthToken(r *http.Request) string {
+	return r.Header.Get("X-Internal-Token")
+}
+
+// GetInternalToken returns the current internal token for storage-proxy communication.
+// This method is thread-safe and can be called by gRPC clients.
+func (s *Server) GetInternalToken() string {
+	s.internalTokenMu.RLock()
+	defer s.internalTokenMu.RUnlock()
+	return s.internalToken
 }
 
 type responseWriter struct {

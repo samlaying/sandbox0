@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,17 +11,15 @@ import (
 
 // RequestLogger provides request logging middleware
 type RequestLogger struct {
-	repo        *db.Repository
-	logger      *zap.Logger
-	enableAudit bool
+	repo   *db.Repository
+	logger *zap.Logger
 }
 
 // NewRequestLogger creates a new request logger
 func NewRequestLogger(repo *db.Repository, logger *zap.Logger, enableAudit bool) *RequestLogger {
 	return &RequestLogger{
-		repo:        repo,
-		logger:      logger,
-		enableAudit: enableAudit,
+		repo:   repo,
+		logger: logger,
 	}
 }
 
@@ -80,54 +77,7 @@ func (rl *RequestLogger) Logger() gin.HandlerFunc {
 			rl.logger.Info("HTTP request", fields...)
 		}
 
-		// Write audit log if enabled
-		if rl.enableAudit && authCtx != nil && rl.repo != nil {
-			authLite := &AuthContextLite{
-				TeamID:   authCtx.TeamID,
-				UserID:   authCtx.UserID,
-				APIKeyID: authCtx.APIKeyID,
-			}
-			go rl.writeAuditLog(c, requestID, authLite, latency)
-		}
 	}
-}
-
-// writeAuditLog writes an audit log entry to the database
-func (rl *RequestLogger) writeAuditLog(c *gin.Context, requestID string, authCtx *AuthContextLite, latency time.Duration) {
-	// Create metadata
-	metadata := map[string]interface{}{
-		"query_params": c.Request.URL.RawQuery,
-	}
-
-	metadataJSON, _ := json.Marshal(metadata)
-
-	auditLog := &db.AuditLog{
-		TeamID:     authCtx.TeamID,
-		UserID:     authCtx.UserID,
-		APIKeyID:   authCtx.APIKeyID,
-		RequestID:  requestID,
-		Method:     c.Request.Method,
-		Path:       c.Request.URL.Path,
-		StatusCode: c.Writer.Status(),
-		LatencyMs:  int(latency.Milliseconds()),
-		UserAgent:  c.Request.UserAgent(),
-		ClientIP:   c.ClientIP(),
-		Metadata:   metadataJSON,
-	}
-
-	if err := rl.repo.CreateAuditLog(c.Request.Context(), auditLog); err != nil {
-		rl.logger.Error("Failed to write audit log",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-		)
-	}
-}
-
-// AuthContextLite is a lightweight version of AuthContext for logging
-type AuthContextLite struct {
-	TeamID   string
-	UserID   string
-	APIKeyID string
 }
 
 // GetRequestID extracts request ID from gin context

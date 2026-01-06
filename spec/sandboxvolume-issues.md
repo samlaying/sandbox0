@@ -4,61 +4,6 @@
 
 ---
 
-## 问题 1: Token 过期与刷新机制
-
-### 严重程度: 高
-
-### 问题描述
-spec 中提到 "Token expires and auto-refreshes"，但存在以下问题：
-- Token 存储在 `MountContext.Token` 的内存中
-- FUSE mount 是长期运行的（数小时到数天）
-- JWT token 不可避免会过期
-
-### 当前设计
-```go
-type MountContext struct {
-    Token             string  // JWT auth token (in-memory only)
-    grpcClient         fs.FileSystemClient
-    fuseConn           *fuse.Conn
-    ...
-}
-```
-
-### 建议方案
-- **方案 A**: 短期 Token + 定期刷新（需要 token refresh API）
-- **方案 B**: 长期 Token（无 `exp` 或设置很长的过期时间）
-- **方案 C**: gRPC auth error 时触发 re-attach 流程获取新 token
-
-### 需要澄清
-应该采用哪种方案？Procd 在 FUSE 操作过程中如何处理 token 过期？
-
----
-
-## 问题 2: Attach/Detach 状态一致性
-
-### 严重程度: 高
-
-### 问题描述
-Storage Proxy 记录的 attach 状态与 Procd 实际挂载状态可能不一致。
-
-### 故障场景
-```
-1. Internal Gateway → Storage Proxy attach ✓ (token generated)
-2. Internal Gateway → Procd mount ✗ (network failure / Procd crash)
-   结果: Storage Proxy 认为已 attached，Procd 实际未挂载
-```
-
-### 当前设计
-attach/detach 流程（storage-proxy.md:207-253, internal-gateway.md:234-290）缺少：
-- 原子性保证
-- 部分失败时的回滚机制
-
-### 需要的解决方案
-- Internal Gateway 必须在 Procd mount 失败时调用 Storage Proxy detach
-- 或者通过 health check 实现最终一致性
-
----
-
 ## 问题 3: Procd 重启后挂载状态丢失
 
 ### 严重程度: 中
@@ -154,8 +99,6 @@ PostgreSQL (juicefs metadata + sandboxvolume metadata)
 
 ### 整体评估
 架构设计是**合理且清晰的**，主要关注点在于：
-1. **错误处理与状态一致性**（token 过期、attach 失败回滚）
-2. **边界情况处理**（Procd 重启、restore cache 失效）
-3. **性能优化**（Procd本地读缓存、Node亲和性路由）
+1. **性能优化**（Procd本地读缓存、Node亲和性路由）
 
 这些问题应在实现前予以澄清。
