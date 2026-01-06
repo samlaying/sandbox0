@@ -16,7 +16,6 @@ spec 中提到 "Token expires and auto-refreshes"，但存在以下问题：
 
 ### 当前设计
 ```go
-// From client-sandboxvolume.md:88-101
 type MountContext struct {
     Token             string  // JWT auth token (in-memory only)
     grpcClient         fs.FileSystemClient
