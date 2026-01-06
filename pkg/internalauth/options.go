@@ -1,6 +1,7 @@
 package internalauth
 
 import (
+	"crypto/ed25519"
 	"time"
 )
 
@@ -10,9 +11,9 @@ type GeneratorConfig struct {
 	// Example: "internal-gateway", "manager", "procd"
 	Caller string
 
-	// Secret is the shared JWT secret used for signing tokens.
-	// Must be the same across all services.
-	Secret []byte
+	// PrivateKey is the Ed25519 private key used for signing tokens.
+	// Required.
+	PrivateKey ed25519.PrivateKey
 
 	// TTL is the token time-to-live.
 	// Default: 30 seconds.
@@ -24,11 +25,11 @@ type GeneratorConfig struct {
 }
 
 // DefaultGeneratorConfig returns a GeneratorConfig with sensible defaults.
-func DefaultGeneratorConfig(caller string, secret []byte) GeneratorConfig {
+func DefaultGeneratorConfig(caller string, privateKey ed25519.PrivateKey) GeneratorConfig {
 	return GeneratorConfig{
-		Caller: caller,
-		Secret: secret,
-		TTL:    30 * time.Second,
+		Caller:     caller,
+		PrivateKey: privateKey,
+		TTL:        30 * time.Second,
 	}
 }
 
@@ -38,9 +39,9 @@ type ValidatorConfig struct {
 	// Tokens must have aud == Target to be valid.
 	Target string
 
-	// Secret is the shared JWT secret used for verifying tokens.
-	// Must be the same across all services.
-	Secret []byte
+	// PublicKey is the Ed25519 public key used for verifying tokens.
+	// Required.
+	PublicKey ed25519.PublicKey
 
 	// AllowedCallers is a list of allowed caller services.
 	// If empty, any caller is allowed (trust all internal services).
@@ -60,10 +61,10 @@ type ValidatorConfig struct {
 }
 
 // DefaultValidatorConfig returns a ValidatorConfig with sensible defaults.
-func DefaultValidatorConfig(target string, secret []byte) ValidatorConfig {
+func DefaultValidatorConfig(target string, publicKey ed25519.PublicKey) ValidatorConfig {
 	return ValidatorConfig{
 		Target:                 target,
-		Secret:                 secret,
+		PublicKey:              publicKey,
 		AllowedCallers:         nil, // Allow all
 		ClockSkewTolerance:     5 * time.Second,
 		ReplayDetectionEnabled: false,

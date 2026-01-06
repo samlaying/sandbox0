@@ -1,6 +1,7 @@
 package internalauth_test
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,12 +11,25 @@ import (
 	"github.com/huangzhihao/sandbox0/infra/pkg/internalauth"
 )
 
+var (
+	examplePrivateKey ed25519.PrivateKey
+	examplePublicKey  ed25519.PublicKey
+)
+
+func init() {
+	var err error
+	examplePublicKey, examplePrivateKey, err = ed25519.GenerateKey(nil)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func ExampleGenerator() {
 	// Create a generator for the caller service
 	generator := internalauth.NewGenerator(internalauth.GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
-		TTL:    30 * time.Second,
+		Caller:     "internal-gateway",
+		PrivateKey: examplePrivateKey,
+		TTL:        30 * time.Second,
 	})
 
 	// Generate a token for calling storage-proxy
@@ -35,15 +49,15 @@ func ExampleGenerator() {
 
 	// Output is a JWT token that changes each time
 	_ = token
-	fmt.Println("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
-	// Output: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+	fmt.Println("eyJhbGciOiJFZDI1NTE5...")
+	// Output: eyJhbGciOiJFZDI1NTE5...
 }
 
 func ExampleValidator() {
 	// First, generate a token (in real usage, this comes from the caller service)
 	generator := internalauth.NewGenerator(internalauth.GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Caller:     "internal-gateway",
+		PrivateKey: examplePrivateKey,
 	})
 	token, _ := generator.Generate("storage-proxy", "team-123", "user-456",
 		internalauth.GenerateOptions{
@@ -52,8 +66,8 @@ func ExampleValidator() {
 
 	// Create a validator for the target service
 	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Target:    "storage-proxy",
+		PublicKey: examplePublicKey,
 	})
 
 	// Validate the token
@@ -70,8 +84,8 @@ func ExampleValidator() {
 func ExampleAuthMiddleware() {
 	// Create validator
 	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Target:    "storage-proxy",
+		PublicKey: examplePublicKey,
 	})
 
 	// Create middleware
@@ -102,8 +116,8 @@ func ExampleAuthMiddleware() {
 func Example_authenticatedClient() {
 	// Create generator
 	generator := internalauth.NewGenerator(internalauth.GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Caller:     "internal-gateway",
+		PrivateKey: examplePrivateKey,
 	})
 
 	// Create an auto-authenticating HTTP client
@@ -125,8 +139,8 @@ func Example_authenticatedClient() {
 
 func ExampleTransport() {
 	generator := internalauth.NewGenerator(internalauth.GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Caller:     "internal-gateway",
+		PrivateKey: examplePrivateKey,
 	})
 
 	// Create a custom transport with dynamic target selection
@@ -167,8 +181,8 @@ func Example_context() {
 
 func ExampleRequirePermissions() {
 	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-		Target: "admin-service",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Target:    "admin-service",
+		PublicKey: examplePublicKey,
 	})
 
 	authMiddleware := internalauth.AuthMiddleware(validator, internalauth.DefaultExtractor())
@@ -188,8 +202,8 @@ func ExampleRequirePermissions() {
 
 func ExampleRequireTeam() {
 	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-		Target: "team-service",
-		Secret: []byte("test-secret-key-32-bytes-long!!!"),
+		Target:    "team-service",
+		PublicKey: examplePublicKey,
 	})
 
 	authMiddleware := internalauth.AuthMiddleware(validator, internalauth.DefaultExtractor())

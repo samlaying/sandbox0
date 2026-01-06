@@ -17,11 +17,11 @@ type Generator struct {
 
 // NewGenerator creates a new Generator with the given configuration.
 func NewGenerator(config GeneratorConfig) *Generator {
-	if len(config.Secret) == 0 {
-		panic("internalauth: secret cannot be empty")
-	}
 	if config.Caller == "" {
 		panic("internalauth: caller cannot be empty")
+	}
+	if config.PrivateKey == nil {
+		panic("internalauth: private key cannot be empty")
 	}
 	if config.TTL == 0 {
 		config.TTL = 30 * time.Second
@@ -76,8 +76,8 @@ func (g *Generator) Generate(target, teamID, userID string, opts GenerateOptions
 		RequestID:   opts.RequestID,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString(g.config.Secret)
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	signed, err := token.SignedString(g.config.PrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign token: %w", err)
 	}
@@ -106,11 +106,11 @@ type Validator struct {
 
 // NewValidator creates a new Validator with the given configuration.
 func NewValidator(config ValidatorConfig) *Validator {
-	if len(config.Secret) == 0 {
-		panic("internalauth: secret cannot be empty")
-	}
 	if config.Target == "" {
 		panic("internalauth: target cannot be empty")
+	}
+	if config.PublicKey == nil {
+		panic("internalauth: public key cannot be empty")
 	}
 	return &Validator{
 		config:   config,
@@ -121,7 +121,7 @@ func NewValidator(config ValidatorConfig) *Validator {
 // Validate validates a JWT token and returns the claims if valid.
 //
 // The token is validated against:
-//   - HMAC signature
+//   - Ed25519 signature
 //   - Expiration time (with clock skew tolerance)
 //   - Target service (audience)
 //   - Caller (must be in allowed callers if specified)
@@ -142,11 +142,11 @@ func (v *Validator) ValidateWithOptions(tokenString string, opts ValidateOptions
 
 	// Parse and verify signature
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		// Verify signing method
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		// Verify signing method is Ed25519
+		if token.Method != jwt.SigningMethodEdDSA {
 			return nil, ErrInvalidSignature
 		}
-		return v.config.Secret, nil
+		return v.config.PublicKey, nil
 	})
 
 	if err != nil {
@@ -230,11 +230,14 @@ func (v *Validator) isReplay(jti string) bool {
 // recordJTI records a JTI as used.
 func (v *Validator) recordJTI(jti string, expiresAt time.Time) {
 	v.jtiMu.Lock()
-	defer v.jtiMu.Unlock()
 	v.jtiCache[jti] = expiresAt
+	cacheSize := len(v.jtiCache)
+	v.jtiMu.Unlock()
 
-	// Clean up expired entries in background
-	go v.cleanupExpiredJTI(time.Now())
+	// Only cleanup occasionally to avoid spawning too many goroutines
+	if cacheSize%100 == 0 {
+		go v.cleanupExpiredJTI(time.Now())
+	}
 }
 
 // cleanupExpiredJTI removes JTIs that have expired.

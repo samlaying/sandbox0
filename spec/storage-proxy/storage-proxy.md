@@ -15,6 +15,7 @@ Storage Proxy 是一个独立的服务，负责管理所有持久化存储访问
 2. **零 JuiceFS 修改**：使用 JuiceFS 官方 Go SDK，无需修改源码
 3. **网络隔离兼容**：通过 packet marking 绕过 Procd 网络规则
 4. **高性能**：gRPC over HTTP/2，支持流式传输
+5. **内部认证**：使用 internalauth 包验证内部服务调用（internal-gateway, procd 等）
 
 ---
 

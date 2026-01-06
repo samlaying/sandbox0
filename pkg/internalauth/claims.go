@@ -1,31 +1,39 @@
 // Package internalauth provides internal token-based authentication for
 // inter-service communication within the sandbox0 infrastructure.
 //
-// The package implements a JWT-based authentication scheme where any service
-// acting as a caller can generate tokens to authenticate with target services.
-// Tokens are signed with a shared secret and contain claims about the caller,
-// target, team, and permissions.
+// The package implements a JWT-based authentication scheme using Ed25519
+// asymmetric signing where any service acting as a caller can generate tokens
+// to authenticate with target services.
 //
 // # Security Model
 //
-//   - All services share a common INTERNAL_JWT_SECRET
+//   - Uses Ed25519 asymmetric signing (Private key for signing, Public key for verification)
 //   - Tokens are short-lived (default 30 seconds)
 //   - Tokens are bound to specific caller, target, and team
-//   - Tokens cannot be reused across different services
+//   - Tokens cannot be reused across different services via audience and caller validation
 //
 // # Usage
 //
 //	// Generate a token
-//	generator := internalauth.NewGenerator("internal-gateway")
-//	token, err := generator.Generate("storage-proxy", "team-123", "user-456", perms)
+//	generator := internalauth.NewGenerator(internalauth.GeneratorConfig{
+//	    Caller:     "internal-gateway",
+//	    PrivateKey: privateKey,
+//	})
+//	token, err := generator.Generate("storage-proxy", "team-123", "user-456", internalauth.GenerateOptions{})
 //
 //	// Validate a token
-//	validator := internalauth.NewValidator("storage-proxy")
+//	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
+//	    Target:    "storage-proxy",
+//	    PublicKey: publicKey,
+//	})
 //	claims, err := validator.Validate(token)
 package internalauth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -123,42 +131,12 @@ func (c *Claims) GetAudience() (jwt.ClaimStrings, error) {
 	return jwt.ClaimStrings{c.Audience}, nil
 }
 
-// newClaims creates a new Claims instance with the given parameters.
-func newClaims(caller, target, teamID, userID, requestID string, permissions []string, ttl time.Duration) *Claims {
-	now := time.Now()
-	return &Claims{
-		Issuer:      caller,
-		Subject:     teamID,
-		Audience:    target,
-		IssuedAt:    jwt.NewNumericDate(now),
-		ExpiresAt:   jwt.NewNumericDate(now.Add(ttl)),
-		ID:          generateJTI(),
-		Caller:      caller,
-		Target:      target,
-		TeamID:      teamID,
-		UserID:      userID,
-		Permissions: permissions,
-		RequestID:   requestID,
-	}
-}
-
-// generateJTI generates a unique JWT ID using timestamp and random bytes.
+// generateJTI generates a unique JWT ID using crypto/rand.
 func generateJTI() string {
-	return jwt.NewNumericDate(time.Now()).String() + "-" + randomString(8)
-}
-
-// randomString generates a random hex string of the specified length.
-func randomString(length int) string {
-	const charset = "0123456789abcdef"
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[jwtrnd(len(charset))]
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp if crypto/rand fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
-	return string(b)
-}
-
-func jwtrnd(n int) int {
-	// Simple random generator for JWT ID
-	// In production, use crypto/rand
-	return int(time.Now().UnixNano()) % n
+	return hex.EncodeToString(b)
 }

@@ -2,17 +2,30 @@ package internalauth
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"testing"
 	"time"
 )
 
+var (
+	testPrivateKey ed25519.PrivateKey
+	testPublicKey  ed25519.PublicKey
+)
+
+func init() {
+	var err error
+	testPublicKey, testPrivateKey, err = ed25519.GenerateKey(nil)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestGeneratorGenerate(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
-		TTL:    30 * time.Second,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
+		TTL:        30 * time.Second,
 	})
 
 	token, err := generator.Generate("storage-proxy", "team-123", "user-456", GenerateOptions{
@@ -34,17 +47,15 @@ func TestGeneratorGenerate(t *testing.T) {
 }
 
 func TestValidatorValidate(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
-		TTL:    30 * time.Second,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
+		TTL:        30 * time.Second,
 	})
 
 	validator := NewValidator(ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: secret,
+		Target:    "storage-proxy",
+		PublicKey: testPublicKey,
 	})
 
 	token, _ := generator.Generate("storage-proxy", "team-123", "user-456", GenerateOptions{
@@ -71,16 +82,14 @@ func TestValidatorValidate(t *testing.T) {
 }
 
 func TestValidatorInvalidTarget(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
 	})
 
 	validator := NewValidator(ValidatorConfig{
-		Target: "manager", // Different from generation target
-		Secret: secret,
+		Target:    "manager", // Different from generation target
+		PublicKey: testPublicKey,
 	})
 
 	token, _ := generator.Generate("storage-proxy", "team-123", "user-456", GenerateOptions{})
@@ -93,19 +102,26 @@ func TestValidatorInvalidTarget(t *testing.T) {
 }
 
 func TestValidatorInvalidSignature(t *testing.T) {
+	// Generate a different key pair for signing
+	otherPublicKey, otherPrivateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = otherPublicKey // Not used, but we need a different private key
+
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: []byte("secret1"),
+		Caller:     "internal-gateway",
+		PrivateKey: otherPrivateKey,
 	})
 
 	validator := NewValidator(ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: []byte("secret2"), // Different secret
+		Target:    "storage-proxy",
+		PublicKey: testPublicKey, // Different public key
 	})
 
 	token, _ := generator.Generate("storage-proxy", "team-123", "user-456", GenerateOptions{})
 
-	_, err := validator.Validate(token)
+	_, err = validator.Validate(token)
 
 	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got: %v", err)
@@ -113,22 +129,20 @@ func TestValidatorInvalidSignature(t *testing.T) {
 }
 
 func TestValidatorTokenExpired(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	now := time.Now()
 
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
-		TTL:    1 * time.Second,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
+		TTL:        1 * time.Second,
 		NowFunc: func() time.Time {
 			return now
 		},
 	})
 
 	validator := NewValidator(ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: secret,
+		Target:    "storage-proxy",
+		PublicKey: testPublicKey,
 		NowFunc: func() time.Time {
 			return now.Add(2 * time.Second) // Time is past expiration
 		},
@@ -144,16 +158,14 @@ func TestValidatorTokenExpired(t *testing.T) {
 }
 
 func TestValidatorAllowedCallers(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
 	})
 
 	validator := NewValidator(ValidatorConfig{
 		Target:         "storage-proxy",
-		Secret:         secret,
+		PublicKey:      testPublicKey,
 		AllowedCallers: []string{"manager", "procd"}, // Not internal-gateway
 	})
 
@@ -167,16 +179,14 @@ func TestValidatorAllowedCallers(t *testing.T) {
 }
 
 func TestValidateWithOptions(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
 	})
 
 	validator := NewValidator(ValidatorConfig{
-		Target: "storage-proxy",
-		Secret: secret,
+		Target:    "storage-proxy",
+		PublicKey: testPublicKey,
 	})
 
 	token, _ := generator.Generate("storage-proxy", "team-123", "user-456", GenerateOptions{
@@ -242,16 +252,14 @@ func TestContextHelpers(t *testing.T) {
 }
 
 func TestReplayDetection(t *testing.T) {
-	secret := []byte("test-secret-key-32-bytes-long!!!")
-
 	generator := NewGenerator(GeneratorConfig{
-		Caller: "internal-gateway",
-		Secret: secret,
+		Caller:     "internal-gateway",
+		PrivateKey: testPrivateKey,
 	})
 
 	validator := NewValidator(ValidatorConfig{
 		Target:                 "storage-proxy",
-		Secret:                 secret,
+		PublicKey:              testPublicKey,
 		ReplayDetectionEnabled: true,
 	})
 
@@ -273,25 +281,25 @@ func TestReplayDetection(t *testing.T) {
 func TestNewGeneratorPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("Expected panic for empty secret")
+			t.Error("Expected panic for nil private key")
 		}
 	}()
 
 	NewGenerator(GeneratorConfig{
-		Caller: "test",
-		Secret: []byte{},
+		Caller:     "test",
+		PrivateKey: nil,
 	})
 }
 
 func TestNewValidatorPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("Expected panic for empty secret")
+			t.Error("Expected panic for nil public key")
 		}
 	}()
 
 	NewValidator(ValidatorConfig{
-		Target: "test",
-		Secret: []byte{},
+		Target:    "test",
+		PublicKey: nil,
 	})
 }
