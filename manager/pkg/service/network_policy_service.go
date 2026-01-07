@@ -69,7 +69,7 @@ func (s *NetworkPolicyService) CreateOrUpdateNetworkPolicy(
 		Ingress:   s.buildIngressSpec(mergedSpec),
 		Audit: &v1alpha1.AuditSpec{
 			Level:      "basic",
-			SampleRate: 1.0,
+			SampleRate: "1.0",
 		},
 	}
 

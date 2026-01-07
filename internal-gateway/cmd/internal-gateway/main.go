@@ -12,6 +12,7 @@ import (
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/db"
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/http"
 	"github.com/sandbox0-ai/infra/pkg/env"
+	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -47,6 +48,11 @@ func main() {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer pool.Close()
+
+	// Run database migrations
+	if err := runMigrations(ctx, pool, logger); err != nil {
+		logger.Fatal("Failed to run database migrations", zap.Error(err))
+	}
 
 	// Create repository
 	repo := db.NewRepository(pool)
@@ -150,4 +156,35 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 	)
 
 	return pool, nil
+}
+
+// runMigrations runs database migrations on startup
+func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) error {
+	logger.Info("Running database migrations")
+
+	// Create a migration logger that writes to zap
+	migrateLogger := &zapLogger{logger: logger}
+
+	if err := migrate.Up(ctx, pool, "migrations", migrate.Options{
+		Logger: migrateLogger,
+		Schema: "sandbox0_ig",
+	}); err != nil {
+		return fmt.Errorf("migrate up: %w", err)
+	}
+
+	logger.Info("Database migrations completed successfully")
+	return nil
+}
+
+// zapLogger adapts zap.Logger to migrate.Logger interface
+type zapLogger struct {
+	logger *zap.Logger
+}
+
+func (z *zapLogger) Printf(format string, args ...interface{}) {
+	z.logger.Info(fmt.Sprintf(format, args...))
+}
+
+func (z *zapLogger) Fatalf(format string, args ...interface{}) {
+	z.logger.Fatal(fmt.Sprintf(format, args...))
 }

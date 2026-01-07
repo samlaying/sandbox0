@@ -1,5 +1,6 @@
+-- +goose Up
 -- Internal Gateway Database Schema
--- This schema is used by internal-gateway for authentication, authorization, and audit logging
+-- This schema is used by internal-gateway for authentication and authorization
 
 -- Teams table
 CREATE TABLE IF NOT EXISTS teams (
@@ -109,3 +110,5 @@ CREATE TRIGGER update_api_keys_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- +goose Down
+-- ignore
