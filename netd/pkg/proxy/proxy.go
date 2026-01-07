@@ -335,16 +335,6 @@ func (p *Proxy) checkPolicy(sandboxID, destHost string, destPort int) (decision,
 		}
 	}
 
-	// Check allowed ports
-	for _, portSpec := range egress.AllowedPorts {
-		if int(portSpec.Port) == destPort {
-			return "allow", "port in allow list"
-		}
-		if portSpec.EndPort != nil && destPort >= int(portSpec.Port) && destPort <= int(*portSpec.EndPort) {
-			return "allow", "port in allow range"
-		}
-	}
-
 	// Default action
 	if egress.DefaultAction == "allow" {
 		return "allow", "default allow"

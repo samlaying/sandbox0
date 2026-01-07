@@ -62,9 +62,6 @@ type EgressPolicySpec struct {
 	// DeniedDomains is a list of denied destination domains
 	DeniedDomains []string `json:"deniedDomains,omitempty"`
 
-	// AllowedPorts is a list of allowed destination ports
-	AllowedPorts []PortSpec `json:"allowedPorts,omitempty"`
-
 	// EnforceProxyPorts are ports that must go through the L7 proxy (e.g., 80, 443)
 	EnforceProxyPorts []int32 `json:"enforceProxyPorts,omitempty"`
 

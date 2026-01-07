@@ -959,13 +959,6 @@ func (in *EgressPolicySpec) DeepCopyInto(out *EgressPolicySpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.AllowedPorts != nil {
-		in, out := &in.AllowedPorts, &out.AllowedPorts
-		*out = make([]PortSpec, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
 	if in.EnforceProxyPorts != nil {
 		in, out := &in.EnforceProxyPorts, &out.EnforceProxyPorts
 		*out = make([]int32, len(*in))
