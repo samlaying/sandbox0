@@ -45,7 +45,6 @@ type VolumeConfig struct {
 	S3AccessKey    string `json:"s3_access_key"`
 	S3SecretKey    string `json:"s3_secret_key"`
 	S3SessionToken string `json:"s3_session_token"`
-	CacheDir       string `json:"cache_dir"`
 	CacheSize      string `json:"cache_size"`
 	Prefetch       int32  `json:"prefetch"`
 	BufferSize     string `json:"buffer_size"`

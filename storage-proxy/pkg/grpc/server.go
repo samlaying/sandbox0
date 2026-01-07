@@ -53,7 +53,6 @@ func (s *FileSystemServer) MountVolume(ctx context.Context, req *pb.MountVolumeR
 		S3AccessKey:    req.Config.S3AccessKey,
 		S3SecretKey:    req.Config.S3SecretKey,
 		S3SessionToken: req.Config.S3SessionToken,
-		CacheDir:       req.Config.CacheDir,
 		CacheSize:      req.Config.CacheSize,
 		Prefetch:       int(req.Config.Prefetch),
 		BufferSize:     req.Config.BufferSize,

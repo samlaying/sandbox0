@@ -68,10 +68,11 @@ func main() {
 		zap.Int("grpc_port", cfg.GRPCPort),
 		zap.Int("http_port", cfg.HTTPPort),
 		zap.String("log_level", cfg.LogLevel),
+		zap.String("cache_dir", cfg.DefaultCacheDir),
 	)
 
 	// Create volume manager
-	volMgr := volume.NewManager(logrusLogger)
+	volMgr := volume.NewManager(logrusLogger, cfg.DefaultCacheDir)
 
 	// Create authenticator based on config
 	var grpcInterceptor grpc.UnaryServerInterceptor

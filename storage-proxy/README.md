@@ -242,8 +242,7 @@ Content-Type: application/json
     "s3_bucket": "sandbox0-volumes",
     "s3_prefix": "teams/team-123/volumes/vol-456",
     "s3_region": "us-east-1",
-    "cache_size": "1G",
-    "cache_dir": "/var/lib/storage-proxy/cache/vol-456"
+    "cache_size": "1G"
   }
 }
 ```

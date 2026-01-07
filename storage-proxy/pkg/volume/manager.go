@@ -25,7 +25,6 @@ type VolumeConfig struct {
 	S3AccessKey    string
 	S3SecretKey    string
 	S3SessionToken string
-	CacheDir       string
 	CacheSize      string
 	Prefetch       int
 	BufferSize     string
@@ -45,16 +44,18 @@ type VolumeContext struct {
 
 // Manager manages JuiceFS volumes
 type Manager struct {
-	mu      sync.RWMutex
-	volumes map[string]*VolumeContext
-	logger  *logrus.Logger
+	mu           sync.RWMutex
+	volumes      map[string]*VolumeContext
+	logger       *logrus.Logger
+	baseCacheDir string
 }
 
 // NewManager creates a new volume manager
-func NewManager(logger *logrus.Logger) *Manager {
+func NewManager(logger *logrus.Logger, baseCacheDir string) *Manager {
 	return &Manager{
-		volumes: make(map[string]*VolumeContext),
-		logger:  logger,
+		volumes:      make(map[string]*VolumeContext),
+		logger:       logger,
+		baseCacheDir: baseCacheDir,
 	}
 }
 
@@ -90,7 +91,7 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 	}
 
 	// 3. Initialize chunk store with local cache
-	cacheDir := filepath.Join(config.CacheDir, volumeID)
+	cacheDir := filepath.Join(m.baseCacheDir, volumeID)
 	chunkConf := chunk.Config{
 		BlockSize:     int(format.BlockSize) * 1024,
 		Compress:      format.Compression,

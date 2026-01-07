@@ -233,12 +233,11 @@ message VolumeConfig {
   string s3_access_key = 6;
   string s3_secret_key = 7;
   string s3_session_token = 8;
-  string cache_dir = 9;
-  string cache_size = 10;
-  int32 prefetch = 11;
-  string buffer_size = 12;
-  bool writeback = 13;
-  bool read_only = 14;
+  string cache_size = 9;
+  int32 prefetch = 10;
+  string buffer_size = 11;
+  bool writeback = 12;
+  bool read_only = 13;
 }
 
 message MountVolumeResponse {

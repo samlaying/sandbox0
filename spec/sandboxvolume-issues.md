@@ -19,28 +19,12 @@
 
 ---
 
-## 问题 4: Snapshot Restore 期间的挂载状态
-
-### 严重程度: 中
-
-### 问题描述
-Restore API（storage-proxy.md:275-291）只恢复 JuiceFS 数据。
-如果 SandboxVolume 在 restore 期间已挂载：
-- FUSE cache 是否会失效？
-- 用户是否需要重新挂载才能看到恢复后的数据？
-
-### 需要澄清
-需要定义 volume 已挂载时 restore 的行为约束和通知机制。
-
----
-
 ## 问题 5: Packet Marking 可移植性
 
 ### 严重程度: 低 (设计限制)
 
 ### 问题描述
 ```go
-// From client-sandboxvolume.md:495-523
 syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0x24, 0x2)
 ```
 - `SO_MARK` (0x24) 是 Linux 特有的 socket option

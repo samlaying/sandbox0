@@ -88,7 +88,6 @@ func (m *Manager) Mount(ctx context.Context, req *MountRequest) (*MountResponse,
 	if volumeConfig == nil {
 		// Use default config if not provided
 		volumeConfig = &VolumeConfig{
-			CacheDir:   "/tmp/juicefs-cache",
 			CacheSize:  "100",
 			Prefetch:   3,
 			BufferSize: "300",
@@ -108,7 +107,6 @@ func (m *Manager) Mount(ctx context.Context, req *MountRequest) (*MountResponse,
 			S3AccessKey:    volumeConfig.S3AccessKey,
 			S3SecretKey:    volumeConfig.S3SecretKey,
 			S3SessionToken: volumeConfig.S3SessionToken,
-			CacheDir:       volumeConfig.CacheDir,
 			CacheSize:      volumeConfig.CacheSize,
 			Prefetch:       volumeConfig.Prefetch,
 			BufferSize:     volumeConfig.BufferSize,
