@@ -7,7 +7,9 @@ all: build
 build:
 	@for service in $(SERVICES); do \
 		echo "Building $$service..."; \
-		if [ -d "$$service/cmd" ]; then \
+		if [ -f "$$service/Makefile" ]; then \
+			$(MAKE) -C $$service build; \
+		elif [ -d "$$service/cmd" ]; then \
 			go build -v -o $$service/bin/$$service ./$$service/cmd/...; \
 		elif [ -f "$$service/main.go" ]; then \
 			go build -v -o $$service/bin/$$service ./$$service/; \

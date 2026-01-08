@@ -23,7 +23,7 @@ all: build docker push-image create-manifest push-manifest
 PHONY: build $(BUILD_TARGETS)
 build: $(BUILD_TARGETS)
 %.build:
-	TARGET=$(*) GOOS=linux GOARCH=$(*) CGO_ENABLED=0 go build -o $(BINARY)-${PLATFORM}-$(*)
+	TARGET=$(*) GOOS=linux GOARCH=$(*) CGO_ENABLED=0 go build -o bin/$(BINARY)-${PLATFORM}-$(*)
 
 # Build docker image
 PHONY: docker $(BUILD_CI_TARGETS)
