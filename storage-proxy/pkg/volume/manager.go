@@ -12,24 +12,17 @@ import (
 	"github.com/juicedata/juicefs/pkg/object"
 	"github.com/juicedata/juicefs/pkg/vfs"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sandbox0-ai/infra/storage-proxy/pkg/config"
 	"github.com/sirupsen/logrus"
 )
 
 // VolumeConfig holds the configuration for a volume
 type VolumeConfig struct {
-	MetaURL        string
-	S3Bucket       string
-	S3Prefix       string
-	S3Region       string
-	S3Endpoint     string
-	S3AccessKey    string
-	S3SecretKey    string
-	S3SessionToken string
-	CacheSize      string
-	Prefetch       int
-	BufferSize     string
-	Writeback      bool
-	ReadOnly       bool
+	CacheSize  string
+	Prefetch   int
+	BufferSize string
+	Writeback  bool
+	ReadOnly   bool
 }
 
 // VolumeContext holds JuiceFS VFS instance for a volume
@@ -48,16 +41,16 @@ type Manager struct {
 	volumes          map[string]*VolumeContext
 	sandboxToVolumes map[string]map[string]struct{} // sandboxID -> set of volumeIDs
 	logger           *logrus.Logger
-	baseCacheDir     string
+	config           *config.Config
 }
 
 // NewManager creates a new volume manager
-func NewManager(logger *logrus.Logger, baseCacheDir string) *Manager {
+func NewManager(logger *logrus.Logger, cfg *config.Config) *Manager {
 	return &Manager{
 		volumes:          make(map[string]*VolumeContext),
 		sandboxToVolumes: make(map[string]map[string]struct{}),
 		logger:           logger,
-		baseCacheDir:     baseCacheDir,
+		config:           cfg,
 	}
 }
 
@@ -78,7 +71,7 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 	metaConf.Retries = 10
 	metaConf.ReadOnly = config.ReadOnly
 
-	metaClient := meta.NewClient(config.MetaURL, metaConf)
+	metaClient := meta.NewClient(m.config.MetaURL, metaConf)
 
 	// Load or create format
 	format, err := metaClient.Load(true)
@@ -93,7 +86,9 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 	}
 
 	// 3. Initialize chunk store with local cache
-	cacheDir := filepath.Join(m.baseCacheDir, volumeID)
+	cacheDir := filepath.Join(m.config.DefaultCacheDir, volumeID)
+	defaultCacheSize := parseSizeString(m.config.DefaultCacheSize, 1<<30)
+
 	chunkConf := chunk.Config{
 		BlockSize:     int(format.BlockSize) * 1024,
 		Compress:      format.Compression,
@@ -105,7 +100,7 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 		Prefetch:      config.Prefetch,
 		BufferSize:    uint64(parseSizeString(config.BufferSize, 32<<20)), // 32MB default
 		CacheDir:      cacheDir,
-		CacheSize:     uint64(parseSizeString(config.CacheSize, 1<<30)), // 1GB default
+		CacheSize:     uint64(parseSizeString(config.CacheSize, defaultCacheSize)),
 		FreeSpace:     0.1,
 		CacheMode:     0600,
 		AutoCreate:    true,
@@ -278,20 +273,20 @@ func (m *Manager) UnmountSandboxVolumes(ctx context.Context, sandboxID string) [
 // createS3Storage creates S3 object storage for JuiceFS
 func (m *Manager) createS3Storage(config *VolumeConfig, format *meta.Format) (object.ObjectStorage, error) {
 	// Determine endpoint
-	endpoint := config.S3Endpoint
+	endpoint := m.config.S3Endpoint
 	if endpoint == "" {
-		endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", config.S3Region)
+		endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", m.config.S3Region)
 	}
 
 	// Build S3 URL for JuiceFS object store
 	// Format: s3://bucket/prefix?region=us-east-1&access-key=xxx&secret-key=xxx
-	bucket := config.S3Bucket
-	if config.S3Prefix != "" {
-		bucket = fmt.Sprintf("%s/%s", bucket, config.S3Prefix)
+	bucket := m.config.S3Bucket
+	if m.config.S3Prefix != "" {
+		bucket = fmt.Sprintf("%s/%s", bucket, m.config.S3Prefix)
 	}
 
 	// Create object storage using JuiceFS object package
-	obj, err := object.CreateStorage("s3", bucket, config.S3AccessKey, config.S3SecretKey, config.S3SessionToken)
+	obj, err := object.CreateStorage("s3", bucket, m.config.S3AccessKey, m.config.S3SecretKey, m.config.S3SessionToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create S3 storage: %w", err)
 	}

@@ -45,19 +45,11 @@ func NewFileSystemServer(volMgr *volume.Manager, logger *logrus.Logger) *FileSys
 // MountVolume mounts a volume
 func (s *FileSystemServer) MountVolume(ctx context.Context, req *pb.MountVolumeRequest) (*pb.MountVolumeResponse, error) {
 	config := &volume.VolumeConfig{
-		MetaURL:        req.Config.MetaUrl,
-		S3Bucket:       req.Config.S3Bucket,
-		S3Prefix:       req.Config.S3Prefix,
-		S3Region:       req.Config.S3Region,
-		S3Endpoint:     req.Config.S3Endpoint,
-		S3AccessKey:    req.Config.S3AccessKey,
-		S3SecretKey:    req.Config.S3SecretKey,
-		S3SessionToken: req.Config.S3SessionToken,
-		CacheSize:      req.Config.CacheSize,
-		Prefetch:       int(req.Config.Prefetch),
-		BufferSize:     req.Config.BufferSize,
-		Writeback:      req.Config.Writeback,
-		ReadOnly:       req.Config.ReadOnly,
+		CacheSize:  req.Config.CacheSize,
+		Prefetch:   int(req.Config.Prefetch),
+		BufferSize: req.Config.BufferSize,
+		Writeback:  req.Config.Writeback,
+		ReadOnly:   req.Config.ReadOnly,
 	}
 
 	err := s.volMgr.MountVolume(ctx, req.VolumeId, config)

@@ -36,9 +36,6 @@ type Config struct {
 	InternalAuthPublicKeyPath string
 }
 
-// Note: Network isolation is now handled by the netd service (DaemonSet).
-// NetworkConfig has been removed from procd.
-
 // DefaultConfig returns a Config with default values.
 func DefaultConfig() *Config {
 	return &Config{

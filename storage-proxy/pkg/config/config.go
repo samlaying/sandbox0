@@ -15,11 +15,17 @@ type Config struct {
 	HTTPPort int
 
 	// JuiceFS defaults
-	DefaultMetaURL    string
-	DefaultS3Region   string
-	DefaultS3Endpoint string
-	DefaultCacheSize  string
-	DefaultCacheDir   string
+	MetaURL        string
+	S3Bucket       string
+	S3Prefix       string
+	S3Region       string
+	S3Endpoint     string
+	S3AccessKey    string
+	S3SecretKey    string
+	S3SessionToken string
+
+	DefaultCacheSize string
+	DefaultCacheDir  string
 
 	// Security
 	InternalAuthPublicKey string // Ed25519 public key for internal auth (base64 encoded)
@@ -53,11 +59,17 @@ func LoadFromEnv() *Config {
 		HTTPAddr: env.GetEnv("HTTP_ADDR", "0.0.0.0"),
 		HTTPPort: env.GetEnvInt("HTTP_PORT", 8081),
 
-		DefaultMetaURL:    env.GetEnv("DEFAULT_META_URL", ""),
-		DefaultS3Region:   env.GetEnv("DEFAULT_S3_REGION", "us-east-1"),
-		DefaultS3Endpoint: env.GetEnv("DEFAULT_S3_ENDPOINT", ""),
-		DefaultCacheSize:  env.GetEnv("DEFAULT_CACHE_SIZE", "1G"),
-		DefaultCacheDir:   env.GetEnv("DEFAULT_CACHE_DIR", "/var/lib/storage-proxy/cache"),
+		MetaURL:        env.GetEnv("META_URL", ""),
+		S3Bucket:       env.GetEnv("S3_BUCKET", ""),
+		S3Prefix:       env.GetEnv("S3_PREFIX", ""),
+		S3Region:       env.GetEnv("S3_REGION", "us-east-1"),
+		S3Endpoint:     env.GetEnv("S3_ENDPOINT", ""),
+		S3AccessKey:    env.GetEnv("S3_ACCESS_KEY", ""),
+		S3SecretKey:    env.GetEnv("S3_SECRET_KEY", ""),
+		S3SessionToken: env.GetEnv("S3_SESSION_TOKEN", ""),
+
+		DefaultCacheSize: env.GetEnv("DEFAULT_CACHE_SIZE", "1G"),
+		DefaultCacheDir:  env.GetEnv("DEFAULT_CACHE_DIR", "/var/lib/storage-proxy/cache"),
 
 		InternalAuthPublicKey: env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY", ""),
 

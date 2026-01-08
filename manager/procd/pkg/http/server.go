@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/config"
 	ctxpkg "github.com/sandbox0-ai/infra/manager/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/http/handlers"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/volume"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 )
 
@@ -114,9 +114,6 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/contexts/{id}/restart", contextHandler.Restart).Methods("POST")
 	api.HandleFunc("/contexts/{id}/input", contextHandler.WriteInput).Methods("POST")
 	api.HandleFunc("/contexts/{id}/ws", contextHandler.WebSocket).Methods("GET")
-
-	// Note: Network policy APIs are no longer handled by procd.
-	// Network isolation is managed by the netd service via CRDs.
 
 	// SandboxVolume handlers
 	volumeHandler := handlers.NewVolumeHandler(s.volumeManager, s.logger)
