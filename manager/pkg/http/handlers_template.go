@@ -28,7 +28,7 @@ func (s *Server) listTemplates(c *gin.Context) {
 	// Let's assume empty namespace lists all (if using lister) or we need to know the namespace.
 	// Since manager manages a specific namespace usually (env.Namespace), we should probably use that.
 	// But `TemplateService`'s `ListTemplates` with empty namespace lists all if using lister.
-	
+
 	templates, err := s.templateService.ListTemplates(c.Request.Context(), "")
 	if err != nil {
 		s.logger.Error("Failed to list templates", zap.Error(err))
@@ -63,13 +63,13 @@ func (s *Server) getTemplate(c *gin.Context) {
 	// But `Server` doesn't have `cfg`.
 	// For now, let's list all and find matching name, or better, inject default namespace into Server/Service.
 	// Simplest: `ListTemplates` returns all, we filter by name.
-	
+
 	// Optimization: If we can't easily get the namespace, we can list all and find.
 	// But `Get` is better.
 	// Let's assume for now that templates are in the cluster-wide scope or we just list all and filter.
 	// Actually `SandboxTemplate` is namespaced.
 	// Let's try to fetch from all namespaces via Lister if possible, or just list and filter.
-	
+
 	templates, err := s.templateService.ListTemplates(c.Request.Context(), "")
 	if err != nil {
 		s.logger.Error("Failed to get template", zap.Error(err))
@@ -101,12 +101,6 @@ func (s *Server) createTemplate(c *gin.Context) {
 	if err := c.ShouldBindJSON(&template); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
 		return
-	}
-
-	// Ensure namespace is set. If not, use "default" or whatever.
-	// We should probably use the same namespace as the manager or let the user specify.
-	if template.Namespace == "" {
-		template.Namespace = "default" // Fallback
 	}
 
 	created, err := s.templateService.CreateTemplate(c.Request.Context(), &template)
@@ -148,7 +142,7 @@ func (s *Server) updateTemplate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find existing template"})
 		return
 	}
-	
+
 	var existing *v1alpha1.SandboxTemplate
 	for _, t := range existingTemplates {
 		if t.Name == templateID {
@@ -156,12 +150,12 @@ func (s *Server) updateTemplate(c *gin.Context) {
 			break
 		}
 	}
-	
+
 	if existing == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
 		return
 	}
-	
+
 	template.Namespace = existing.Namespace
 
 	updated, err := s.templateService.UpdateTemplate(c.Request.Context(), &template)
@@ -190,7 +184,7 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find existing template"})
 		return
 	}
-	
+
 	var namespace string
 	found := false
 	for _, t := range existingTemplates {
@@ -200,7 +194,7 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 			break
 		}
 	}
-	
+
 	if !found {
 		// Already gone or not found
 		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
@@ -244,7 +238,7 @@ func (s *Server) warmPool(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find existing template"})
 		return
 	}
-	
+
 	var namespace string
 	found := false
 	for _, t := range existingTemplates {
@@ -254,7 +248,7 @@ func (s *Server) warmPool(c *gin.Context) {
 			break
 		}
 	}
-	
+
 	if !found {
 		c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
 		return

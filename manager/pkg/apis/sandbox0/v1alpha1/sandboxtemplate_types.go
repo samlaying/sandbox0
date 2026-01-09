@@ -61,6 +61,8 @@ type SandboxTemplateSpec struct {
 
 	// Environment configuration
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+	// Cluster to deploy the sandbox (if multi-cluster is supported, optional)
+	ClusterId *string `json:"clusterId,omitempty"`
 }
 
 type ContainerSpec struct {

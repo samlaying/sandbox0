@@ -98,8 +98,7 @@ func (pm *PoolManager) ReconcilePool(ctx context.Context, template *v1alpha1.San
 
 // getOrCreateReplicaSet gets or creates the ReplicaSet for a template
 func (pm *PoolManager) getOrCreateReplicaSet(ctx context.Context, template *v1alpha1.SandboxTemplate) (*appsv1.ReplicaSet, error) {
-	rsName := fmt.Sprintf("%s-pool", template.ObjectMeta.Name)
-
+	rsName := v1alpha1.GenReplicasetName(template)
 	// Try to get existing ReplicaSet
 	rs, err := pm.k8sClient.AppsV1().ReplicaSets(template.ObjectMeta.Namespace).Get(ctx, rsName, metav1.GetOptions{})
 	if err == nil {

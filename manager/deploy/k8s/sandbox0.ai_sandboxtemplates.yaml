@@ -43,6 +43,10 @@ spec:
                 items:
                   type: string
                 type: array
+              clusterId:
+                description: Cluster to deploy the sandbox (if multi-cluster is supported,
+                  optional)
+                type: string
               description:
                 description: Description of the template
                 type: string
@@ -101,14 +105,17 @@ spec:
                     description: ResourceQuota defines resource quota (per template)
                     properties:
                       cpu:
-                        type: string
-                      gpu:
-                        type: string
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
                       memory:
-                        type: string
-                    required:
-                    - cpu
-                    - memory
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
                     type: object
                   securityContext:
                     description: SecurityContext defines security context for containers

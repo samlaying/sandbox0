@@ -36,6 +36,12 @@ func NewTemplateService(
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *v1alpha1.SandboxTemplate) (*v1alpha1.SandboxTemplate, error) {
 	s.logger.Info("Creating template", zap.String("name", template.Name))
 
+	// Ensure namespace is set. If not, use "default" or whatever.
+	// We should probably use the same namespace as the manager or let the user specify.
+	if template.Namespace == "" {
+		template.Namespace = "sb0" // Fallback
+	}
+
 	// Set default values if needed
 	if template.Spec.Pool.MinIdle < 0 {
 		template.Spec.Pool.MinIdle = 0

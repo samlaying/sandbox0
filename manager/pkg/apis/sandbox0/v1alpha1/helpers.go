@@ -2,9 +2,45 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
+
+// TODO add k8s webhook
+func CheckTemplate(template *SandboxTemplate) error {
+	if strings.Contains(template.Namespace, "-") ||
+		strings.Contains(template.Name, "-") ||
+		template.Spec.ClusterId != nil && strings.Contains(*template.Spec.ClusterId, "-") {
+		return fmt.Errorf("namespace, name, and clusterId cannot contain hyphens")
+	}
+	rs := GenReplicasetName(template)
+	if errs := validation.IsDNS1123Label(rs); len(errs) > 0 {
+		return fmt.Errorf("generated id '%s' is invalid: %v", rs, errs)
+	}
+	// ReplicaSet name length must be limited to allow for the pod random suffix (usually 5 chars + hyphen).
+	// Max DNS label length is 63. 63 - 1 (hyphen) - 5 (suffix) = 57.
+	if len(rs) > 57 {
+		return fmt.Errorf("generated id '%s' is too long (%d > 57). It must be <= 57 chars to accommodate K8s generated pod names", rs, len(rs))
+	}
+	return nil
+}
+
+func GenReplicasetName(template *SandboxTemplate) string {
+	var clusterId, namespace string
+	if template.Spec.ClusterId != nil && *template.Spec.ClusterId != "" {
+		clusterId = *template.Spec.ClusterId
+	} else {
+		clusterId = "default"
+	}
+	if template.Namespace == "" {
+		namespace = "default"
+	} else {
+		namespace = template.Namespace
+	}
+	return fmt.Sprintf("%s-%s-%s", clusterId, namespace, template.Name)
+}
 
 // buildPodSpec builds a pod spec from a template
 func BuildPodSpec(template *SandboxTemplate) corev1.PodSpec {
