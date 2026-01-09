@@ -34,9 +34,9 @@ func NewManagerClient(baseURL string, internalAuthGen *internalauth.Generator, l
 }
 
 // GetSandbox retrieves sandbox information from manager
-func (c *ManagerClient) GetSandbox(ctx context.Context, sandboxID, teamID string) (*db.Sandbox, error) {
+func (c *ManagerClient) GetSandbox(ctx context.Context, sandboxID, userID, teamID string) (*db.Sandbox, error) {
 	// Generate internal token for manager
-	token, err := c.internalAuthGen.Generate("manager", teamID, "", internalauth.GenerateOptions{})
+	token, err := c.internalAuthGen.Generate("manager", teamID, userID, internalauth.GenerateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("generate internal token: %w", err)
 	}

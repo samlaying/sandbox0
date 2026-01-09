@@ -146,12 +146,12 @@ func (s *Server) getProcdURL(c *gin.Context, sandboxID string) (*url.URL, error)
 	authCtx := middleware.GetAuthContext(c)
 
 	// Look up sandbox from manager
-	sandbox, err := s.managerClient.GetSandbox(c.Request.Context(), sandboxID, authCtx.TeamID)
+	sandbox, err := s.managerClient.GetSandbox(c.Request.Context(), sandboxID, authCtx.UserID, authCtx.TeamID)
 	if err != nil {
 		s.logger.Error("Failed to get sandbox from manager",
-				zap.String("sandbox_id", sandboxID),
-				zap.Error(err),
-			)
+			zap.String("sandbox_id", sandboxID),
+			zap.Error(err),
+		)
 		c.JSON(http.StatusNotFound, gin.H{"error": "sandbox not found"})
 		return nil, err
 	}

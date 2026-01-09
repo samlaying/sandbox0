@@ -69,12 +69,12 @@ func NewServer(
 	internalAuthGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
 		Caller:     "internal-gateway",
 		PrivateKey: privateKey,
-		TTL:        30 * time.Second,
+		TTL:        10 * time.Second,
 	})
 	procdAuthGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
 		Caller:     "procd",
 		PrivateKey: privateKey,
-		TTL:        0,
+		TTL:        10 * time.Second,
 	})
 
 	// Create manager client

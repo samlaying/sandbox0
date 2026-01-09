@@ -115,7 +115,8 @@ func main() {
 	}
 
 	// Initialize internal auth generator for procd communication
-	var tokenGenerator service.TokenGenerator
+	var internalTokenGenerator service.TokenGenerator
+	var procdTokenGenerator service.TokenGenerator
 	if cfg.InternalAuthPrivateKeyPath != "" {
 		privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(cfg.InternalAuthPrivateKeyPath)
 		if err != nil {
@@ -129,8 +130,9 @@ func main() {
 				PrivateKey: privateKey,
 				TTL:        30 * time.Second,
 			})
-			tokenGenerator = service.NewInternalTokenGenerator(internalAuthGen)
-			logger.Info("Internal auth generator initialized for procd communication")
+			internalTokenGenerator = service.NewInternalTokenGenerator(internalAuthGen)
+			procdTokenGenerator = service.NewProcdTokenGenerator(internalAuthGen)
+			logger.Info("Internal auth generators initialized for procd communication")
 		}
 	}
 
@@ -140,7 +142,8 @@ func main() {
 		podLister,
 		operator.GetTemplateLister(),
 		networkPolicyService,
-		tokenGenerator,
+		internalTokenGenerator,
+		procdTokenGenerator,
 		logger,
 	)
 

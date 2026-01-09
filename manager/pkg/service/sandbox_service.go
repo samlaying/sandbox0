@@ -26,13 +26,14 @@ type SandboxService struct {
 	templateLister              controller.TemplateLister
 	SandboxNetworkPolicyService *SandboxNetworkPolicyService
 	procdClient                 *ProcdClient
-	tokenGenerator              TokenGenerator
+	internalTokenGenerator      TokenGenerator
+	procdTokenGenerator         TokenGenerator
 	logger                      *zap.Logger
 }
 
 // TokenGenerator generates internal tokens for procd authentication.
 type TokenGenerator interface {
-	GenerateToken(teamID, sandboxID string) (string, error)
+	GenerateToken(teamID, userID, sandboxID string) (string, error)
 }
 
 // NewSandboxService creates a new SandboxService
@@ -41,7 +42,8 @@ func NewSandboxService(
 	podLister corelisters.PodLister,
 	templateLister controller.TemplateLister,
 	SandboxNetworkPolicyService *SandboxNetworkPolicyService,
-	tokenGenerator TokenGenerator,
+	internalTokenGenerator TokenGenerator,
+	procdTokenGenerator TokenGenerator,
 	logger *zap.Logger,
 ) *SandboxService {
 	return &SandboxService{
@@ -50,7 +52,8 @@ func NewSandboxService(
 		templateLister:              templateLister,
 		SandboxNetworkPolicyService: SandboxNetworkPolicyService,
 		procdClient:                 NewProcdClient(),
-		tokenGenerator:              tokenGenerator,
+		internalTokenGenerator:      internalTokenGenerator,
+		procdTokenGenerator:         procdTokenGenerator,
 		logger:                      logger,
 	}
 }
@@ -617,18 +620,25 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 	}
 
 	// Generate internal token for procd authentication
-	if s.tokenGenerator == nil {
-		return nil, fmt.Errorf("token generator not configured, cannot authenticate with procd")
+	if s.internalTokenGenerator == nil || s.procdTokenGenerator == nil {
+		return nil, fmt.Errorf("token generators not configured, cannot authenticate with procd")
 	}
 	teamID := pod.Annotations[controller.AnnotationTeamID]
-	token, err := s.tokenGenerator.GenerateToken(teamID, sandboxID)
+	userID := pod.Annotations[controller.AnnotationUserID]
+
+	internalToken, err := s.internalTokenGenerator.GenerateToken(teamID, userID, sandboxID)
 	if err != nil {
-		return nil, fmt.Errorf("generate token: %w", err)
+		return nil, fmt.Errorf("generate internal token: %w", err)
+	}
+
+	procdToken, err := s.procdTokenGenerator.GenerateToken(teamID, userID, sandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("generate procd token: %w", err)
 	}
 
 	// Call procd pause API
 	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
-	pauseResp, err := s.procdClient.Pause(ctx, procdAddress, token)
+	pauseResp, err := s.procdClient.Pause(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd pause: %w", err)
 	}
@@ -812,18 +822,25 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 	}
 
 	// Generate internal token for procd authentication
-	if s.tokenGenerator == nil {
-		return nil, fmt.Errorf("token generator not configured, cannot authenticate with procd")
+	if s.internalTokenGenerator == nil || s.procdTokenGenerator == nil {
+		return nil, fmt.Errorf("token generators not configured, cannot authenticate with procd")
 	}
 	teamID := pod.Annotations[controller.AnnotationTeamID]
-	token, err := s.tokenGenerator.GenerateToken(teamID, sandboxID)
+	userID := pod.Annotations[controller.AnnotationUserID]
+
+	internalToken, err := s.internalTokenGenerator.GenerateToken(teamID, userID, sandboxID)
 	if err != nil {
-		return nil, fmt.Errorf("generate token: %w", err)
+		return nil, fmt.Errorf("generate internal token: %w", err)
+	}
+
+	procdToken, err := s.procdTokenGenerator.GenerateToken(teamID, userID, sandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("generate procd token: %w", err)
 	}
 
 	// Call procd resume API
 	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
-	resumeResp, err := s.procdClient.Resume(ctx, procdAddress, token)
+	resumeResp, err := s.procdClient.Resume(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd resume: %w", err)
 	}
@@ -861,18 +878,25 @@ func (s *SandboxService) GetSandboxResourceUsage(ctx context.Context, sandboxID 
 	pod := pods[0]
 
 	// Generate internal token for procd authentication
-	if s.tokenGenerator == nil {
-		return nil, fmt.Errorf("token generator not configured, cannot authenticate with procd")
+	if s.internalTokenGenerator == nil || s.procdTokenGenerator == nil {
+		return nil, fmt.Errorf("token generators not configured, cannot authenticate with procd")
 	}
 	teamID := pod.Annotations[controller.AnnotationTeamID]
-	token, err := s.tokenGenerator.GenerateToken(teamID, sandboxID)
+	userID := pod.Annotations[controller.AnnotationUserID]
+
+	internalToken, err := s.internalTokenGenerator.GenerateToken(teamID, userID, sandboxID)
 	if err != nil {
-		return nil, fmt.Errorf("generate token: %w", err)
+		return nil, fmt.Errorf("generate internal token: %w", err)
+	}
+
+	procdToken, err := s.procdTokenGenerator.GenerateToken(teamID, userID, sandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("generate procd token: %w", err)
 	}
 
 	// Call procd stats API
 	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
-	statsResp, err := s.procdClient.Stats(ctx, procdAddress, token)
+	statsResp, err := s.procdClient.Stats(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd stats: %w", err)
 	}

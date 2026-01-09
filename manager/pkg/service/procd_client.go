@@ -86,7 +86,7 @@ type StatsResponse struct {
 }
 
 // Pause calls the procd pause API and returns resource usage.
-func (c *ProcdClient) Pause(ctx context.Context, procdAddress, internalToken string) (*PauseResponse, error) {
+func (c *ProcdClient) Pause(ctx context.Context, procdAddress, internalToken, procdStorageToken string) (*PauseResponse, error) {
 	url := procdAddress + "/api/v1/sandbox/pause"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
@@ -96,7 +96,7 @@ func (c *ProcdClient) Pause(ctx context.Context, procdAddress, internalToken str
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", internalToken)
-	req.Header.Set("X-Token-For-Procd", internalToken)
+	req.Header.Set("X-Token-For-Procd", procdStorageToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -122,7 +122,7 @@ func (c *ProcdClient) Pause(ctx context.Context, procdAddress, internalToken str
 }
 
 // Resume calls the procd resume API.
-func (c *ProcdClient) Resume(ctx context.Context, procdAddress, internalToken string) (*ResumeResponse, error) {
+func (c *ProcdClient) Resume(ctx context.Context, procdAddress, internalToken, procdStorageToken string) (*ResumeResponse, error) {
 	url := procdAddress + "/api/v1/sandbox/resume"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
@@ -132,7 +132,7 @@ func (c *ProcdClient) Resume(ctx context.Context, procdAddress, internalToken st
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", internalToken)
-	req.Header.Set("X-Token-For-Procd", internalToken)
+	req.Header.Set("X-Token-For-Procd", procdStorageToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -158,7 +158,7 @@ func (c *ProcdClient) Resume(ctx context.Context, procdAddress, internalToken st
 }
 
 // Stats calls the procd stats API.
-func (c *ProcdClient) Stats(ctx context.Context, procdAddress, internalToken string) (*StatsResponse, error) {
+func (c *ProcdClient) Stats(ctx context.Context, procdAddress, internalToken, procdStorageToken string) (*StatsResponse, error) {
 	url := procdAddress + "/api/v1/sandbox/stats"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -168,7 +168,7 @@ func (c *ProcdClient) Stats(ctx context.Context, procdAddress, internalToken str
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", internalToken)
-	req.Header.Set("X-Token-For-Procd", internalToken)
+	req.Header.Set("X-Token-For-Procd", procdStorageToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -194,7 +194,7 @@ func (c *ProcdClient) Stats(ctx context.Context, procdAddress, internalToken str
 }
 
 // doRequest is a helper for making HTTP requests.
-func (c *ProcdClient) doRequest(ctx context.Context, method, url string, body interface{}, internalToken string) ([]byte, error) {
+func (c *ProcdClient) doRequest(ctx context.Context, method, url string, body interface{}, internalToken, procdStorageToken string) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
@@ -211,7 +211,7 @@ func (c *ProcdClient) doRequest(ctx context.Context, method, url string, body in
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", internalToken)
-	req.Header.Set("X-Token-For-Procd", internalToken)
+	req.Header.Set("X-Token-For-Procd", procdStorageToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
