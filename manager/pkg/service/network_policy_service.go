@@ -44,11 +44,12 @@ func NewSandboxNetworkPolicyService(
 
 // CreateSandboxNetworkPolicyRequest contains the request to create a network policy
 type CreateSandboxNetworkPolicyRequest struct {
-	SandboxID    string
-	TeamID       string
-	Namespace    string
-	TemplateSpec *v1alpha1.TplSandboxNetworkPolicy // From template
-	RequestSpec  *v1alpha1.TplSandboxNetworkPolicy // From claim request (overrides template)
+	SandboxID       string
+	TeamID          string
+	Namespace       string
+	TemplateSpec    *v1alpha1.TplSandboxNetworkPolicy // From template
+	RequestSpec     *v1alpha1.TplSandboxNetworkPolicy // From claim request (overrides template)
+	OwnerReferences []metav1.OwnerReference
 }
 
 // CreateOrUpdateSandboxNetworkPolicy creates or updates a SandboxNetworkPolicy for a sandbox
@@ -85,6 +86,7 @@ func (s *SandboxNetworkPolicyService) CreateOrUpdateSandboxNetworkPolicy(
 				"sandbox0.ai/sandbox-id": req.SandboxID,
 				"sandbox0.ai/team-id":    req.TeamID,
 			},
+			OwnerReferences: req.OwnerReferences,
 		},
 		Spec: *policySpec,
 	}
@@ -161,6 +163,7 @@ type CreateBandwidthPolicyRequest struct {
 	IngressRateBps    int64
 	BurstBytes        int64
 	AccountingEnabled bool
+	OwnerReferences   []metav1.OwnerReference
 }
 
 // CreateOrUpdateBandwidthPolicy creates or updates a SandboxBandwidthPolicy for a sandbox
@@ -210,6 +213,7 @@ func (s *SandboxNetworkPolicyService) CreateOrUpdateBandwidthPolicy(
 				"sandbox0.ai/sandbox-id": req.SandboxID,
 				"sandbox0.ai/team-id":    req.TeamID,
 			},
+			OwnerReferences: req.OwnerReferences,
 		},
 		Spec: *policySpec,
 	}

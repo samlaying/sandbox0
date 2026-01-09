@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,7 +81,9 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 	}
 
 	// 2. Initialize S3 object storage
-	blob, err := m.createS3Storage(config, format)
+	// TODO build s3 prefix
+	prefix := ""
+	blob, err := m.createS3Storage(config, prefix, format)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 storage: %w", err)
 	}
@@ -271,7 +274,7 @@ func (m *Manager) UnmountSandboxVolumes(ctx context.Context, sandboxID string) [
 }
 
 // createS3Storage creates S3 object storage for JuiceFS
-func (m *Manager) createS3Storage(config *VolumeConfig, format *meta.Format) (object.ObjectStorage, error) {
+func (m *Manager) createS3Storage(config *VolumeConfig, prefix string, format *meta.Format) (object.ObjectStorage, error) {
 	// Determine endpoint
 	endpoint := m.config.S3Endpoint
 	if endpoint == "" {
@@ -281,8 +284,9 @@ func (m *Manager) createS3Storage(config *VolumeConfig, format *meta.Format) (ob
 	// Build S3 URL for JuiceFS object store
 	// Format: s3://bucket/prefix?region=us-east-1&access-key=xxx&secret-key=xxx
 	bucket := m.config.S3Bucket
-	if m.config.S3Prefix != "" {
-		bucket = fmt.Sprintf("%s/%s", bucket, m.config.S3Prefix)
+	if prefix != "" {
+		prefix = strings.TrimLeft(prefix, "/")
+		bucket = fmt.Sprintf("%s/%s", bucket, prefix)
 	}
 
 	// Create object storage using JuiceFS object package

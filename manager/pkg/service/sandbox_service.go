@@ -121,6 +121,11 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 
 	// Create network and bandwidth policies for the sandbox
 	if s.SandboxNetworkPolicyService != nil {
+		// Create owner reference to the pod
+		ownerRefs := []metav1.OwnerReference{
+			*metav1.NewControllerRef(pod, corev1.SchemeGroupVersion.WithKind("Pod")),
+		}
+
 		// Create network policy
 		var requestNetwork *v1alpha1.TplSandboxNetworkPolicy
 		if req.Config != nil {
@@ -128,11 +133,12 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 		}
 
 		if err := s.SandboxNetworkPolicyService.CreateOrUpdateSandboxNetworkPolicy(ctx, &CreateSandboxNetworkPolicyRequest{
-			SandboxID:    req.SandboxID,
-			TeamID:       req.TeamID,
-			Namespace:    pod.Namespace,
-			TemplateSpec: template.Spec.Network,
-			RequestSpec:  requestNetwork,
+			SandboxID:       req.SandboxID,
+			TeamID:          req.TeamID,
+			Namespace:       pod.Namespace,
+			TemplateSpec:    template.Spec.Network,
+			RequestSpec:     requestNetwork,
+			OwnerReferences: ownerRefs,
 		}); err != nil {
 			s.logger.Error("Failed to create network policy",
 				zap.String("sandboxID", req.SandboxID),
@@ -149,6 +155,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 			EgressRateBps:     100 * 1000 * 1000, // 100 Mbps
 			IngressRateBps:    100 * 1000 * 1000, // 100 Mbps
 			AccountingEnabled: true,
+			OwnerReferences:   ownerRefs,
 		}); err != nil {
 			s.logger.Error("Failed to create bandwidth policy",
 				zap.String("sandboxID", req.SandboxID),

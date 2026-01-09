@@ -147,6 +147,12 @@ func main() {
 		logger,
 	)
 
+	templateService := service.NewTemplateService(
+		crdClient,
+		operator.GetTemplateLister(),
+		logger,
+	)
+
 	// Create cleanup controller
 	cleanupController := controller.NewCleanupController(
 		k8sClient,
@@ -178,6 +184,7 @@ func main() {
 	// Create HTTP server
 	httpServer := httpserver.NewServer(
 		sandboxService,
+		templateService,
 		authValidator,
 		logger,
 		cfg.HTTPPort,

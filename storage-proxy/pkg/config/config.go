@@ -17,7 +17,6 @@ type Config struct {
 	// JuiceFS defaults
 	MetaURL        string
 	S3Bucket       string
-	S3Prefix       string
 	S3Region       string
 	S3Endpoint     string
 	S3AccessKey    string
@@ -61,7 +60,6 @@ func LoadFromEnv() *Config {
 
 		MetaURL:        env.GetEnv("META_URL", ""),
 		S3Bucket:       env.GetEnv("S3_BUCKET", ""),
-		S3Prefix:       env.GetEnv("S3_PREFIX", ""),
 		S3Region:       env.GetEnv("S3_REGION", "us-east-1"),
 		S3Endpoint:     env.GetEnv("S3_ENDPOINT", ""),
 		S3AccessKey:    env.GetEnv("S3_ACCESS_KEY", ""),
