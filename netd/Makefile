@@ -7,7 +7,6 @@ IMAGE_TAG := latest
 
 # Build the binary
 build:
-	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p bin
 	CGO_ENABLED=0 go build -o bin/$(BINARY_NAME) ./cmd/netd
 

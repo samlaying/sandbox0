@@ -12,6 +12,18 @@ var (
 	// ErrProcessAlreadyRunning is returned when trying to start an already running process.
 	ErrProcessAlreadyRunning = errors.New("process already running")
 
+	// ErrProcessNotPaused is returned when trying to resume a process that is not paused.
+	ErrProcessNotPaused = errors.New("process not paused")
+
+	// ErrProcessAlreadyPaused is returned when trying to pause an already paused process.
+	ErrProcessAlreadyPaused = errors.New("process already paused")
+
+	// ErrPauseFailed is returned when pause operation fails.
+	ErrPauseFailed = errors.New("pause failed")
+
+	// ErrResumeFailed is returned when resume operation fails.
+	ErrResumeFailed = errors.New("resume failed")
+
 	// ErrUnsupportedProcessType is returned for unknown process types.
 	ErrUnsupportedProcessType = errors.New("unsupported process type")
 

@@ -2,8 +2,10 @@
 package process
 
 import (
+	"fmt"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -33,6 +35,7 @@ const (
 	ProcessStateCreated  ProcessState = "created"
 	ProcessStateStarting ProcessState = "starting"
 	ProcessStateRunning  ProcessState = "running"
+	ProcessStatePaused   ProcessState = "paused"
 	ProcessStateStopped  ProcessState = "stopped"
 	ProcessStateKilled   ProcessState = "killed"
 	ProcessStateCrashed  ProcessState = "crashed"
@@ -91,6 +94,11 @@ type Process interface {
 	Restart() error
 	IsRunning() bool
 	State() ProcessState
+
+	// Pause/Resume - sends SIGSTOP/SIGCONT to process group
+	Pause() error
+	Resume() error
+	IsPaused() bool
 
 	// I/O
 	WriteInput(data []byte) error
@@ -257,6 +265,65 @@ func (bp *BaseProcess) IsRunning() bool {
 	bp.mu.RLock()
 	defer bp.mu.RUnlock()
 	return bp.state == ProcessStateRunning
+}
+
+// IsPaused returns true if the process is paused.
+func (bp *BaseProcess) IsPaused() bool {
+	bp.mu.RLock()
+	defer bp.mu.RUnlock()
+	return bp.state == ProcessStatePaused
+}
+
+// Pause sends SIGSTOP to the process group to pause the process and all its children.
+func (bp *BaseProcess) Pause() error {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	if bp.state != ProcessStateRunning {
+		return ErrProcessNotRunning
+	}
+
+	if bp.pid <= 0 {
+		return ErrProcessNotRunning
+	}
+
+	// Send SIGSTOP to the entire process group (negative PID)
+	// This ensures all child processes are also paused
+	if err := syscall.Kill(-bp.pid, syscall.SIGSTOP); err != nil {
+		// If process group signal fails, try sending to the process directly
+		if err := syscall.Kill(bp.pid, syscall.SIGSTOP); err != nil {
+			return fmt.Errorf("%w: %v", ErrPauseFailed, err)
+		}
+	}
+
+	bp.state = ProcessStatePaused
+	return nil
+}
+
+// Resume sends SIGCONT to the process group to resume the process and all its children.
+func (bp *BaseProcess) Resume() error {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	if bp.state != ProcessStatePaused {
+		return ErrProcessNotPaused
+	}
+
+	if bp.pid <= 0 {
+		return ErrProcessNotRunning
+	}
+
+	// Send SIGCONT to the entire process group (negative PID)
+	// This ensures all child processes are also resumed
+	if err := syscall.Kill(-bp.pid, syscall.SIGCONT); err != nil {
+		// If process group signal fails, try sending to the process directly
+		if err := syscall.Kill(bp.pid, syscall.SIGCONT); err != nil {
+			return fmt.Errorf("%w: %v", ErrResumeFailed, err)
+		}
+	}
+
+	bp.state = ProcessStateRunning
+	return nil
 }
 
 // ExitCode returns the process exit code.

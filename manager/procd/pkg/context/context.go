@@ -2,6 +2,7 @@
 package context
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -84,6 +85,32 @@ func (ctx *Context) IsRunning() bool {
 		return ctx.MainProcess.IsRunning()
 	}
 	return false
+}
+
+// IsPaused returns true if the main process is paused.
+func (ctx *Context) IsPaused() bool {
+	if ctx.MainProcess != nil {
+		return ctx.MainProcess.IsPaused()
+	}
+	return false
+}
+
+// Pause pauses the context's main process and all its children.
+func (ctx *Context) Pause() error {
+	if ctx.MainProcess != nil {
+		ctx.UpdatedAt = time.Now()
+		return ctx.MainProcess.Pause()
+	}
+	return nil
+}
+
+// Resume resumes the context's main process and all its children.
+func (ctx *Context) Resume() error {
+	if ctx.MainProcess != nil {
+		ctx.UpdatedAt = time.Now()
+		return ctx.MainProcess.Resume()
+	}
+	return nil
 }
 
 // Manager manages contexts in the sandbox.
@@ -178,6 +205,42 @@ func (m *Manager) RestartContext(id string) (*Context, error) {
 	}
 
 	return ctx, nil
+}
+
+// PauseAll pauses all running contexts and their child processes.
+// Returns an error if any context fails to pause.
+func (m *Manager) PauseAll() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var errs []error
+	for _, ctx := range m.contexts {
+		if ctx.IsRunning() {
+			if err := ctx.Pause(); err != nil {
+				errs = append(errs, fmt.Errorf("context %s: %w", ctx.ID, err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// ResumeAll resumes all paused contexts and their child processes.
+// Returns an error if any context fails to resume.
+func (m *Manager) ResumeAll() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var errs []error
+	for _, ctx := range m.contexts {
+		if ctx.IsPaused() {
+			if err := ctx.Resume(); err != nil {
+				errs = append(errs, fmt.Errorf("context %s: %w", ctx.ID, err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // WriteInput writes input to a context's main process.

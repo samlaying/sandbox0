@@ -52,6 +52,11 @@ func (n *NodeREPL) Start() error {
 	}
 	cmd.Env = env
 
+	// Create a new process group so we can send signals to all child processes
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
 	// Get PTY size
 	ptySize := config.PTYSize
 	if ptySize == nil {

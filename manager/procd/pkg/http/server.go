@@ -105,6 +105,11 @@ func (s *Server) setupRoutes() {
 	api.Use(s.authMiddleware)
 	api.Use(s.internalTokenMiddleware)
 
+	// Sandbox-level handlers (pause/resume all processes)
+	sandboxHandler := handlers.NewSandboxHandler(s.contextManager, s.logger)
+	api.HandleFunc("/sandbox/pause", sandboxHandler.Pause).Methods("POST")
+	api.HandleFunc("/sandbox/resume", sandboxHandler.Resume).Methods("POST")
+
 	// Context/Process handlers
 	contextHandler := handlers.NewContextHandler(s.contextManager, s.logger)
 	api.HandleFunc("/contexts", contextHandler.List).Methods("GET")

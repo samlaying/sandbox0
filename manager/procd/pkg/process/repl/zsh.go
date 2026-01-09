@@ -66,6 +66,11 @@ func (z *ZshREPL) Start() error {
 
 	cmd.Env = env
 
+	// Create a new process group so we can send signals to all child processes
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
 	ptySize := config.PTYSize
 	if ptySize == nil {
 		ptySize = &process.PTYSize{Rows: 24, Cols: 80}

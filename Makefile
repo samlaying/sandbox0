@@ -1,6 +1,6 @@
 .PHONY: all build build-all build-% test lint tidy vendor clean
 
-SERVICES := internal-gateway manager storage-proxy k8s-plugin
+SERVICES := internal-gateway manager storage-proxy netd k8s-plugin
 
 all: build-all
 

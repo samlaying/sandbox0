@@ -52,6 +52,7 @@ type ContextResponse struct {
 	CWD       string            `json:"cwd"`
 	EnvVars   map[string]string `json:"env_vars"`
 	Running   bool              `json:"running"`
+	Paused    bool              `json:"paused"`
 	CreatedAt string            `json:"created_at"`
 }
 
@@ -68,6 +69,7 @@ func (h *ContextHandler) List(w http.ResponseWriter, r *http.Request) {
 			CWD:       ctx.CWD,
 			EnvVars:   ctx.EnvVars,
 			Running:   ctx.IsRunning(),
+			Paused:    ctx.IsPaused(),
 			CreatedAt: ctx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
@@ -117,6 +119,7 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,
 		Running:   ctx.IsRunning(),
+		Paused:    ctx.IsPaused(),
 		CreatedAt: ctx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
@@ -143,6 +146,7 @@ func (h *ContextHandler) Get(w http.ResponseWriter, r *http.Request) {
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,
 		Running:   ctx.IsRunning(),
+		Paused:    ctx.IsPaused(),
 		CreatedAt: ctx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
@@ -187,6 +191,7 @@ func (h *ContextHandler) Restart(w http.ResponseWriter, r *http.Request) {
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,
 		Running:   ctx.IsRunning(),
+		Paused:    ctx.IsPaused(),
 		CreatedAt: ctx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }

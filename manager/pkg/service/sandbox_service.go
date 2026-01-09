@@ -46,6 +46,7 @@ func NewSandboxService(
 
 // ClaimRequest represents a sandbox claim request
 type ClaimRequest struct {
+	Namespace  string         `json:"namespace"`
 	TemplateID string         `json:"template_id"`
 	TeamID     string         `json:"team_id"`
 	UserID     string         `json:"user_id"`
@@ -79,10 +80,10 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	)
 
 	// Get the template
-	template, err := s.templateLister.Get("default", req.TemplateID)
+	template, err := s.templateLister.Get(req.Namespace, req.TemplateID)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("template not found: %s", req.TemplateID)
+			return nil, fmt.Errorf("template %s not found in namespace %s", req.TemplateID, req.Namespace)
 		}
 		return nil, fmt.Errorf("get template: %w", err)
 	}
@@ -236,7 +237,11 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 
 // createNewPod creates a new pod for cold start
 func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.SandboxTemplate, req *ClaimRequest) (*corev1.Pod, error) {
-	podName := fmt.Sprintf("%s-%s", req.TemplateID, req.SandboxID[:8])
+	suffix := req.SandboxID
+	if len(suffix) >= 8 {
+		suffix = suffix[:8]
+	}
+	podName := fmt.Sprintf("%s-%s", req.TemplateID, suffix)
 
 	// Build pod spec from template
 	pod := &corev1.Pod{
@@ -258,7 +263,7 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 	}
 
 	// Set expiration time
-	ttl := int32(3600) // Default 1 hour
+	ttl := int32(300) // Default 5 minutes
 	if req.Config != nil && req.Config.TTL > 0 {
 		ttl = req.Config.TTL
 	}

@@ -42,6 +42,11 @@ func (b *BashREPL) Start() error {
 	// Start interactive bash
 	cmd := exec.Command("bash", "--norc", "--noprofile", "-i")
 
+	// Create a new process group so we can send signals to all child processes
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
 	// Set working directory
 	if config.CWD != "" {
 		cmd.Dir = config.CWD

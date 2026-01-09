@@ -142,6 +142,9 @@ func (s *Server) claimSandbox(c *gin.Context) {
 		})
 		return
 	}
+	if req.Namespace == "" {
+		req.Namespace = req.TeamID
+	}
 
 	resp, err := s.sandboxService.ClaimSandbox(c.Request.Context(), &req)
 	if err != nil {
