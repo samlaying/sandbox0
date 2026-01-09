@@ -37,19 +37,11 @@ type MountRequest struct {
 
 // VolumeConfig represents JuiceFS volume configuration.
 type VolumeConfig struct {
-	MetaURL        string `json:"meta_url"`
-	S3Bucket       string `json:"s3_bucket"`
-	S3Prefix       string `json:"s3_prefix"`
-	S3Region       string `json:"s3_region"`
-	S3Endpoint     string `json:"s3_endpoint"`
-	S3AccessKey    string `json:"s3_access_key"`
-	S3SecretKey    string `json:"s3_secret_key"`
-	S3SessionToken string `json:"s3_session_token"`
-	CacheSize      string `json:"cache_size"`
-	Prefetch       int32  `json:"prefetch"`
-	BufferSize     string `json:"buffer_size"`
-	Writeback      bool   `json:"writeback"`
-	ReadOnly       bool   `json:"read_only"`
+	CacheSize  string `json:"cache_size"`
+	Prefetch   int32  `json:"prefetch"`
+	BufferSize string `json:"buffer_size"`
+	Writeback  bool   `json:"writeback"`
+	ReadOnly   bool   `json:"read_only"`
 }
 
 // MountResponse represents the response for a mount request.

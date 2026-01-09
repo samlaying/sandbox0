@@ -65,8 +65,8 @@ func (s *SandboxNetworkPolicyService) CreateOrUpdateSandboxNetworkPolicy(
 	policySpec := &v1alpha1.SandboxNetworkPolicySpec{
 		SandboxID: req.SandboxID,
 		TeamID:    req.TeamID,
-		Egress:    s.buildEgressSpec(mergedSpec),
-		Ingress:   s.buildIngressSpec(mergedSpec),
+		Egress:    v1alpha1.BuildEgressSpec(mergedSpec),
+		Ingress:   v1alpha1.BuildIngressSpec(mergedSpec),
 		Audit: &v1alpha1.AuditSpec{
 			Level:      "basic",
 			SampleRate: "1.0",
@@ -425,60 +425,6 @@ func (s *SandboxNetworkPolicyService) mergeNetworkPolicies(
 	}
 
 	return merged
-}
-
-// buildEgressSpec builds EgressPolicySpec from SandboxNetworkPolicy
-func (s *SandboxNetworkPolicyService) buildEgressSpec(policy *v1alpha1.TplSandboxNetworkPolicy) *v1alpha1.EgressPolicySpec {
-	if policy == nil {
-		return &v1alpha1.EgressPolicySpec{
-			DefaultAction:     "deny",
-			AlwaysDeniedCIDRs: v1alpha1.PlatformDeniedCIDRs,
-			EnforceProxyPorts: []int32{80, 443},
-		}
-	}
-
-	spec := &v1alpha1.EgressPolicySpec{
-		AlwaysDeniedCIDRs: v1alpha1.PlatformDeniedCIDRs,
-		EnforceProxyPorts: []int32{80, 443},
-	}
-
-	switch policy.Mode {
-	case v1alpha1.NetworkModeAllowAll:
-		spec.DefaultAction = "allow"
-	case v1alpha1.NetworkModeBlockAll:
-		spec.DefaultAction = "deny"
-	case v1alpha1.NetworkModeCustom:
-		spec.DefaultAction = "deny" // Custom defaults to deny
-	default:
-		spec.DefaultAction = "deny"
-	}
-
-	if policy.Egress != nil {
-		spec.AllowedCIDRs = policy.Egress.AllowedIPs
-		spec.DeniedCIDRs = policy.Egress.BlockedIPs
-		spec.AllowedDomains = policy.Egress.AllowedDomains
-		spec.DeniedDomains = policy.Egress.BlockedDomains
-	}
-
-	return spec
-}
-
-// buildIngressSpec builds IngressPolicySpec from SandboxNetworkPolicy
-func (s *SandboxNetworkPolicyService) buildIngressSpec(policy *v1alpha1.TplSandboxNetworkPolicy) *v1alpha1.IngressPolicySpec {
-	spec := &v1alpha1.IngressPolicySpec{
-		DefaultAction: "deny", // Always default deny for ingress
-		// Allow procd port from internal-gateway
-		AllowedPorts: []v1alpha1.PortSpec{
-			{Port: 49983, Protocol: "tcp"},
-		},
-	}
-
-	if policy != nil && policy.Ingress != nil {
-		spec.AllowedSourceCIDRs = policy.Ingress.AllowedIPs
-		spec.DeniedSourceCIDRs = policy.Ingress.BlockedIPs
-	}
-
-	return spec
 }
 
 // UpdateSandboxNetworkPolicyRequest is the request to update a network policy

@@ -225,19 +225,11 @@ message MountVolumeRequest {
 }
 
 message VolumeConfig {
-  string meta_url = 1;
-  string s3_bucket = 2;
-  string s3_prefix = 3;
-  string s3_region = 4;
-  string s3_endpoint = 5;
-  string s3_access_key = 6;
-  string s3_secret_key = 7;
-  string s3_session_token = 8;
-  string cache_size = 9;
-  int32 prefetch = 10;
-  string buffer_size = 11;
-  bool writeback = 12;
-  bool read_only = 13;
+  string cache_size = 1;
+  int32 prefetch = 2;
+  string buffer_size = 3;
+  bool writeback = 4;
+  bool read_only = 5;
 }
 
 message MountVolumeResponse {
