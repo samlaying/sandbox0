@@ -52,7 +52,9 @@ func (s *FileSystemServer) MountVolume(ctx context.Context, req *pb.MountVolumeR
 		ReadOnly:   req.Config.ReadOnly,
 	}
 
-	err := s.volMgr.MountVolume(ctx, req.VolumeId, config)
+	// TODO build s3 prefix based on team/user
+	prefix := ""
+	err := s.volMgr.MountVolume(ctx, prefix, req.VolumeId, config)
 	if err != nil {
 		s.logger.WithError(err).WithField("volume_id", req.VolumeId).Error("Failed to mount volume")
 		return nil, status.Error(codes.Internal, err.Error())

@@ -59,7 +59,7 @@ func NewManager(logger *logrus.Logger, cfg *config.Config, repo *db.Repository) 
 }
 
 // MountVolume mounts a JuiceFS volume using SDK mode (in-memory, no FUSE)
-func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *VolumeConfig) error {
+func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, config *VolumeConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -84,8 +84,6 @@ func (m *Manager) MountVolume(ctx context.Context, volumeID string, config *Volu
 	}
 
 	// 2. Initialize S3 object storage
-	// TODO build s3 prefix
-	prefix := ""
 	blob, err := m.createS3Storage(config, prefix, format)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 storage: %w", err)

@@ -265,8 +265,8 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 	}
 
 	// Configure pool
-	poolConfig.MaxConns = 50
-	poolConfig.MinConns = 10
+	poolConfig.MaxConns = 30
+	poolConfig.MinConns = 5
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
