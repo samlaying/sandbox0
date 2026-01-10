@@ -29,6 +29,11 @@ type Config struct {
 	// Metrics
 	MetricsPort int
 
+	// Webhook
+	WebhookPort     int
+	WebhookCertPath string
+	WebhookKeyPath  string
+
 	// Internal Auth
 	InternalAuthPublicKeyPath  string
 	InternalAuthPrivateKeyPath string
@@ -46,6 +51,9 @@ func LoadConfig() *Config {
 		CleanupInterval:            env.GetEnvDuration("CLEANUP_INTERVAL", 60*time.Second),
 		LogLevel:                   env.GetEnv("LOG_LEVEL", "info"),
 		MetricsPort:                env.GetEnvInt("METRICS_PORT", 9090),
+		WebhookPort:                env.GetEnvInt("WEBHOOK_PORT", 9443),
+		WebhookCertPath:            env.GetEnv("WEBHOOK_CERT_PATH", "/tmp/k8s-webhook-server/serving-certs/tls.crt"),
+		WebhookKeyPath:             env.GetEnv("WEBHOOK_KEY_PATH", "/tmp/k8s-webhook-server/serving-certs/tls.key"),
 		InternalAuthPublicKeyPath:  env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY_PATH", "/config/internal_jwt_public.key"),
 		InternalAuthPrivateKeyPath: env.GetEnv("INTERNAL_AUTH_PRIVATE_KEY_PATH", "/secrets/internal_jwt_private.key"),
 	}

@@ -35,6 +35,9 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
           env:
             - name: HTTP_PORT
               value: "8080"
@@ -69,6 +72,15 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+          volumeMounts:
+            - name: cert
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+      volumes:
+        - name: cert
+          secret:
+            defaultMode: 420
+            secretName: webhook-server-cert
 
 ---
 apiVersion: v1
@@ -88,6 +100,10 @@ spec:
     - name: metrics
       port: 9090
       targetPort: metrics
+      protocol: TCP
+    - name: webhook
+      port: 443
+      targetPort: webhook
       protocol: TCP
   selector:
     app: manager

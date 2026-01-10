@@ -16,6 +16,7 @@ import (
 	"github.com/sandbox0-ai/infra/manager/pkg/generated/informers/externalversions"
 	httpserver "github.com/sandbox0-ai/infra/manager/pkg/http"
 	"github.com/sandbox0-ai/infra/manager/pkg/service"
+	"github.com/sandbox0-ai/infra/manager/pkg/webhook"
 	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
@@ -192,6 +193,21 @@ func main() {
 
 	// Start metrics server
 	go startMetricsServer(cfg.MetricsPort, logger)
+
+	// Start webhook server
+	webhookServer := webhook.NewServer(
+		cfg.WebhookPort,
+		cfg.WebhookCertPath,
+		cfg.WebhookKeyPath,
+		logger,
+	)
+	go func() {
+		if err := webhookServer.Start(ctx); err != nil {
+			// In development, we might not have certs, so just log error but don't crash
+			// In production, this should probably be fatal if webhook is expected
+			logger.Error("Webhook server failed", zap.Error(err))
+		}
+	}()
 
 	// Start informers
 	logger.Info("Starting informers")
