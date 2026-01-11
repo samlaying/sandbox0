@@ -18,7 +18,6 @@ type SandboxVolume struct {
 	Writeback  bool   `json:"writeback"`
 	ReadOnly   bool   `json:"read_only"`
 
-	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

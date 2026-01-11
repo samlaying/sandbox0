@@ -165,10 +165,10 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) 
 	// Create a migration logger that writes to zap
 	migrateLogger := &zapLogger{logger: logger}
 
-	if err := migrate.Up(ctx, pool, "migrations", migrate.Options{
-		Logger: migrateLogger,
-		Schema: "ig",
-	}); err != nil {
+	if err := migrate.Up(ctx, pool, "migrations",
+		migrate.WithLogger(migrateLogger),
+		migrate.WithSchema("ig"),
+	); err != nil {
 		return fmt.Errorf("migrate up: %w", err)
 	}
 

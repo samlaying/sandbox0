@@ -34,16 +34,16 @@ func (r *Repository) CreateSandboxVolume(ctx context.Context, volume *SandboxVol
 		INSERT INTO sandbox_volumes (
 			id, team_id, user_id, cluster_id,
 			cache_size, prefetch, buffer_size, writeback, read_only,
-			is_active, created_at, updated_at
+			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7, $8, $9,
-			$10, $11, $12
+			$10, $11
 		)
 	`,
 		volume.ID, volume.TeamID, volume.UserID, volume.ClusterID,
 		volume.CacheSize, volume.Prefetch, volume.BufferSize, volume.Writeback, volume.ReadOnly,
-		volume.IsActive, volume.CreatedAt, volume.UpdatedAt,
+		 volume.CreatedAt, volume.UpdatedAt,
 	)
 
 	if err != nil {
@@ -61,13 +61,13 @@ func (r *Repository) GetSandboxVolume(ctx context.Context, id string) (*SandboxV
 		SELECT 
 			id, team_id, user_id, cluster_id,
 			cache_size, prefetch, buffer_size, writeback, read_only,
-			is_active, created_at, updated_at
+			created_at, updated_at
 		FROM sandbox_volumes
 		WHERE id = $1
 	`, id).Scan(
 		&v.ID, &v.TeamID, &v.UserID, &v.ClusterID,
 		&v.CacheSize, &v.Prefetch, &v.BufferSize, &v.Writeback, &v.ReadOnly,
-		&v.IsActive, &v.CreatedAt, &v.UpdatedAt,
+		&v.CreatedAt, &v.UpdatedAt,
 	)
 
 	if err != nil {
@@ -89,13 +89,11 @@ func (r *Repository) UpdateSandboxVolume(ctx context.Context, volume *SandboxVol
 			buffer_size = $4,
 			writeback = $5,
 			read_only = $6,
-			is_active = $7,
 			updated_at = NOW()
 		WHERE id = $1
 	`,
 		volume.ID,
 		volume.CacheSize, volume.Prefetch, volume.BufferSize, volume.Writeback, volume.ReadOnly,
-		volume.IsActive,
 	)
 
 	if err != nil {
@@ -115,7 +113,7 @@ func (r *Repository) ListSandboxVolumesByTeam(ctx context.Context, teamID string
 		SELECT 
 			id, team_id, user_id, cluster_id,
 			cache_size, prefetch, buffer_size, writeback, read_only,
-			is_active, created_at, updated_at
+			created_at, updated_at
 		FROM sandbox_volumes
 		WHERE team_id = $1 AND is_active = true
 		ORDER BY created_at DESC
@@ -131,7 +129,7 @@ func (r *Repository) ListSandboxVolumesByTeam(ctx context.Context, teamID string
 		err := rows.Scan(
 			&v.ID, &v.TeamID, &v.UserID, &v.ClusterID,
 			&v.CacheSize, &v.Prefetch, &v.BufferSize, &v.Writeback, &v.ReadOnly,
-			&v.IsActive, &v.CreatedAt, &v.UpdatedAt,
+			&v.CreatedAt, &v.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan sandbox volume: %w", err)

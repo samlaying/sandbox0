@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS sandbox_volumes (
     writeback BOOLEAN NOT NULL DEFAULT false,
     read_only BOOLEAN NOT NULL DEFAULT false,
     
-    is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

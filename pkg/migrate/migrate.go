@@ -42,6 +42,24 @@ type Options struct {
 	Schema string
 }
 
+// Option is a functional option for configuring the migrator.
+type Option func(*Options)
+
+// WithLogger sets the logger for migration output.
+func WithLogger(l Logger) Option {
+	return func(o *Options) { o.Logger = l }
+}
+
+// WithTableName sets the migration tracking table name.
+func WithTableName(name string) Option {
+	return func(o *Options) { o.TableName = name }
+}
+
+// WithSchema sets the database schema for migrations.
+func WithSchema(schema string) Option {
+	return func(o *Options) { o.Schema = schema }
+}
+
 // Logger defines the interface for logging migration progress.
 type Logger interface {
 	Printf(format string, args ...interface{})
@@ -63,13 +81,13 @@ func (defaultLogger) Fatalf(string, ...interface{}) {}
 //
 // This function is idempotent - it tracks which migrations have been applied
 // and only runs new ones.
-func Up(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Options) error {
-	var opt Options
-	if len(opts) > 0 {
-		opt = opts[0]
+func Up(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
 	}
-	if opt.Logger == nil {
-		opt.Logger = defaultLogger{}
+	if options.Logger == nil {
+		options.Logger = defaultLogger{}
 	}
 
 	// Resolve the migrations directory
@@ -83,18 +101,23 @@ func Up(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...O
 	defer db.Close()
 
 	// Set goose logger
-	if opt.Logger != nil {
-		goose.SetLogger(opt.Logger)
+	if options.Logger != nil {
+		goose.SetLogger(options.Logger)
 	}
 
 	// Set custom table name if provided
-	if opt.TableName != "" {
-		goose.SetTableName(opt.TableName)
+	if options.TableName != "" {
+		goose.SetTableName(options.TableName)
 	}
 
 	// Set schema search_path if specified
-	if opt.Schema != "" {
-		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", opt.Schema)); err != nil {
+	if options.Schema != "" {
+		// Create schema if not exists
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", options.Schema)); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+		// Set search_path to the schema
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", options.Schema)); err != nil {
 			return fmt.Errorf("set search_path: %w", err)
 		}
 	}
@@ -108,10 +131,10 @@ func Up(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...O
 }
 
 // Status prints the current migration status to stdout.
-func Status(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Options) error {
-	var opt Options
-	if len(opts) > 0 {
-		opt = opts[0]
+func Status(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
 	}
 
 	resolvedDir, err := resolveDir(migrationsDir)
@@ -123,24 +146,32 @@ func Status(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts 
 	defer db.Close()
 
 	// Set schema search_path if specified
-	if opt.Schema != "" {
-		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", opt.Schema)); err != nil {
+	if options.Schema != "" {
+		// Create schema if not exists
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", options.Schema)); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+		// Set search_path to the schema
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", options.Schema)); err != nil {
 			return fmt.Errorf("set search_path: %w", err)
 		}
 	}
 
-	if opt.TableName != "" {
-		goose.SetTableName(opt.TableName)
+	if options.TableName != "" {
+		goose.SetTableName(options.TableName)
 	}
 
 	return goose.StatusContext(ctx, db, resolvedDir)
 }
 
 // Down rolls back the most recently applied migration.
-func Down(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Options) error {
-	var opt Options
-	if len(opts) > 0 {
-		opt = opts[0]
+func Down(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	if options.Logger == nil {
+		options.Logger = defaultLogger{}
 	}
 
 	resolvedDir, err := resolveDir(migrationsDir)
@@ -151,19 +182,24 @@ func Down(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ..
 	db := stdlib.OpenDBFromPool(pool)
 	defer db.Close()
 
-	if opt.Logger != nil {
-		goose.SetLogger(opt.Logger)
+	if options.Logger != nil {
+		goose.SetLogger(options.Logger)
 	}
 
 	// Set schema search_path if specified
-	if opt.Schema != "" {
-		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", opt.Schema)); err != nil {
+	if options.Schema != "" {
+		// Create schema if not exists
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", options.Schema)); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+		// Set search_path to the schema
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", options.Schema)); err != nil {
 			return fmt.Errorf("set search_path: %w", err)
 		}
 	}
 
-	if opt.TableName != "" {
-		goose.SetTableName(opt.TableName)
+	if options.TableName != "" {
+		goose.SetTableName(options.TableName)
 	}
 
 	if err := goose.DownContext(ctx, db, resolvedDir); err != nil {

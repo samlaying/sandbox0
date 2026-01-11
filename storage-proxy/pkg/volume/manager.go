@@ -84,7 +84,7 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	}
 
 	// 2. Initialize S3 object storage
-	blob, err := m.createS3Storage(config, prefix, format)
+	blob, err := m.createS3Storage(config, s3Prefix, format)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 storage: %w", err)
 	}
