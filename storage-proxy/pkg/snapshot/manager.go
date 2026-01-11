@@ -18,6 +18,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// volumeProvider abstracts the subset of volume.Manager needed by snapshot.Manager.
+type volumeProvider interface {
+	GetVolume(string) (*volume.VolumeContext, error)
+}
+
+type repository interface {
+	GetSandboxVolume(context.Context, string) (*db.SandboxVolume, error)
+	ListSnapshotsByVolume(context.Context, string) ([]*db.Snapshot, error)
+	GetSnapshot(context.Context, string) (*db.Snapshot, error)
+	CreateSnapshot(context.Context, *db.Snapshot) error
+	DeleteSnapshot(context.Context, string) error
+}
+
 // Errors
 var (
 	ErrVolumeNotFound            = errors.New("volume not found")
@@ -32,8 +45,8 @@ var (
 type Manager struct {
 	mu        sync.RWMutex
 	locks     map[string]time.Time // volumeID -> lock acquired time
-	repo      *db.Repository
-	volMgr    *volume.Manager
+	repo      repository
+	volMgr    volumeProvider
 	config    *config.Config
 	logger    *logrus.Logger
 	clusterID string
@@ -42,8 +55,8 @@ type Manager struct {
 
 // NewManager creates a new snapshot manager
 func NewManager(
-	repo *db.Repository,
-	volMgr *volume.Manager,
+	repo repository,
+	volMgr volumeProvider,
 	cfg *config.Config,
 	logger *logrus.Logger,
 ) *Manager {
@@ -156,7 +169,7 @@ func (m *Manager) CreateSnapshot(ctx context.Context, req *CreateSnapshotRequest
 	if err := m.repo.CreateSnapshot(ctx, snapshot); err != nil {
 		// Cleanup: delete the cloned snapshot directory
 		m.logger.WithError(err).Error("Failed to save snapshot metadata, cleaning up")
-		m.deleteSnapshotDir(ctx, volCtx, snapshotPath)
+		m.deleteSnapshotDir(ctx, volCtx.Meta, snapshotPath)
 		return nil, fmt.Errorf("save snapshot: %w", err)
 	}
 
@@ -289,7 +302,7 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, req *RestoreSnapshotReque
 	errno = volCtx.Meta.Clone(jfsCtx, snapshotParentIno, snapshotIno, parentIno, volumeName, 0, 0, &cloneCount, &cloneTotal)
 	if errno != 0 {
 		// Rollback: restore the backup
-		m.logger.WithError(fmt.Errorf(errno.Error())).Error("Clone failed, rolling back")
+		m.logger.WithError(errno).Error("Clone failed, rolling back")
 		volCtx.Meta.Rename(jfsCtx, parentIno, tempName, parentIno, volumeName, 0, &renamedIno, &renamedAttr)
 		return fmt.Errorf("%w: %s", ErrCloneFailed, errno.Error())
 	}
@@ -300,7 +313,7 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, req *RestoreSnapshotReque
 	if tempIno > 0 {
 		errno = volCtx.Meta.Remove(jfsCtx, parentIno, tempName, true, 4, &removeCount)
 		if errno != 0 {
-			m.logger.WithError(fmt.Errorf(errno.Error())).Warn("Failed to cleanup backup directory")
+			m.logger.WithError(errno).Warn("Failed to cleanup backup directory")
 		}
 	}
 
@@ -341,7 +354,7 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, volumeID, snapshotID, team
 	} else {
 		// 3. Delete snapshot directory from JuiceFS
 		snapshotPath := fmt.Sprintf("/snapshots/%s/%s", volumeID, snapshotID)
-		m.deleteSnapshotDir(ctx, volCtx, snapshotPath)
+		m.deleteSnapshotDir(ctx, volCtx.Meta, snapshotPath)
 	}
 
 	// 4. Delete database record
@@ -359,8 +372,17 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, volumeID, snapshotID, team
 
 // Helper functions
 
+// metaClient defines the JuiceFS meta subset required by snapshot operations.
+type metaClient interface {
+	Lookup(meta.Context, meta.Ino, string, *meta.Ino, *meta.Attr, bool) syscall.Errno
+	Mkdir(meta.Context, meta.Ino, string, uint16, uint16, uint8, *meta.Ino, *meta.Attr) syscall.Errno
+	Clone(meta.Context, meta.Ino, meta.Ino, meta.Ino, string, uint8, uint16, *uint64, *uint64) syscall.Errno
+	Rename(meta.Context, meta.Ino, string, meta.Ino, string, uint32, *meta.Ino, *meta.Attr) syscall.Errno
+	Remove(meta.Context, meta.Ino, string, bool, int, *uint64) syscall.Errno
+}
+
 // lookupPath resolves a path to parent inode and target inode
-func (m *Manager) lookupPath(metaClient meta.Meta, path string) (parentIno, targetIno meta.Ino, err error) {
+func (m *Manager) lookupPath(metaClient metaClient, path string) (parentIno, targetIno meta.Ino, err error) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 0 {
 		return 0, 0, fmt.Errorf("invalid path: %s", path)
@@ -391,7 +413,7 @@ func (m *Manager) lookupPath(metaClient meta.Meta, path string) (parentIno, targ
 }
 
 // ensurePathExists creates directories along a path if they don't exist
-func (m *Manager) ensurePathExists(ctx context.Context, metaClient meta.Meta, path string) (meta.Ino, error) {
+func (m *Manager) ensurePathExists(ctx context.Context, metaClient metaClient, path string) (meta.Ino, error) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 0 {
 		return meta.RootInode, nil
@@ -430,8 +452,8 @@ func (m *Manager) ensurePathExists(ctx context.Context, metaClient meta.Meta, pa
 }
 
 // deleteSnapshotDir removes a snapshot directory from JuiceFS
-func (m *Manager) deleteSnapshotDir(ctx context.Context, volCtx *volume.VolumeContext, snapshotPath string) {
-	parentIno, snapshotIno, err := m.lookupPath(volCtx.Meta, snapshotPath)
+func (m *Manager) deleteSnapshotDir(ctx context.Context, metaClient metaClient, snapshotPath string) {
+	parentIno, snapshotIno, err := m.lookupPath(metaClient, snapshotPath)
 	if err != nil {
 		m.logger.WithError(err).Warn("Failed to lookup snapshot path for deletion")
 		return
@@ -445,9 +467,9 @@ func (m *Manager) deleteSnapshotDir(ctx context.Context, volCtx *volume.VolumeCo
 	snapshotName := filepath.Base(snapshotPath)
 
 	var removeCount uint64
-	errno := volCtx.Meta.Remove(jfsCtx, parentIno, snapshotName, true, 4, &removeCount)
+	errno := metaClient.Remove(jfsCtx, parentIno, snapshotName, true, 4, &removeCount)
 	if errno != 0 && errno != syscall.ENOENT {
-		m.logger.WithError(fmt.Errorf(errno.Error())).Warn("Failed to delete snapshot directory")
+		m.logger.WithError(errno).Warn("Failed to delete snapshot directory")
 	}
 }
 

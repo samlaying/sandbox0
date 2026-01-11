@@ -39,6 +39,7 @@ logs/
 # Cache
 cache/
 tmp/
+.cache
 
 # Secrets (never commit)
 *.pem

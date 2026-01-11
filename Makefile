@@ -51,8 +51,10 @@ obuild:
 	elif echo "$(SERVICES)" | grep -qw "$$service"; then \
 		echo "Direct go build $$service..."; \
 		if [ -d "$$service/cmd" ]; then \
+			go vet ./$$service/cmd/...; \
 			go build -v -o $$service/bin ./$$service/cmd/...; \
 		elif [ -f "$$service/main.go" ]; then \
+			go vet ./$$service/; \
 			go build -v -o $$service/bin ./$$service/; \
 		else \
 			echo "Warning: No cmd directory or main.go found for $$service"; \
