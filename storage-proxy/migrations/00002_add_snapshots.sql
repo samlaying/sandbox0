@@ -91,7 +91,3 @@ CREATE TRIGGER update_snapshot_coordinations_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- +goose Down
-DROP TABLE IF EXISTS snapshot_flush_responses;
-DROP TABLE IF EXISTS snapshot_coordinations;
-DROP TABLE IF EXISTS sandbox_volume_mounts;
-DROP TABLE IF EXISTS sandbox_volume_snapshots;

@@ -20,14 +20,16 @@ import (
 )
 
 func newTestManager(repo *fakeRepo, volMgr volumeProvider) *Manager {
+	metaClient := newFakeMeta()
 	return &Manager{
-		repo:      repo,
-		volMgr:    volMgr,
-		config:    &config.Config{DefaultClusterId: "test-cluster"},
-		logger:    logrus.New(),
-		clusterID: "test-cluster",
-		podID:     "test-pod",
-		locks:     make(map[string]time.Time),
+		repo:       repo,
+		volMgr:     volMgr,
+		config:     &config.Config{DefaultClusterId: "test-cluster"},
+		logger:     logrus.New(),
+		clusterID:  "test-cluster",
+		podID:      "test-pod",
+		locks:      make(map[string]time.Time),
+		metaClient: metaClient, // Independent meta client for testing
 	}
 }
 
