@@ -96,7 +96,7 @@ func (rl *RateLimiter) cleanupLoop() {
 	for range ticker.C {
 		// Reset all limiters periodically to prevent memory leaks
 		// In production, you might want a more sophisticated cleanup strategy
-		rl.localLimiters.Range(func(key, value interface{}) bool {
+		rl.localLimiters.Range(func(key, value any) bool {
 			// Keep limiters, just let them naturally reset
 			return true
 		})

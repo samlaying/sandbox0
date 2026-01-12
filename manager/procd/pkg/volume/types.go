@@ -70,11 +70,11 @@ type MountContext struct {
 	MountPoint      string
 
 	// gRPC connection and client
-	GrpcConn   interface{} // *grpc.ClientConn
-	GrpcClient interface{} // pb.FileSystemClient
+	GrpcConn   any // *grpc.ClientConn
+	GrpcClient any // pb.FileSystemClient
 
 	// FUSE server
-	FuseServer interface{} // *fuse.Server
+	FuseServer any // *fuse.Server
 
 	MountedAt time.Time
 

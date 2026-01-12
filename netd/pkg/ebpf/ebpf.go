@@ -459,7 +459,7 @@ func (m *Manager) checkEBPFSupport() error {
 }
 
 // GetStats returns statistics for the managed qdiscs
-func (m *Manager) GetStats(ctx context.Context, iface string) (map[string]interface{}, error) {
+func (m *Manager) GetStats(ctx context.Context, iface string) (map[string]any, error) {
 	cmd := exec.CommandContext(ctx, "tc", "-s", "qdisc", "show", "dev", iface)
 	output, err := cmd.Output()
 	if err != nil {
@@ -467,7 +467,7 @@ func (m *Manager) GetStats(ctx context.Context, iface string) (map[string]interf
 	}
 
 	// Parse output (simplified)
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"raw": string(output),
 	}
 

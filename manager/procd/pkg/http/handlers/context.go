@@ -84,7 +84,7 @@ func (h *ContextHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"contexts": response,
 	})
 }
@@ -284,7 +284,7 @@ func (h *ContextHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	// Write output to WebSocket
 	go func() {
 		for output := range outputCh {
-			msg := map[string]interface{}{
+			msg := map[string]any{
 				"type":      "output",
 				"source":    string(output.Source),
 				"data":      string(output.Data),

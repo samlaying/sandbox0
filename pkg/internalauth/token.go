@@ -141,7 +141,7 @@ func (v *Validator) ValidateWithOptions(tokenString string, opts ValidateOptions
 	}
 
 	// Parse and verify signature
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		// Verify signing method is Ed25519
 		if token.Method != jwt.SigningMethodEdDSA {
 			return nil, ErrInvalidSignature

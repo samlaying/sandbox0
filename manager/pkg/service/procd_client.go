@@ -194,7 +194,7 @@ func (c *ProcdClient) Stats(ctx context.Context, procdAddress, internalToken, pr
 }
 
 // doRequest is a helper for making HTTP requests.
-func (c *ProcdClient) doRequest(ctx context.Context, method, url string, body interface{}, internalToken, procdStorageToken string) ([]byte, error) {
+func (c *ProcdClient) doRequest(ctx context.Context, method, url string, body any, internalToken, procdStorageToken string) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)

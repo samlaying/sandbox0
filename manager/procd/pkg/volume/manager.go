@@ -342,7 +342,7 @@ func (m *Manager) createGRPCConnection(ctx context.Context, proxyAddr string) (*
 
 // authInterceptor returns a unary interceptor that adds auth token to requests.
 func (m *Manager) authInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{},
+	return func(ctx context.Context, method string, req, reply any,
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = m.addAuthMetadata(ctx)
 		return invoker(ctx, method, req, reply, cc, opts...)

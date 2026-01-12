@@ -24,7 +24,7 @@ type FuseDevicePlugin struct {
 	devs   []*pluginapi.Device
 	socket string
 
-	stop   chan interface{}
+	stop   chan any
 	health chan *pluginapi.Device
 
 	server *grpc.Server
@@ -35,7 +35,7 @@ func NewFuseDevicePlugin(number int) *FuseDevicePlugin {
 		devs:   getDevices(number),
 		socket: serverSock,
 
-		stop:   make(chan interface{}),
+		stop:   make(chan any),
 		health: make(chan *pluginapi.Device),
 	}
 }

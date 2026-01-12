@@ -104,7 +104,7 @@ func (m *AuthMiddleware) authenticateJWT(c *gin.Context, tokenString string) (*a
 		return nil, ErrJWTNotConfigured
 	}
 
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// Validate signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidSigningMethod
@@ -130,7 +130,7 @@ func (m *AuthMiddleware) authenticateJWT(c *gin.Context, tokenString string) (*a
 	userID, _ := claims["user_id"].(string)
 
 	var roles []string
-	if r, ok := claims["roles"].([]interface{}); ok {
+	if r, ok := claims["roles"].([]any); ok {
 		for _, v := range r {
 			if s, ok := v.(string); ok {
 				roles = append(roles, s)

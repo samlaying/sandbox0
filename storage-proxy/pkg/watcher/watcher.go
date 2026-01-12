@@ -92,7 +92,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 }
 
 // handlePodDelete handles pod delete events
-func (w *Watcher) handlePodDelete(obj interface{}) {
+func (w *Watcher) handlePodDelete(obj any) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)

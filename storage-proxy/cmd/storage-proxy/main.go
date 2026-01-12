@@ -346,11 +346,11 @@ type zapLogger struct {
 	logger *zap.Logger
 }
 
-func (z *zapLogger) Printf(format string, args ...interface{}) {
+func (z *zapLogger) Printf(format string, args ...any) {
 	z.logger.Info(fmt.Sprintf(format, args...))
 }
 
-func (z *zapLogger) Fatalf(format string, args ...interface{}) {
+func (z *zapLogger) Fatalf(format string, args ...any) {
 	z.logger.Fatal(fmt.Sprintf(format, args...))
 }
 

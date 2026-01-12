@@ -86,7 +86,7 @@ func (h *VolumeHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 // Status returns the status of all mounts.
 func (h *VolumeHandler) Status(w http.ResponseWriter, r *http.Request) {
 	status := h.manager.GetStatus()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"mounts": status,
 	})
 }

@@ -62,15 +62,15 @@ func WithSchema(schema string) Option {
 
 // Logger defines the interface for logging migration progress.
 type Logger interface {
-	Printf(format string, args ...interface{})
-	Fatalf(format string, args ...interface{})
+	Printf(format string, args ...any)
+	Fatalf(format string, args ...any)
 }
 
 // defaultLogger is a silent logger that discards output.
 type defaultLogger struct{}
 
-func (defaultLogger) Printf(string, ...interface{}) {}
-func (defaultLogger) Fatalf(string, ...interface{}) {}
+func (defaultLogger) Printf(string, ...any) {}
+func (defaultLogger) Fatalf(string, ...any) {}
 
 // Up runs all pending migrations in the specified directory.
 //

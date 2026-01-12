@@ -181,7 +181,7 @@ func (s *Server) deleteSandboxVolume(w http.ResponseWriter, r *http.Request) {
 		s.logger.WithField("volume_id", id).WithField("active_mounts", len(mounts)).Warn("Attempted to delete volume with active mounts")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"error":         "volume has active mounts",
 			"active_mounts": len(mounts),
 			"mounts":        mounts,

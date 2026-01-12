@@ -205,16 +205,16 @@ func (w *Watcher) setupNetworkPolicyInformer(ctx context.Context) {
 	informer := w.crdFactory.Sandbox0().V1alpha1().SandboxNetworkPolicies().Informer()
 
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			policy := obj.(*v1alpha1.SandboxNetworkPolicy)
 			w.handleNetworkPolicyAdd(policy)
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			oldPolicy := oldObj.(*v1alpha1.SandboxNetworkPolicy)
 			newPolicy := newObj.(*v1alpha1.SandboxNetworkPolicy)
 			w.handleNetworkPolicyUpdate(oldPolicy, newPolicy)
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			policy := obj.(*v1alpha1.SandboxNetworkPolicy)
 			w.handleNetworkPolicyDelete(policy)
 		},
@@ -226,16 +226,16 @@ func (w *Watcher) setupBandwidthPolicyInformer(ctx context.Context) {
 	informer := w.crdFactory.Sandbox0().V1alpha1().SandboxBandwidthPolicies().Informer()
 
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
+		AddFunc: func(obj any) {
 			policy := obj.(*v1alpha1.SandboxBandwidthPolicy)
 			w.handleBandwidthPolicyAdd(policy)
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj any) {
 			oldPolicy := oldObj.(*v1alpha1.SandboxBandwidthPolicy)
 			newPolicy := newObj.(*v1alpha1.SandboxBandwidthPolicy)
 			w.handleBandwidthPolicyUpdate(oldPolicy, newPolicy)
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj any) {
 			policy := obj.(*v1alpha1.SandboxBandwidthPolicy)
 			w.handleBandwidthPolicyDelete(policy)
 		},
@@ -243,7 +243,7 @@ func (w *Watcher) setupBandwidthPolicyInformer(ctx context.Context) {
 }
 
 // handlePodAdd handles pod add events
-func (w *Watcher) handlePodAdd(obj interface{}) {
+func (w *Watcher) handlePodAdd(obj any) {
 	pod := obj.(*corev1.Pod)
 	info := w.podToSandboxInfo(pod)
 	if info == nil {
@@ -271,7 +271,7 @@ func (w *Watcher) handlePodAdd(obj interface{}) {
 }
 
 // handlePodUpdate handles pod update events
-func (w *Watcher) handlePodUpdate(oldObj, newObj interface{}) {
+func (w *Watcher) handlePodUpdate(oldObj, newObj any) {
 	oldPod := oldObj.(*corev1.Pod)
 	newPod := newObj.(*corev1.Pod)
 
@@ -305,7 +305,7 @@ func (w *Watcher) handlePodUpdate(oldObj, newObj interface{}) {
 }
 
 // handlePodDelete handles pod delete events
-func (w *Watcher) handlePodDelete(obj interface{}) {
+func (w *Watcher) handlePodDelete(obj any) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)

@@ -505,13 +505,13 @@ func (s *SandboxService) podPhaseToSandboxStatus(phase corev1.PodPhase) string {
 }
 
 // GetSandboxStatus gets the status of a sandbox
-func (s *SandboxService) GetSandboxStatus(ctx context.Context, sandboxID string) (map[string]interface{}, error) {
+func (s *SandboxService) GetSandboxStatus(ctx context.Context, sandboxID string) (map[string]any, error) {
 	sandbox, err := s.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return nil, err
 	}
 
-	status := map[string]interface{}{
+	status := map[string]any{
 		"sandbox_id":    sandbox.ID,
 		"template_id":   sandbox.TemplateID,
 		"team_id":       sandbox.TeamID,

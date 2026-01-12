@@ -64,7 +64,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
 	})
@@ -73,7 +73,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleReady handles readiness check requests
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"status":    "ready",
 		"timestamp": time.Now().Unix(),
 	})

@@ -29,10 +29,10 @@ func NewGRPCAuthenticator(validator *internalauth.Validator, logger *zap.Logger)
 func (a *GRPCAuthenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 
 		// Extract and validate token
 		claims, err := a.authenticate(ctx)
@@ -87,7 +87,7 @@ func (a *GRPCAuthenticator) authenticate(ctx context.Context) (*internalauth.Cla
 // This is useful for streaming RPCs if needed in the future.
 func (a *GRPCAuthenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,

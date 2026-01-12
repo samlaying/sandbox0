@@ -73,7 +73,7 @@ func (h *FileHandler) handleGet(w http.ResponseWriter, r *http.Request, path str
 			h.handleFileError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"entries": entries,
 		})
 		return
@@ -202,7 +202,7 @@ func (h *FileHandler) Watch(w http.ResponseWriter, r *http.Request) {
 		case "subscribe":
 			watcher, err := h.manager.WatchDir(req.Path, req.Recursive)
 			if err != nil {
-				conn.WriteJSON(map[string]interface{}{
+				conn.WriteJSON(map[string]any{
 					"type":  "error",
 					"error": err.Error(),
 				})
@@ -212,7 +212,7 @@ func (h *FileHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			watchers[watcher.ID] = watcher
 
 			// Send subscription confirmation
-			conn.WriteJSON(map[string]interface{}{
+			conn.WriteJSON(map[string]any{
 				"type":     "subscribed",
 				"watch_id": watcher.ID,
 				"path":     req.Path,
@@ -221,7 +221,7 @@ func (h *FileHandler) Watch(w http.ResponseWriter, r *http.Request) {
 			// Forward events for this watcher
 			go func(w *file.Watcher) {
 				for event := range w.EventChan {
-					conn.WriteJSON(map[string]interface{}{
+					conn.WriteJSON(map[string]any{
 						"type":      "event",
 						"watch_id":  event.WatchID,
 						"event":     string(event.Type),
@@ -236,7 +236,7 @@ func (h *FileHandler) Watch(w http.ResponseWriter, r *http.Request) {
 				h.manager.UnwatchDir(watcher.ID)
 				delete(watchers, req.WatchID)
 
-				conn.WriteJSON(map[string]interface{}{
+				conn.WriteJSON(map[string]any{
 					"type":     "unsubscribed",
 					"watch_id": req.WatchID,
 				})

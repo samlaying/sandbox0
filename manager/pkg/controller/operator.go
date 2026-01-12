@@ -147,7 +147,7 @@ func (op *Operator) processNextWorkItem(ctx context.Context) bool {
 		return false
 	}
 
-	err := func(obj interface{}) error {
+	err := func(obj any) error {
 		defer op.workqueue.Done(obj)
 
 		key, ok := obj.(string)
@@ -335,13 +335,13 @@ func (op *Operator) computeConditions(template *v1alpha1.SandboxTemplate, idleCo
 
 // Event handlers
 
-func (op *Operator) handleTemplateAdd(obj interface{}) {
+func (op *Operator) handleTemplateAdd(obj any) {
 	template := obj.(*v1alpha1.SandboxTemplate)
 	op.logger.Info("Template added", zap.String("name", template.ObjectMeta.Name))
 	op.enqueueTemplate(template)
 }
 
-func (op *Operator) handleTemplateUpdate(oldObj, newObj interface{}) {
+func (op *Operator) handleTemplateUpdate(oldObj, newObj any) {
 	oldTemplate := oldObj.(*v1alpha1.SandboxTemplate)
 	newTemplate := newObj.(*v1alpha1.SandboxTemplate)
 
@@ -353,7 +353,7 @@ func (op *Operator) handleTemplateUpdate(oldObj, newObj interface{}) {
 	op.enqueueTemplate(newTemplate)
 }
 
-func (op *Operator) handleTemplateDelete(obj interface{}) {
+func (op *Operator) handleTemplateDelete(obj any) {
 	template, ok := obj.(*v1alpha1.SandboxTemplate)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
