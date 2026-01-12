@@ -9,9 +9,6 @@ var (
 	// ErrDirNotFound is returned when a directory is not found.
 	ErrDirNotFound = errors.New("directory not found")
 
-	// ErrPathOutsideRoot is returned when the path is outside the root.
-	ErrPathOutsideRoot = errors.New("path outside root")
-
 	// ErrFileTooLarge is returned when a file is too large.
 	ErrFileTooLarge = errors.New("file too large")
 

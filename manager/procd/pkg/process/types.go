@@ -201,6 +201,7 @@ func (mc *MultiplexedChannel[T]) Fork() (<-chan T, func()) {
 }
 
 // Unsubscribe removes a subscriber from the channel.
+// It's safe to call multiple times or on already-closed channels.
 func (mc *MultiplexedChannel[T]) Unsubscribe(sub chan T) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -208,6 +209,10 @@ func (mc *MultiplexedChannel[T]) Unsubscribe(sub chan T) {
 	for i, s := range mc.subscribers {
 		if s == sub {
 			mc.subscribers = append(mc.subscribers[:i], mc.subscribers[i+1:]...)
+			// Safely close the channel - use recover to handle already-closed channels
+			defer func() {
+				recover() // Ignore panic from closing an already-closed channel
+			}()
 			close(sub)
 			return
 		}
@@ -215,7 +220,16 @@ func (mc *MultiplexedChannel[T]) Unsubscribe(sub chan T) {
 }
 
 // Publish sends an event to all subscribers.
+// It's safe to call after Close - events will be silently dropped.
 func (mc *MultiplexedChannel[T]) Publish(event T) {
+	mc.mu.RLock()
+	closed := mc.closed
+	mc.mu.RUnlock()
+
+	if closed {
+		return // Channel is closed, drop the event
+	}
+
 	select {
 	case mc.Source <- event:
 	default:
@@ -224,7 +238,16 @@ func (mc *MultiplexedChannel[T]) Publish(event T) {
 }
 
 // Close closes the multiplexed channel.
+// It's safe to call multiple times.
 func (mc *MultiplexedChannel[T]) Close() {
+	mc.mu.Lock()
+	defer mc.mu.Unlock()
+
+	if mc.closed {
+		return // Already closed
+	}
+
+	mc.closed = true
 	close(mc.Source)
 }
 

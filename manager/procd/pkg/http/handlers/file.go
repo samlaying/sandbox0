@@ -251,8 +251,6 @@ func (h *FileHandler) handleFileError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "file_not_found", err.Error())
 	case file.ErrDirNotFound:
 		writeError(w, http.StatusNotFound, "directory_not_found", err.Error())
-	case file.ErrPathOutsideRoot:
-		writeError(w, http.StatusForbidden, "path_outside_root", err.Error())
 	case file.ErrFileTooLarge:
 		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", err.Error())
 	case file.ErrPermissionDenied:

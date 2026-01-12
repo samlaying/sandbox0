@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 )
@@ -61,24 +60,25 @@ func NewManager(rootPath string) (*Manager, error) {
 	}, nil
 }
 
-// sanitizePath validates and sanitizes the path to prevent path traversal.
-func (m *Manager) sanitizePath(path string) (string, error) {
-	cleanPath := filepath.Clean(filepath.Join(m.rootPath, path))
+// sanitizePath cleans the path and resolves relative paths against rootPath.
+// The sandbox container provides the isolation boundary, so all paths
+// (absolute or relative) within the sandbox are allowed.
+func (m *Manager) sanitizePath(path string) string {
+	// Clean the path to resolve . and .. components
+	cleanPath := filepath.Clean(path)
 
-	rel, err := filepath.Rel(m.rootPath, cleanPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", ErrPathOutsideRoot
+	// For absolute paths, return as-is
+	if filepath.IsAbs(cleanPath) {
+		return cleanPath
 	}
 
-	return cleanPath, nil
+	// For relative paths, join with root and clean
+	return filepath.Clean(filepath.Join(m.rootPath, cleanPath))
 }
 
 // ReadFile reads a file.
 func (m *Manager) ReadFile(path string) ([]byte, error) {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return nil, err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
@@ -101,10 +101,7 @@ func (m *Manager) WriteFile(path string, data []byte, perm os.FileMode) error {
 		return ErrPermissionDenied
 	}
 
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(cleanPath)
@@ -123,10 +120,7 @@ func (m *Manager) WriteFile(path string, data []byte, perm os.FileMode) error {
 
 // Stat returns file information.
 func (m *Manager) Stat(path string) (*FileInfo, error) {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return nil, err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	info, err := os.Lstat(cleanPath)
 	if err != nil {
@@ -162,10 +156,7 @@ func (m *Manager) Stat(path string) (*FileInfo, error) {
 
 // ListDir lists the contents of a directory.
 func (m *Manager) ListDir(path string) ([]*FileInfo, error) {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return nil, err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	entries, err := os.ReadDir(cleanPath)
 	if err != nil {
@@ -207,10 +198,7 @@ func (m *Manager) ListDir(path string) ([]*FileInfo, error) {
 
 // MakeDir creates a directory.
 func (m *Manager) MakeDir(path string, perm os.FileMode, recursive bool) error {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	if recursive {
 		return os.MkdirAll(cleanPath, perm)
@@ -221,15 +209,8 @@ func (m *Manager) MakeDir(path string, perm os.FileMode, recursive bool) error {
 
 // Move moves/renames a file or directory.
 func (m *Manager) Move(src, dst string) error {
-	cleanSrc, err := m.sanitizePath(src)
-	if err != nil {
-		return err
-	}
-
-	cleanDst, err := m.sanitizePath(dst)
-	if err != nil {
-		return err
-	}
+	cleanSrc := m.sanitizePath(src)
+	cleanDst := m.sanitizePath(dst)
 
 	// Ensure destination directory exists
 	dstDir := filepath.Dir(cleanDst)
@@ -242,20 +223,14 @@ func (m *Manager) Move(src, dst string) error {
 
 // Remove removes a file or directory.
 func (m *Manager) Remove(path string) error {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	return os.RemoveAll(cleanPath)
 }
 
 // WatchDir starts watching a directory for changes.
 func (m *Manager) WatchDir(path string, recursive bool) (*Watcher, error) {
-	cleanPath, err := m.sanitizePath(path)
-	if err != nil {
-		return nil, err
-	}
+	cleanPath := m.sanitizePath(path)
 
 	return m.watcherMgr.WatchDir(cleanPath, recursive)
 }
