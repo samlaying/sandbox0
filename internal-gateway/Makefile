@@ -6,7 +6,7 @@ DOCKER_IMAGE=sandbox0/internal-gateway
 VERSION?=latest
 
 # Go parameters
-GOCMD=go
+GOCMD=GOTOOLCHAIN=go1.25.0+auto go
 GOBUILD=$(GOCMD) build
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get

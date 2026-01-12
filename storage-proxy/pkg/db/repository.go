@@ -14,6 +14,25 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+// CoordinatorRepository defines the database operations needed by coordinator
+// This interface is implemented by *Repository
+type CoordinatorRepository interface {
+	// Mount operations
+	CreateMount(ctx context.Context, mount *VolumeMount) error
+	UpdateMountHeartbeat(ctx context.Context, volumeID, clusterID, podID string) error
+	DeleteMount(ctx context.Context, volumeID, clusterID, podID string) error
+	GetActiveMounts(ctx context.Context, volumeID string, heartbeatTimeout int) ([]*VolumeMount, error)
+	DeleteStaleMounts(ctx context.Context, heartbeatTimeout int) (int64, error)
+
+	// Coordination operations
+	CreateCoordination(ctx context.Context, coord *SnapshotCoordination) error
+	GetCoordination(ctx context.Context, id string) (*SnapshotCoordination, error)
+	UpdateCoordinationStatus(ctx context.Context, id, status string) error
+	CreateFlushResponse(ctx context.Context, resp *FlushResponse) error
+	CountCompletedFlushes(ctx context.Context, coordID string) (int, error)
+	GetFlushResponses(ctx context.Context, coordID string) ([]*FlushResponse, error)
+}
+
 // Repository provides database access for storage-proxy
 type Repository struct {
 	pool *pgxpool.Pool
@@ -202,6 +221,23 @@ func (r *Repository) ListSandboxVolumesByTeam(ctx context.Context, teamID string
 	}
 
 	return volumes, nil
+}
+
+// DeleteSandboxVolume deletes a sandbox volume record
+func (r *Repository) DeleteSandboxVolume(ctx context.Context, id string) error {
+	cmdTag, err := r.pool.Exec(ctx, `
+		DELETE FROM sandbox_volumes WHERE id = $1
+	`, id)
+
+	if err != nil {
+		return fmt.Errorf("delete sandbox volume: %w", err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
 }
 
 // ============================================================

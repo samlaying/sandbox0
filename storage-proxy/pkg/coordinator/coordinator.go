@@ -70,30 +70,12 @@ type VolumeContext interface {
 	FlushAll(path string) error
 }
 
-// Repository defines the database operations needed by coordinator
-type Repository interface {
-	// Mount operations
-	CreateMount(ctx context.Context, mount *db.VolumeMount) error
-	UpdateMountHeartbeat(ctx context.Context, volumeID, clusterID, podID string) error
-	DeleteMount(ctx context.Context, volumeID, clusterID, podID string) error
-	GetActiveMounts(ctx context.Context, volumeID string, heartbeatTimeout int) ([]*db.VolumeMount, error)
-	DeleteStaleMounts(ctx context.Context, heartbeatTimeout int) (int64, error)
-
-	// Coordination operations
-	CreateCoordination(ctx context.Context, coord *db.SnapshotCoordination) error
-	GetCoordination(ctx context.Context, id string) (*db.SnapshotCoordination, error)
-	UpdateCoordinationStatus(ctx context.Context, id, status string) error
-	CreateFlushResponse(ctx context.Context, resp *db.FlushResponse) error
-	CountCompletedFlushes(ctx context.Context, coordID string) (int, error)
-	GetFlushResponses(ctx context.Context, coordID string) ([]*db.FlushResponse, error)
-}
-
 // Coordinator manages distributed coordination for snapshot operations
 type Coordinator struct {
 	mu sync.RWMutex
 
 	pool       *pgxpool.Pool
-	repo       Repository
+	repo       db.CoordinatorRepository
 	volMgr     VolumeProvider
 	config     *config.Config
 	logger     *logrus.Logger
@@ -115,7 +97,7 @@ type Coordinator struct {
 // NewCoordinator creates a new coordinator
 func NewCoordinator(
 	pool *pgxpool.Pool,
-	repo Repository,
+	repo db.CoordinatorRepository,
 	volMgr VolumeProvider,
 	cfg *config.Config,
 	logger *logrus.Logger,

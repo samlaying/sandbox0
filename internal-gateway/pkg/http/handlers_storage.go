@@ -58,6 +58,18 @@ func (s *Server) getSandboxVolume(c *gin.Context) {
 	s.proxyToStorageProxy(c)
 }
 
+// deleteSandboxVolume deletes a sandbox volume
+func (s *Server) deleteSandboxVolume(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+
+	c.Request.URL.Path = "/sandboxvolumes/" + id
+	s.proxyToStorageProxy(c)
+}
+
 // createSandboxVolumeSnapshot creates a snapshot of a volume
 func (s *Server) createSandboxVolumeSnapshot(c *gin.Context) {
 	id := c.Param("id")
