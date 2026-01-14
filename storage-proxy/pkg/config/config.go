@@ -1,97 +1,125 @@
 package config
 
 import (
-	"github.com/sandbox0-ai/infra/pkg/env"
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the server configuration
 type Config struct {
 	// gRPC Server
-	GRPCAddr string
-	GRPCPort int
+	GRPCAddr string `yaml:"grpc_addr"`
+	GRPCPort int    `yaml:"grpc_port"`
 
 	// HTTP Management API
-	HTTPAddr string
-	HTTPPort int
+	HTTPAddr string `yaml:"http_addr"`
+	HTTPPort int    `yaml:"http_port"`
 
 	// Database
-	DatabaseURL string
+	DatabaseURL string `yaml:"database_url"`
 
 	// JuiceFS defaults
-	MetaURL        string
-	S3Bucket       string
-	S3Region       string
-	S3Endpoint     string
-	S3AccessKey    string
-	S3SecretKey    string
-	S3SessionToken string
+	MetaURL        string `yaml:"meta_url"`
+	S3Bucket       string `yaml:"s3_bucket"`
+	S3Region       string `yaml:"s3_region"`
+	S3Endpoint     string `yaml:"s3_endpoint"`
+	S3AccessKey    string `yaml:"s3_access_key"`
+	S3SecretKey    string `yaml:"s3_secret_key"`
+	S3SessionToken string `yaml:"s3_session_token"`
 
-	DefaultCacheSize string
-	DefaultCacheDir  string
-	DefaultClusterId string
+	DefaultCacheSize string `yaml:"default_cache_size"`
+	DefaultCacheDir  string `yaml:"default_cache_dir"`
+	DefaultClusterId string `yaml:"default_cluster_id"`
 
 	// Security
-	InternalAuthPublicKey string // Ed25519 public key for internal auth (base64 encoded)
+	InternalAuthPublicKey string `yaml:"internal_auth_public_key"` // Ed25519 public key for internal auth (base64 encoded)
 
 	// Cache
-	CacheRoot string
+	CacheRoot string `yaml:"cache_root"`
 
 	// Monitoring
-	MetricsEnabled bool
-	MetricsPort    int
+	MetricsEnabled bool `yaml:"metrics_enabled"`
+	MetricsPort    int  `yaml:"metrics_port"`
 
 	// Logging
-	LogLevel  string
-	AuditLog  bool
-	AuditFile string
+	LogLevel  string `yaml:"log_level"`
+	AuditLog  bool   `yaml:"audit_log"`
+	AuditFile string `yaml:"audit_file"`
 
 	// Rate limiting
-	MaxOpsPerSecond   int
-	MaxBytesPerSecond int64
+	MaxOpsPerSecond   int   `yaml:"max_ops_per_second"`
+	MaxBytesPerSecond int64 `yaml:"max_bytes_per_second"`
 
 	// Kubernetes
-	KubeconfigPath string // Path to kubeconfig file (empty for in-cluster config)
+	KubeconfigPath string `yaml:"kubeconfig_path"` // Path to kubeconfig file (empty for in-cluster config)
 }
 
-// LoadFromEnv loads configuration from environment variables
-func LoadFromEnv() *Config {
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
 	return &Config{
-		GRPCAddr: env.GetEnv("GRPC_ADDR", "0.0.0.0"),
-		GRPCPort: env.GetEnvInt("GRPC_PORT", 8080),
-
-		HTTPAddr: env.GetEnv("HTTP_ADDR", "0.0.0.0"),
-		HTTPPort: env.GetEnvInt("HTTP_PORT", 8081),
-
-		DatabaseURL: env.GetEnv("DATABASE_URL", ""),
-
-		MetaURL:        env.GetEnv("META_URL", ""),
-		S3Bucket:       env.GetEnv("S3_BUCKET", ""),
-		S3Region:       env.GetEnv("S3_REGION", "us-east-1"),
-		S3Endpoint:     env.GetEnv("S3_ENDPOINT", ""),
-		S3AccessKey:    env.GetEnv("S3_ACCESS_KEY", ""),
-		S3SecretKey:    env.GetEnv("S3_SECRET_KEY", ""),
-		S3SessionToken: env.GetEnv("S3_SESSION_TOKEN", ""),
-
-		DefaultCacheSize: env.GetEnv("DEFAULT_CACHE_SIZE", "1G"),
-		DefaultCacheDir:  env.GetEnv("DEFAULT_CACHE_DIR", "/var/lib/storage-proxy/cache"),
-		DefaultClusterId: env.GetEnv("DEFAULT_CLUSTER_ID", "default"),
-
-		InternalAuthPublicKey: env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY", ""),
-
-		CacheRoot: env.GetEnv("CACHE_ROOT", "/var/lib/storage-proxy/cache"),
-
-		MetricsEnabled: env.GetEnvBool("METRICS_ENABLED", true),
-		MetricsPort:    env.GetEnvInt("METRICS_PORT", 9090),
-
-		LogLevel:  env.GetEnv("LOG_LEVEL", "info"),
-		AuditLog:  env.GetEnvBool("AUDIT_LOG", true),
-		AuditFile: env.GetEnv("AUDIT_FILE", "/var/log/storage-proxy/audit.log"),
-
-		MaxOpsPerSecond:   env.GetEnvInt("MAX_OPS_PER_SECOND", 10000),
-		MaxBytesPerSecond: env.GetEnvInt64("MAX_BYTES_PER_SECOND", 1<<30), // 1GB/s
-
-		KubeconfigPath: env.GetEnv("KUBECONFIG_PATH", ""),
+		GRPCAddr:          "0.0.0.0",
+		GRPCPort:          8080,
+		HTTPAddr:          "0.0.0.0",
+		HTTPPort:          8081,
+		DatabaseURL:       "",
+		S3Region:          "us-east-1",
+		DefaultCacheSize:  "1G",
+		DefaultCacheDir:   "/var/lib/storage-proxy/cache",
+		DefaultClusterId:  "default",
+		CacheRoot:         "/var/lib/storage-proxy/cache",
+		MetricsEnabled:    true,
+		MetricsPort:       9090,
+		LogLevel:          "info",
+		AuditLog:          true,
+		AuditFile:         "/var/log/storage-proxy/audit.log",
+		MaxOpsPerSecond:   10000,
+		MaxBytesPerSecond: 1 << 30, // 1GB/s
+		KubeconfigPath:    "",
 	}
+}
+
+var Cfg *Config
+
+func init() {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "/config/config.yaml"
+	}
+
+	var err error
+	Cfg, err = load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
+		Cfg = DefaultConfig()
+	}
+}
+
+// LoadConfig returns the global configuration
+func LoadConfig() *Config {
+	return Cfg
+}
+
+// load loads configuration from a YAML file
+func load(path string) (*Config, error) {
+	// Default configuration
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // Validate validates the configuration

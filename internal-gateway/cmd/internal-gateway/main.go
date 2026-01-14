@@ -9,17 +9,13 @@ import (
 
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/config"
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/http"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
-
 	// Load configuration
-	cfg := config.Load()
+	cfg := config.LoadConfig()
 
 	// Initialize logger
 	logger, err := initLogger(cfg.LogLevel)

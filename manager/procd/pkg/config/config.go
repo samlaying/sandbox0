@@ -2,57 +2,93 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 
-	"github.com/sandbox0-ai/infra/pkg/env"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds all configuration for Procd.
 type Config struct {
 	// Sandbox identity
-	SandboxID  string
-	TemplateID string
-	NodeName   string
+	SandboxID  string `yaml:"sandbox_id"`
+	TemplateID string `yaml:"template_id"`
+	NodeName   string `yaml:"node_name"`
 
 	// Server configuration
-	HTTPPort int
-	LogLevel string
+	HTTPPort int    `yaml:"http_port"`
+	LogLevel string `yaml:"log_level"`
 
 	// Storage Proxy configuration
-	StorageProxyBaseURL  string
-	StorageProxyReplicas int
+	StorageProxyBaseURL  string `yaml:"storage_proxy_base_url"`
+	StorageProxyReplicas int    `yaml:"storage_proxy_replicas"`
 
 	// File manager configuration
-	RootPath string
+	RootPath string `yaml:"root_path"`
 
 	// Cache configuration
-	CacheMaxBytes int64
-	CacheTTL      time.Duration
+	CacheMaxBytes int64         `yaml:"cache_max_bytes"`
+	CacheTTL      time.Duration `yaml:"cache_ttl"`
 
 	// Internal auth configuration
-	InternalAuthPublicKeyPath string
+	InternalAuthPublicKeyPath string `yaml:"internal_auth_public_key_path"`
 }
 
-// DefaultConfig returns a Config with default values.
+// DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		SandboxID:  env.GetEnv("SANDBOX_ID", ""),
-		TemplateID: env.GetEnv("TEMPLATE_ID", ""),
-		NodeName:   env.GetEnv("NODE_NAME", ""),
-
-		HTTPPort: env.GetEnvInt("PROCD_HTTP_PORT", 49983),
-		LogLevel: env.GetEnv("PROCD_LOG_LEVEL", "info"),
-
-		StorageProxyBaseURL:  env.GetEnv("STORAGE_PROXY_BASE_URL", "storage-proxy.sandbox0-system.svc.cluster.local"),
-		StorageProxyReplicas: env.GetEnvInt("STORAGE_PROXY_REPLICAS", 3),
-
-		RootPath: env.GetEnv("PROCD_ROOT_PATH", "/workspace"),
-
-		CacheMaxBytes: int64(env.GetEnvInt("CACHE_MAX_BYTES", 100*1024*1024)),
-		CacheTTL:      time.Duration(env.GetEnvInt("CACHE_TTL_SECONDS", 30)) * time.Second,
-
-		InternalAuthPublicKeyPath: env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY_PATH", "/config/internal_jwt_public.key"),
+		HTTPPort:                  49983,
+		LogLevel:                  "info",
+		StorageProxyBaseURL:       "storage-proxy.sandbox0-system.svc.cluster.local",
+		StorageProxyReplicas:      3,
+		RootPath:                  "/workspace",
+		CacheMaxBytes:             100 * 1024 * 1024,
+		CacheTTL:                  30 * time.Second,
+		InternalAuthPublicKeyPath: "/config/internal_jwt_public.key",
 	}
+}
+
+var Cfg *Config
+
+func init() {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "/config/config.yaml"
+	}
+
+	var err error
+	Cfg, err = load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
+		Cfg = DefaultConfig()
+	}
+}
+
+// LoadConfig returns the global configuration
+func LoadConfig() *Config {
+	return Cfg
+}
+
+// load loads configuration from a YAML file
+func load(path string) (*Config, error) {
+	// Default configuration
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // Validate checks if the configuration is valid.

@@ -1,72 +1,116 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 
-	"github.com/sandbox0-ai/infra/pkg/env"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the configuration for the manager
 type Config struct {
 	// HTTP Server
-	HTTPPort int
+	HTTPPort int `yaml:"http_port"`
 
 	// template
-	DefaultTemplate          string
-	DefaultTemplateNamespace string
-	DefaultClusterId         string
+	DefaultTemplate          string `yaml:"default_template"`
+	DefaultTemplateNamespace string `yaml:"default_template_namespace"`
+	DefaultClusterId         string `yaml:"default_cluster_id"`
 
 	// Kubernetes
-	KubeConfig     string
-	Namespace      string
-	LeaderElection bool
-	ResyncPeriod   time.Duration
+	KubeConfig     string        `yaml:"kube_config"`
+	Namespace      string        `yaml:"namespace"`
+	LeaderElection bool          `yaml:"leader_election"`
+	ResyncPeriod   time.Duration `yaml:"resync_period"`
 
 	// Database
-	DatabaseURL string
+	DatabaseURL string `yaml:"database_url"`
 
 	// Cleanup Controller
-	CleanupInterval time.Duration
+	CleanupInterval time.Duration `yaml:"cleanup_interval"`
 
 	// Logging
-	LogLevel string
+	LogLevel string `yaml:"log_level"`
 
 	// Metrics
-	MetricsPort int
+	MetricsPort int `yaml:"metrics_port"`
 
 	// Webhook
-	WebhookPort     int
-	WebhookCertPath string
-	WebhookKeyPath  string
+	WebhookPort     int    `yaml:"webhook_port"`
+	WebhookCertPath string `yaml:"webhook_cert_path"`
+	WebhookKeyPath  string `yaml:"webhook_key_path"`
 
 	// Internal Auth
-	InternalAuthPublicKeyPath  string
-	InternalAuthPrivateKeyPath string
+	InternalAuthPublicKeyPath  string `yaml:"internal_auth_public_key_path"`
+	InternalAuthPrivateKeyPath string `yaml:"internal_auth_private_key_path"`
 
 	// Sandbox
-	DefaultSandboxTTL time.Duration
+	DefaultSandboxTTL time.Duration `yaml:"default_sandbox_ttl"`
 }
 
-// LoadConfig loads configuration from environment variables
-func LoadConfig() *Config {
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
 	return &Config{
-		HTTPPort:                   env.GetEnvInt("HTTP_PORT", 8080),
-		DefaultTemplate:            env.GetEnv("DEFAULT_TEMPLATE", "default"),
-		DefaultTemplateNamespace:   env.GetEnv("DEFAULT_TEMPLATE_NAMESPACE", "sb0"),
-		DefaultClusterId:           env.GetEnv("DEFAULT_CLUSTER_ID", "default"),
-		KubeConfig:                 env.GetEnv("KUBECONFIG", ""),
-		Namespace:                  env.GetEnv("NAMESPACE", "default"),
-		LeaderElection:             env.GetEnvBool("LEADER_ELECTION", true),
-		ResyncPeriod:               env.GetEnvDuration("RESYNC_PERIOD", 30*time.Second),
-		DatabaseURL:                env.GetEnv("DATABASE_URL", ""),
-		CleanupInterval:            env.GetEnvDuration("CLEANUP_INTERVAL", 60*time.Second),
-		LogLevel:                   env.GetEnv("LOG_LEVEL", "info"),
-		MetricsPort:                env.GetEnvInt("METRICS_PORT", 9090),
-		WebhookPort:                env.GetEnvInt("WEBHOOK_PORT", 9443),
-		WebhookCertPath:            env.GetEnv("WEBHOOK_CERT_PATH", "/tmp/k8s-webhook-server/serving-certs/tls.crt"),
-		WebhookKeyPath:             env.GetEnv("WEBHOOK_KEY_PATH", "/tmp/k8s-webhook-server/serving-certs/tls.key"),
-		InternalAuthPublicKeyPath:  env.GetEnv("INTERNAL_AUTH_PUBLIC_KEY_PATH", "/config/internal_jwt_public.key"),
-		InternalAuthPrivateKeyPath: env.GetEnv("INTERNAL_AUTH_PRIVATE_KEY_PATH", "/secrets/internal_jwt_private.key"),
-		DefaultSandboxTTL:          env.GetEnvDuration("DEFAULT_SANDBOX_TTL", 5*time.Minute),
+		HTTPPort:                   8080,
+		DefaultTemplate:            "default",
+		DefaultTemplateNamespace:   "sb0",
+		DefaultClusterId:           "default",
+		KubeConfig:                 "",
+		Namespace:                  "default",
+		LeaderElection:             true,
+		ResyncPeriod:               30 * time.Second,
+		DatabaseURL:                "",
+		CleanupInterval:            60 * time.Second,
+		LogLevel:                   "info",
+		MetricsPort:                9090,
+		WebhookPort:                9443,
+		WebhookCertPath:            "/tmp/k8s-webhook-server/serving-certs/tls.crt",
+		WebhookKeyPath:             "/tmp/k8s-webhook-server/serving-certs/tls.key",
+		InternalAuthPublicKeyPath:  "/config/internal_jwt_public.key",
+		InternalAuthPrivateKeyPath: "/secrets/internal_jwt_private.key",
+		DefaultSandboxTTL:          5 * time.Minute,
 	}
+}
+
+var Cfg *Config
+
+func init() {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "/config/config.yaml"
+	}
+
+	var err error
+	Cfg, err = load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
+		Cfg = DefaultConfig()
+	}
+}
+
+// LoadConfig returns the global configuration
+func LoadConfig() *Config {
+	return Cfg
+}
+
+// load loads configuration from a YAML file
+func load(path string) (*Config, error) {
+	// Default configuration
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }

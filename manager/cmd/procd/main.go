@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,29 +16,27 @@ import (
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
 	procdhttp "github.com/sandbox0-ai/infra/manager/procd/pkg/http"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/volume"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
+	// Load configuration
+	cfg := config.LoadConfig()
+
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Initialize logger
-	logger := initLogger()
+	logger := initLogger(cfg.LogLevel)
 	defer logger.Sync()
 
 	logger.Info("Starting Procd",
 		zap.String("version", "1.0.0"),
 	)
-
-	// Load configuration
-	cfg := config.DefaultConfig()
-	if err := cfg.Validate(); err != nil {
-		logger.Fatal("Invalid configuration", zap.Error(err))
-	}
 
 	logger.Info("Configuration loaded",
 		zap.String("sandbox_id", cfg.SandboxID),
@@ -134,8 +133,7 @@ func main() {
 	logger.Info("Procd shutdown complete")
 }
 
-func initLogger() *zap.Logger {
-	logLevel := os.Getenv("PROCD_LOG_LEVEL")
+func initLogger(logLevel string) *zap.Logger {
 	level := zapcore.InfoLevel
 
 	switch logLevel {

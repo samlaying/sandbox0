@@ -1,48 +1,85 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 
-	"github.com/sandbox0-ai/infra/pkg/env"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds all configuration for internal-gateway
 type Config struct {
 	// Server configuration
-	HTTPPort int
-	LogLevel string
+	HTTPPort int    `yaml:"http_port"`
+	LogLevel string `yaml:"log_level"`
 
 	// Upstream services
-	ManagerURL      string
-	StorageProxyURL string
+	ManagerURL      string `yaml:"manager_url"`
+	StorageProxyURL string `yaml:"storage_proxy_url"`
 
 	// Internal authentication (for validating requests from edge-gateway and
 	// generating tokens for downstream services)
-	InternalJWTPrivateKeyPath string
+	InternalJWTPrivateKeyPath string `yaml:"internal_jwt_private_key_path"`
 
 	// Timeouts
-	ProxyTimeout      time.Duration
-	ShutdownTimeout   time.Duration
-	HealthCheckPeriod time.Duration
+	ProxyTimeout      time.Duration `yaml:"proxy_timeout"`
+	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`
+	HealthCheckPeriod time.Duration `yaml:"health_check_period"`
 }
 
-// Load loads configuration from environment variables
-func Load() *Config {
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
 	return &Config{
-		// Server
-		HTTPPort: env.GetEnvInt("INTERNAL_GATEWAY_HTTP_PORT", 8443),
-		LogLevel: env.GetEnv("INTERNAL_GATEWAY_LOG_LEVEL", "info"),
-
-		// Upstream services
-		ManagerURL:      env.GetEnv("MANAGER_URL", "http://manager.sandbox0-system:8080"),
-		StorageProxyURL: env.GetEnv("STORAGE_PROXY_URL", "http://storage-proxy.sandbox0-system:8081"),
-
-		// Internal authentication
-		InternalJWTPrivateKeyPath: env.GetEnv("INTERNAL_JWT_PRIVATE_KEY_PATH", "/secrets/internal_jwt_private.key"),
-
-		// Timeouts
-		ProxyTimeout:      env.GetEnvDuration("PROXY_TIMEOUT", 30*time.Second),
-		ShutdownTimeout:   env.GetEnvDuration("SHUTDOWN_TIMEOUT", 30*time.Second),
-		HealthCheckPeriod: env.GetEnvDuration("HEALTH_CHECK_PERIOD", 10*time.Second),
+		HTTPPort:                  8443,
+		LogLevel:                  "info",
+		ManagerURL:                "http://manager.sandbox0-system:8080",
+		StorageProxyURL:           "http://storage-proxy.sandbox0-system:8081",
+		InternalJWTPrivateKeyPath: "/secrets/internal_jwt_private.key",
+		ProxyTimeout:              30 * time.Second,
+		ShutdownTimeout:           30 * time.Second,
+		HealthCheckPeriod:         10 * time.Second,
 	}
+}
+
+var Cfg *Config
+
+func init() {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "/config/config.yaml"
+	}
+
+	var err error
+	Cfg, err = load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
+		Cfg = DefaultConfig()
+	}
+}
+
+// LoadConfig returns the global configuration
+func LoadConfig() *Config {
+	return Cfg
+}
+
+// load loads configuration from a YAML file
+func load(path string) (*Config, error) {
+	// Default configuration
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }

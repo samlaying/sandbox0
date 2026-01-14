@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
@@ -16,9 +15,6 @@ var (
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
-
 	flag.IntVar(&mountsAllowed, "mounts-allowed", 100, "maximum times the fuse device can be mounted")
 	flag.Parse()
 

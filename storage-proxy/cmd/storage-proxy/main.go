@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/k8s"
 	"github.com/sandbox0-ai/infra/pkg/migrate"
@@ -37,8 +36,6 @@ import (
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
 
 	// Setup logger (logrus for compatibility)
 	logrusLogger := logrus.New()
@@ -46,7 +43,8 @@ func main() {
 	logrusLogger.SetOutput(os.Stdout)
 
 	// Load configuration
-	cfg := config.LoadFromEnv()
+	cfg := config.LoadConfig()
+
 	if err := cfg.Validate(); err != nil {
 		logrusLogger.WithError(err).Fatal("Invalid configuration")
 	}

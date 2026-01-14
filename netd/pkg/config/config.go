@@ -2,98 +2,140 @@
 package config
 
 import (
+	"fmt"
+	"os"
 	"time"
 
-	"github.com/sandbox0-ai/infra/pkg/env"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds netd configuration
 type Config struct {
 	// LogLevel is the logging level (debug, info, warn, error)
-	LogLevel string
+	LogLevel string `yaml:"log_level"`
 
 	// MetricsPort is the port for Prometheus metrics
-	MetricsPort int
+	MetricsPort int `yaml:"metrics_port"`
 
 	// HealthPort is the port for health checks
-	HealthPort int
+	HealthPort int `yaml:"health_port"`
 
 	// NodeName is the name of the node this netd is running on
-	NodeName string
+	NodeName string `yaml:"node_name"`
 
 	// Namespace is the namespace to watch for sandbox pods
-	Namespace string
+	Namespace string `yaml:"namespace"`
 
 	// KubeConfig is the path to kubeconfig file (optional, uses in-cluster config if empty)
-	KubeConfig string
+	KubeConfig string `yaml:"kube_config"`
 
 	// ResyncPeriod is the period for informer resync
-	ResyncPeriod time.Duration
+	ResyncPeriod time.Duration `yaml:"resync_period"`
 
 	// ProxyListenAddr is the address for the L7 proxy to listen on
-	ProxyListenAddr string
+	ProxyListenAddr string `yaml:"proxy_listen_addr"`
 
 	// ProxyHTTPPort is the port for HTTP proxy (redirect from port 80)
-	ProxyHTTPPort int
+	ProxyHTTPPort int `yaml:"proxy_http_port"`
 
 	// ProxyHTTPSPort is the port for HTTPS/TLS proxy (redirect from port 443)
-	ProxyHTTPSPort int
+	ProxyHTTPSPort int `yaml:"proxy_https_port"`
 
 	// DNSResolvers are the upstream DNS resolvers for the proxy
-	DNSResolvers []string
+	DNSResolvers []string `yaml:"dns_resolvers"`
 
 	// MetricsReportInterval is the interval for reporting metrics
-	MetricsReportInterval time.Duration
+	MetricsReportInterval time.Duration `yaml:"metrics_report_interval"`
 
 	// FailClosed if true, blocks all traffic when netd is not ready
-	FailClosed bool
+	FailClosed bool `yaml:"fail_closed"`
 
 	// StorageProxyCIDR is the CIDR for storage-proxy (always allowed)
-	StorageProxyCIDR string
+	StorageProxyCIDR string `yaml:"storage_proxy_cidr"`
 
 	// ClusterDNSCIDR is the CIDR for cluster DNS (always allowed for DNS)
-	ClusterDNSCIDR string
+	ClusterDNSCIDR string `yaml:"cluster_dns_cidr"`
 
 	// InternalGatewayCIDR is the CIDR for internal-gateway (allowed for ingress to procd)
-	InternalGatewayCIDR string
+	InternalGatewayCIDR string `yaml:"internal_gateway_cidr"`
 
 	// ProcdPort is the port procd listens on
-	ProcdPort int
+	ProcdPort int `yaml:"procd_port"`
 
 	// UseEBPF enables eBPF-based bandwidth control (more efficient than tc htb)
-	UseEBPF bool
+	UseEBPF bool `yaml:"use_ebpf"`
 
 	// BPFFSPath is the path to bpf filesystem (usually /sys/fs/bpf)
-	BPFFSPath string
+	BPFFSPath string `yaml:"bpf_fs_path"`
 
 	// UseEDT enables Earliest Departure Time pacing for eBPF
-	UseEDT bool
+	UseEDT bool `yaml:"use_edt"`
 }
 
-// LoadConfig loads configuration from environment variables
-func LoadConfig() *Config {
-	cfg := &Config{
-		LogLevel:              env.GetEnv("LOG_LEVEL", "info"),
-		MetricsPort:           env.GetEnvInt("METRICS_PORT", 9090),
-		HealthPort:            env.GetEnvInt("HEALTH_PORT", 8080),
-		NodeName:              env.GetEnv("NODE_NAME", ""),
-		Namespace:             env.GetEnv("NAMESPACE", ""),
-		KubeConfig:            env.GetEnv("KUBECONFIG", ""),
-		ResyncPeriod:          env.GetEnvDuration("RESYNC_PERIOD", 30*time.Second),
-		ProxyListenAddr:       env.GetEnv("PROXY_LISTEN_ADDR", "0.0.0.0"),
-		ProxyHTTPPort:         env.GetEnvInt("PROXY_HTTP_PORT", 18080),
-		ProxyHTTPSPort:        env.GetEnvInt("PROXY_HTTPS_PORT", 18443),
-		DNSResolvers:          []string{env.GetEnv("DNS_RESOLVER", "8.8.8.8:53")},
-		MetricsReportInterval: env.GetEnvDuration("METRICS_REPORT_INTERVAL", 10*time.Second),
-		FailClosed:            env.GetEnvBool("FAIL_CLOSED", true),
-		StorageProxyCIDR:      env.GetEnv("STORAGE_PROXY_CIDR", ""),
-		ClusterDNSCIDR:        env.GetEnv("CLUSTER_DNS_CIDR", ""),
-		InternalGatewayCIDR:   env.GetEnv("INTERNAL_GATEWAY_CIDR", ""),
-		ProcdPort:             env.GetEnvInt("PROCD_PORT", 49983),
-		UseEBPF:               env.GetEnvBool("USE_EBPF", true), // Enabled by default
-		BPFFSPath:             env.GetEnv("BPF_FS_PATH", "/sys/fs/bpf"),
-		UseEDT:                env.GetEnvBool("USE_EDT", true), // EDT pacing enabled by default
+// DefaultConfig returns the default configuration
+func DefaultConfig() *Config {
+	return &Config{
+		LogLevel:              "info",
+		MetricsPort:           9090,
+		HealthPort:            8080,
+		NodeName:              "",
+		Namespace:             "",
+		KubeConfig:            "",
+		ResyncPeriod:          30 * time.Second,
+		ProxyListenAddr:       "0.0.0.0",
+		ProxyHTTPPort:         18080,
+		ProxyHTTPSPort:        18443,
+		DNSResolvers:          []string{"8.8.8.8:53"},
+		MetricsReportInterval: 10 * time.Second,
+		FailClosed:            true,
+		StorageProxyCIDR:      "",
+		ClusterDNSCIDR:        "",
+		InternalGatewayCIDR:   "",
+		ProcdPort:             49983,
+		UseEBPF:               true,
+		BPFFSPath:             "/sys/fs/bpf",
+		UseEDT:                true,
+	}
+}
+
+var Cfg *Config
+
+func init() {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "/config/config.yaml"
 	}
 
-	return cfg
+	var err error
+	Cfg, err = load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
+		Cfg = DefaultConfig()
+	}
+}
+
+// LoadConfig returns the global configuration
+func LoadConfig() *Config {
+	return Cfg
+}
+
+// load loads configuration from a YAML file
+func load(path string) (*Config, error) {
+	// Default config
+	cfg := DefaultConfig()
+
+	if path == "" {
+		return cfg, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	if err := yaml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	return cfg, nil
 }

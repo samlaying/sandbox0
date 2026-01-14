@@ -16,7 +16,6 @@ import (
 	"github.com/sandbox0-ai/infra/netd/pkg/metrics"
 	"github.com/sandbox0-ai/infra/netd/pkg/proxy"
 	"github.com/sandbox0-ai/infra/netd/pkg/watcher"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/k8s"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -25,9 +24,6 @@ import (
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
-
 	// Load configuration
 	cfg := config.LoadConfig()
 

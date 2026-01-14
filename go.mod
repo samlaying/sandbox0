@@ -12,7 +12,6 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/hanwen/go-fuse/v2 v2.1.1-0.20210611132105-24a1dfe6b4f8
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/joho/godotenv v1.5.1
 	github.com/juicedata/juicefs v1.3.1
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.22.0
@@ -22,6 +21,7 @@ require (
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.68.1
 	google.golang.org/protobuf v1.36.8
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
@@ -262,7 +262,6 @@ require (
 	gopkg.in/kothar/go-backblaze.v0 v0.0.0-20210124194846-35409b867216 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect

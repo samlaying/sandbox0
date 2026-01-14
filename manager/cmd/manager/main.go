@@ -19,7 +19,6 @@ import (
 	"github.com/sandbox0-ai/infra/manager/pkg/service"
 	"github.com/sandbox0-ai/infra/manager/pkg/webhook"
 	"github.com/sandbox0-ai/infra/pkg/clock"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -35,9 +34,6 @@ import (
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
-
 	// Load configuration
 	cfg := config.LoadConfig()
 

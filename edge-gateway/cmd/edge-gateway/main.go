@@ -10,18 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/config"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/http"
-	"github.com/sandbox0-ai/infra/pkg/env"
 	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// Load environment variables from .env file
-	env.Load()
-
 	// Load configuration
-	cfg := config.Load()
+	cfg := config.LoadConfig()
 
 	// Initialize logger
 	logger, err := initLogger(cfg.LogLevel)
