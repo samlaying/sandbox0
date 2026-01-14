@@ -10,6 +10,9 @@ import (
 
 // Config holds all configuration for edge-gateway
 type Config struct {
+	// Edition: "saas" or "self-hosted"
+	Edition string `yaml:"edition"`
+
 	// Server configuration
 	HTTPPort int    `yaml:"http_port"`
 	LogLevel string `yaml:"log_level"`
@@ -20,8 +23,10 @@ type Config struct {
 	// Upstream service
 	InternalGatewayURL string `yaml:"internal_gateway_url"`
 
-	// Authentication
-	JWTSecret string `yaml:"jwt_secret"`
+	// JWT Configuration
+	JWTSecret          string        `yaml:"jwt_secret"`
+	JWTAccessTokenTTL  time.Duration `yaml:"jwt_access_token_ttl"`
+	JWTRefreshTokenTTL time.Duration `yaml:"jwt_refresh_token_ttl"`
 
 	// Internal authentication (for generating tokens to internal-gateway)
 	InternalJWTPrivateKeyPath string `yaml:"internal_jwt_private_key_path"`
@@ -33,21 +38,111 @@ type Config struct {
 	// Timeouts
 	ProxyTimeout    time.Duration `yaml:"proxy_timeout"`
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+
+	// Built-in Authentication
+	BuiltInAuth BuiltInAuthConfig `yaml:"built_in_auth"`
+
+	// OIDC Providers
+	OIDCProviders []OIDCProviderConfig `yaml:"oidc_providers"`
+
+	// Base URL for OIDC callbacks
+	BaseURL string `yaml:"base_url"`
+}
+
+// BuiltInAuthConfig configures the built-in authentication
+type BuiltInAuthConfig struct {
+	// Enabled enables built-in email/password authentication
+	Enabled bool `yaml:"enabled"`
+
+	// AllowRegistration allows new users to register
+	AllowRegistration bool `yaml:"allow_registration"`
+
+	// EmailVerificationRequired requires email verification
+	EmailVerificationRequired bool `yaml:"email_verification_required"`
+
+	// AdminOnly restricts built-in auth to admin accounts only
+	AdminOnly bool `yaml:"admin_only"`
+
+	// InitUser is the initial admin user (for self-hosted)
+	InitUser *InitUserConfig `yaml:"init_user"`
+}
+
+// InitUserConfig configures the initial admin user
+type InitUserConfig struct {
+	Email    string `yaml:"email"`
+	Password string `yaml:"password"`
+	Name     string `yaml:"name"`
+}
+
+// OIDCProviderConfig configures an OIDC provider
+type OIDCProviderConfig struct {
+	// ID is the unique identifier for the provider (e.g., "github", "google")
+	ID string `yaml:"id"`
+
+	// Name is the display name
+	Name string `yaml:"name"`
+
+	// Enabled toggles the provider
+	Enabled bool `yaml:"enabled"`
+
+	// ClientID is the OAuth client ID
+	ClientID string `yaml:"client_id"`
+
+	// ClientSecret is the OAuth client secret
+	ClientSecret string `yaml:"client_secret"`
+
+	// DiscoveryURL is the OIDC discovery URL (.well-known/openid-configuration)
+	DiscoveryURL string `yaml:"discovery_url"`
+
+	// Scopes are the OAuth scopes to request
+	Scopes []string `yaml:"scopes"`
+
+	// AutoProvision automatically creates users on first login
+	AutoProvision bool `yaml:"auto_provision"`
+
+	// TeamMapping configures automatic team assignment
+	TeamMapping *TeamMappingConfig `yaml:"team_mapping"`
+}
+
+// TeamMappingConfig configures automatic team mapping for OIDC
+type TeamMappingConfig struct {
+	// Domain filters users by email domain
+	Domain string `yaml:"domain"`
+
+	// DefaultRole is the role assigned to new users
+	DefaultRole string `yaml:"default_role"`
+
+	// DefaultTeamID is the team to add users to
+	DefaultTeamID string `yaml:"default_team_id"`
 }
 
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
+		Edition:                   "self-hosted",
 		HTTPPort:                  8080,
 		LogLevel:                  "info",
 		DatabaseURL:               "postgres://localhost:5432/sandbox0?sslmode=disable",
 		InternalGatewayURL:        "http://internal-gateway.sandbox0-system:8443",
 		JWTSecret:                 "",
+		JWTAccessTokenTTL:         15 * time.Minute,
+		JWTRefreshTokenTTL:        7 * 24 * time.Hour,
 		InternalJWTPrivateKeyPath: "/secrets/internal_jwt_private.key",
 		RateLimitRPS:              100,
 		RateLimitBurst:            200,
 		ProxyTimeout:              30 * time.Second,
 		ShutdownTimeout:           30 * time.Second,
+		BaseURL:                   "http://localhost:8080",
+		BuiltInAuth: BuiltInAuthConfig{
+			Enabled:           true,
+			AllowRegistration: false,
+			AdminOnly:         false,
+			InitUser: &InitUserConfig{
+				Email:    "admin@localhost",
+				Password: "admin123",
+				Name:     "Admin",
+			},
+		},
 	}
 }
 
@@ -90,5 +185,33 @@ func load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	// Apply defaults to OIDC providers
+	for i := range cfg.OIDCProviders {
+		if len(cfg.OIDCProviders[i].Scopes) == 0 {
+			cfg.OIDCProviders[i].Scopes = []string{"openid", "email", "profile"}
+		}
+	}
+
 	return cfg, nil
+}
+
+// GetOIDCProvider returns an OIDC provider by ID
+func (c *Config) GetOIDCProvider(id string) *OIDCProviderConfig {
+	for i := range c.OIDCProviders {
+		if c.OIDCProviders[i].ID == id && c.OIDCProviders[i].Enabled {
+			return &c.OIDCProviders[i]
+		}
+	}
+	return nil
+}
+
+// GetEnabledOIDCProviders returns all enabled OIDC providers
+func (c *Config) GetEnabledOIDCProviders() []OIDCProviderConfig {
+	var providers []OIDCProviderConfig
+	for _, p := range c.OIDCProviders {
+		if p.Enabled {
+			providers = append(providers, p)
+		}
+	}
+	return providers
 }

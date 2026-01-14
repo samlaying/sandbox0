@@ -9,8 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sandbox0-ai/infra/edge-gateway/pkg/auth/builtin"
+	"github.com/sandbox0-ai/infra/edge-gateway/pkg/auth/jwt"
+	"github.com/sandbox0-ai/infra/edge-gateway/pkg/auth/oidc"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/config"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/db"
+	"github.com/sandbox0-ai/infra/edge-gateway/pkg/http/handlers"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/middleware"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
@@ -29,6 +33,17 @@ type Server struct {
 	requestLogger   *middleware.RequestLogger
 	logger          *zap.Logger
 	internalAuthGen *internalauth.Generator
+
+	// Auth components
+	builtinProvider *builtin.Provider
+	oidcManager     *oidc.Manager
+	jwtIssuer       *jwt.Issuer
+
+	// Handlers
+	authHandler   *handlers.AuthHandler
+	userHandler   *handlers.UserHandler
+	teamHandler   *handlers.TeamHandler
+	apiKeyHandler *handlers.APIKeyHandler
 }
 
 // NewServer creates a new HTTP server
@@ -37,6 +52,8 @@ func NewServer(
 	pool *pgxpool.Pool,
 	logger *zap.Logger,
 ) (*Server, error) {
+	ctx := context.Background()
+
 	// Set gin mode
 	gin.SetMode(gin.ReleaseMode)
 
@@ -72,6 +89,32 @@ func NewServer(
 		TTL:        30 * time.Second,
 	})
 
+	// Initialize JWT issuer
+	jwtIssuer := jwt.NewIssuer(cfg.JWTSecret, cfg.JWTAccessTokenTTL, cfg.JWTRefreshTokenTTL)
+
+	// Initialize built-in auth provider
+	builtinProvider := builtin.NewProvider(repo, &cfg.BuiltInAuth)
+
+	// Initialize OIDC manager
+	oidcManager, err := oidc.NewManager(ctx, cfg, repo, logger)
+	if err != nil {
+		logger.Warn("Failed to initialize OIDC manager", zap.Error(err))
+		// Continue without OIDC support
+	}
+
+	// Ensure initial user exists (for self-hosted deployments)
+	if cfg.BuiltInAuth.Enabled && cfg.BuiltInAuth.InitUser != nil {
+		if err := builtinProvider.EnsureInitUser(ctx); err != nil {
+			logger.Warn("Failed to ensure init user", zap.Error(err))
+		}
+	}
+
+	// Create handlers
+	authHandler := handlers.NewAuthHandler(repo, builtinProvider, oidcManager, jwtIssuer, logger)
+	userHandler := handlers.NewUserHandler(repo, logger)
+	teamHandler := handlers.NewTeamHandler(repo, logger)
+	apiKeyHandler := handlers.NewAPIKeyHandler(repo, logger)
+
 	server := &Server{
 		router:          router,
 		cfg:             cfg,
@@ -83,6 +126,15 @@ func NewServer(
 		requestLogger:   requestLogger,
 		logger:          logger,
 		internalAuthGen: internalAuthGen,
+
+		builtinProvider: builtinProvider,
+		oidcManager:     oidcManager,
+		jwtIssuer:       jwtIssuer,
+
+		authHandler:   authHandler,
+		userHandler:   userHandler,
+		teamHandler:   teamHandler,
+		apiKeyHandler: apiKeyHandler,
 	}
 
 	server.setupRoutes()
@@ -103,7 +155,69 @@ func (s *Server) setupRoutes() {
 	// Metrics endpoint
 	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// API routes - authenticate then proxy to internal-gateway
+	// ===== Public Auth Routes (no authentication required) =====
+	auth := s.router.Group("/auth")
+	{
+		// Get available auth providers
+		auth.GET("/providers", s.authHandler.GetAuthProviders)
+
+		// Built-in auth
+		auth.POST("/login", s.authHandler.Login)
+		auth.POST("/register", s.authHandler.Register)
+		auth.POST("/refresh", s.authHandler.RefreshToken)
+
+		// OIDC auth
+		auth.GET("/oidc/:provider/login", s.authHandler.OIDCLogin)
+		auth.GET("/oidc/:provider/callback", s.authHandler.OIDCCallback)
+	}
+
+	// ===== Protected Auth Routes =====
+	authProtected := s.router.Group("/auth")
+	authProtected.Use(s.authMiddleware.Authenticate())
+	{
+		authProtected.POST("/logout", s.authHandler.Logout)
+		authProtected.POST("/change-password", s.authHandler.ChangePassword)
+	}
+
+	// ===== User Management Routes =====
+	users := s.router.Group("/users")
+	users.Use(s.authMiddleware.Authenticate())
+	{
+		users.GET("/me", s.userHandler.GetCurrentUser)
+		users.PUT("/me", s.userHandler.UpdateCurrentUser)
+		users.GET("/me/identities", s.userHandler.GetUserIdentities)
+		users.DELETE("/me/identities/:id", s.userHandler.DeleteUserIdentity)
+	}
+
+	// ===== Team Management Routes =====
+	teams := s.router.Group("/teams")
+	teams.Use(s.authMiddleware.Authenticate())
+	{
+		teams.GET("", s.teamHandler.ListTeams)
+		teams.POST("", s.teamHandler.CreateTeam)
+		teams.GET("/:id", s.teamHandler.GetTeam)
+		teams.PUT("/:id", s.teamHandler.UpdateTeam)
+		teams.DELETE("/:id", s.teamHandler.DeleteTeam)
+
+		// Team members
+		teams.GET("/:id/members", s.teamHandler.ListTeamMembers)
+		teams.POST("/:id/members", s.teamHandler.AddTeamMember)
+		teams.PUT("/:id/members/:userId", s.teamHandler.UpdateTeamMember)
+		teams.DELETE("/:id/members/:userId", s.teamHandler.RemoveTeamMember)
+	}
+
+	// ===== API Key Management Routes =====
+	apiKeys := s.router.Group("/api-keys")
+	apiKeys.Use(s.authMiddleware.Authenticate())
+	{
+		apiKeys.GET("", s.apiKeyHandler.ListAPIKeys)
+		apiKeys.POST("", s.apiKeyHandler.CreateAPIKey)
+		apiKeys.DELETE("/:id", s.apiKeyHandler.DeleteAPIKey)
+		apiKeys.POST("/:id/deactivate", s.apiKeyHandler.DeactivateAPIKey)
+	}
+
+	// ===== API Proxy Routes =====
+	// These routes proxy to internal-gateway after authentication
 	api := s.router.Group("/api")
 	{
 		// Apply auth and rate limiting to all API routes
