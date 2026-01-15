@@ -56,8 +56,8 @@ type Config struct {
 	KubeconfigPath string `yaml:"kubeconfig_path"` // Path to kubeconfig file (empty for in-cluster config)
 }
 
-// DefaultConfig returns the default configuration
-func DefaultConfig() *Config {
+// defaultConfig returns the default configuration
+func defaultConfig() *Config {
 	return &Config{
 		GRPCAddr:          "0.0.0.0",
 		GRPCPort:          8080,
@@ -92,7 +92,7 @@ func init() {
 	Cfg, err = load(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		Cfg = DefaultConfig()
+		Cfg = defaultConfig()
 	}
 }
 
@@ -104,7 +104,7 @@ func LoadConfig() *Config {
 // load loads configuration from a YAML file
 func load(path string) (*Config, error) {
 	// Default configuration
-	cfg := DefaultConfig()
+	cfg := defaultConfig()
 
 	if path == "" {
 		return cfg, nil

@@ -72,8 +72,8 @@ type Config struct {
 	UseEDT bool `yaml:"use_edt"`
 }
 
-// DefaultConfig returns the default configuration
-func DefaultConfig() *Config {
+// defaultConfig returns the default configuration
+func defaultConfig() *Config {
 	return &Config{
 		LogLevel:              "info",
 		MetricsPort:           9090,
@@ -110,7 +110,7 @@ func init() {
 	Cfg, err = load(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		Cfg = DefaultConfig()
+		Cfg = defaultConfig()
 	}
 }
 
@@ -122,7 +122,7 @@ func LoadConfig() *Config {
 // load loads configuration from a YAML file
 func load(path string) (*Config, error) {
 	// Default config
-	cfg := DefaultConfig()
+	cfg := defaultConfig()
 
 	if path == "" {
 		return cfg, nil
