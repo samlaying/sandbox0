@@ -38,4 +38,8 @@ CREATE TRIGGER update_api_keys_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- +goose Down
--- ignore
+DROP TRIGGER IF EXISTS update_api_keys_updated_at ON api_keys;
+DROP INDEX IF EXISTS idx_api_keys_key_value;
+DROP INDEX IF EXISTS idx_api_keys_team_id;
+DROP TABLE IF EXISTS api_keys;
+DROP FUNCTION IF EXISTS update_updated_at_column();

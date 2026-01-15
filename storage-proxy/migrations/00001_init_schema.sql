@@ -38,4 +38,8 @@ CREATE TRIGGER update_sandbox_volumes_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- +goose Down
--- ignore
+DROP TRIGGER IF EXISTS update_sandbox_volumes_updated_at ON sandbox_volumes;
+DROP INDEX IF EXISTS idx_sandbox_volumes_user_id;
+DROP INDEX IF EXISTS idx_sandbox_volumes_team_id;
+DROP TABLE IF EXISTS sandbox_volumes;
+DROP FUNCTION IF EXISTS update_updated_at_column();
