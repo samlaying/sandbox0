@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -224,7 +225,7 @@ func (p *Proxy) handleTLSConnection(
 	}
 
 	// Connect to upstream
-	upstreamAddr := fmt.Sprintf("%s:%d", destIP, destPort)
+	upstreamAddr := net.JoinHostPort(destIP, strconv.Itoa(destPort))
 	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 10*time.Second)
 	if err != nil {
 		return destHost, destPort, 0, 0, "deny", "upstream connection failed", err
@@ -285,7 +286,7 @@ func (p *Proxy) handleHTTPConnection(
 	}
 
 	// Connect to upstream
-	upstreamAddr := fmt.Sprintf("%s:%d", destIP, destPort)
+	upstreamAddr := net.JoinHostPort(destIP, strconv.Itoa(destPort))
 	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 10*time.Second)
 	if err != nil {
 		return destHost, destPort, 0, 0, "deny", "upstream connection failed", err

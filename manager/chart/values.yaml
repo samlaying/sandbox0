@@ -119,8 +119,7 @@ config:
   webhook_key_path: "/tmp/k8s-webhook-server/serving-certs/tls.key"
 
   # Internal Auth
-  internal_auth_public_key_path: "/config/internal_jwt_public.key"
-  internal_auth_private_key_path: "/secrets/internal_jwt_private.key"
+  # Paths are fixed in code and Helm manifests.
 
   # Sandbox
   default_sandbox_ttl: "5m"

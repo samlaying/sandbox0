@@ -79,7 +79,7 @@ func NewServer(
 	requestLogger := middleware.NewRequestLogger(logger)
 
 	// Initialize internal auth generator
-	privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(cfg.InternalJWTPrivateKeyPath)
+	privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(internalauth.DefaultInternalJWTPrivateKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load internal JWT private key: %w", err)
 	}

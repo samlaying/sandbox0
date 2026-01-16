@@ -115,7 +115,7 @@ config:
   cache_root: "/var/lib/storage-proxy/cache"
 
   # Security - file path for public key
-  internal_auth_public_key_path: "/config/internal_jwt_public.key"
+  # Internal auth keys are mounted at fixed paths (/config, /secrets).
 
   # Monitoring
   metrics_enabled: true

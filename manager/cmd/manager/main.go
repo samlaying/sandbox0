@@ -144,23 +144,21 @@ func main() {
 	// Initialize internal auth generator for procd communication
 	var internalTokenGenerator service.TokenGenerator
 	var procdTokenGenerator service.TokenGenerator
-	if cfg.InternalAuthPrivateKeyPath != "" {
-		privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(cfg.InternalAuthPrivateKeyPath)
-		if err != nil {
-			logger.Warn("Failed to load internal auth private key, pause/resume will not work",
-				zap.String("path", cfg.InternalAuthPrivateKeyPath),
-				zap.Error(err),
-			)
-		} else {
-			internalAuthGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
-				Caller:     "manager",
-				PrivateKey: privateKey,
-				TTL:        30 * time.Second,
-			})
-			internalTokenGenerator = service.NewInternalTokenGenerator(internalAuthGen)
-			procdTokenGenerator = service.NewProcdTokenGenerator(internalAuthGen)
-			logger.Info("Internal auth generators initialized for procd communication")
-		}
+	privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(internalauth.DefaultInternalJWTPrivateKeyPath)
+	if err != nil {
+		logger.Warn("Failed to load internal auth private key, pause/resume will not work",
+			zap.String("path", internalauth.DefaultInternalJWTPrivateKeyPath),
+			zap.Error(err),
+		)
+	} else {
+		internalAuthGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
+			Caller:     "manager",
+			PrivateKey: privateKey,
+			TTL:        30 * time.Second,
+		})
+		internalTokenGenerator = service.NewInternalTokenGenerator(internalAuthGen)
+		procdTokenGenerator = service.NewProcdTokenGenerator(internalAuthGen)
+		logger.Info("Internal auth generators initialized for procd communication")
 	}
 
 	// Create services
@@ -195,10 +193,10 @@ func main() {
 	)
 
 	// Initialize internal auth validator
-	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(cfg.InternalAuthPublicKeyPath)
+	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(internalauth.DefaultInternalJWTPublicKeyPath)
 	if err != nil {
 		logger.Fatal("Failed to load internal auth public key",
-			zap.String("path", cfg.InternalAuthPublicKeyPath),
+			zap.String("path", internalauth.DefaultInternalJWTPublicKeyPath),
 			zap.Error(err),
 		)
 	}

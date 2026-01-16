@@ -20,7 +20,6 @@ type Config struct {
 
 	// Internal authentication (for validating requests from edge-gateway and
 	// generating tokens for downstream services)
-	InternalJWTPrivateKeyPath string `yaml:"internal_jwt_private_key_path"`
 
 	// Timeouts
 	ProxyTimeout      time.Duration `yaml:"proxy_timeout"`
@@ -35,7 +34,6 @@ func defaultConfig() *Config {
 		LogLevel:                  "info",
 		ManagerURL:                "http://manager.sandbox0-system:8080",
 		StorageProxyURL:           "http://storage-proxy.sandbox0-system:8081",
-		InternalJWTPrivateKeyPath: "/secrets/internal_jwt_private.key",
 		ProxyTimeout:              30 * time.Second,
 		ShutdownTimeout:           30 * time.Second,
 		HealthCheckPeriod:         10 * time.Second,

@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -162,41 +160,28 @@ func main() {
 	// Create authenticator based on config
 	var grpcInterceptor grpc.UnaryServerInterceptor
 	var httpAuthenticator *auth.HTTPAuthenticator
-
-	if cfg.InternalAuthPublicKey != "" {
-		// Use new internalauth validator
-		publicKeyBytes, err := base64.StdEncoding.DecodeString(cfg.InternalAuthPublicKey)
-		if err != nil {
-			zapLogger.Fatal("Failed to decode internal auth public key",
-				zap.Error(err),
-			)
-		}
-
-		if len(publicKeyBytes) != ed25519.PublicKeySize {
-			zapLogger.Fatal("Invalid internal auth public key size",
-				zap.Int("expected", ed25519.PublicKeySize),
-				zap.Int("actual", len(publicKeyBytes)),
-			)
-		}
-
-		publicKey := ed25519.PublicKey(publicKeyBytes)
-		validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-			Target:                 "storage-proxy",
-			PublicKey:              publicKey,
-			AllowedCallers:         []string{"internal-gateway", "manager", "procd"},
-			ClockSkewTolerance:     5 * time.Second,
-			ReplayDetectionEnabled: false, // Disable for high-throughput scenarios
-		})
-
-		authenticator := auth.NewGRPCAuthenticator(validator, zapLogger)
-		grpcInterceptor = authenticator.UnaryInterceptor()
-
-		httpAuthenticator = auth.NewHTTPAuthenticator(validator, zapLogger)
-
-		zapLogger.Info("Using internalauth validator for gRPC and HTTP authentication")
-	} else {
-		zapLogger.Fatal("No authentication method configured")
+	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(internalauth.DefaultInternalJWTPublicKeyPath)
+	if err != nil {
+		zapLogger.Fatal("Failed to load internal auth public key",
+			zap.String("path", internalauth.DefaultInternalJWTPublicKeyPath),
+			zap.Error(err),
+		)
 	}
+
+	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
+		Target:                 "storage-proxy",
+		PublicKey:              publicKey,
+		AllowedCallers:         []string{"internal-gateway", "manager", "procd"},
+		ClockSkewTolerance:     5 * time.Second,
+		ReplayDetectionEnabled: false, // Disable for high-throughput scenarios
+	})
+
+	authenticator := auth.NewGRPCAuthenticator(validator, zapLogger)
+	grpcInterceptor = authenticator.UnaryInterceptor()
+
+	httpAuthenticator = auth.NewHTTPAuthenticator(validator, zapLogger)
+
+	zapLogger.Info("Using internalauth validator for gRPC and HTTP authentication")
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer(

@@ -1,3 +1,6 @@
+{{- $global := .Values.global | default dict }}
+{{- $jwt := (get $global "jwt") | default dict }}
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -78,15 +81,15 @@ spec:
             name: {{ include "manager.fullname" . }}
         - name: internal-jwt-private-key
           secret:
-            secretName: {{ .Values.secrets.internalJwtSecretName | default .Values.global.jwt.internalJwtSecretName }}
+            secretName: {{ .Values.secrets.internalJwtSecretName | default $jwt.internalJwtSecretName }}
             items:
-              - key: {{ .Values.secrets.internalJwtPrivateKeyKey | default .Values.global.jwt.privateKeyKey }}
+              - key: {{ .Values.secrets.internalJwtPrivateKeyKey | default $jwt.privateKeyKey }}
                 path: internal_jwt_private.key
         - name: internal-jwt-public-key
           secret:
-            secretName: {{ .Values.secrets.internalJwtSecretName | default .Values.global.jwt.internalJwtSecretName }}
+            secretName: {{ .Values.secrets.internalJwtSecretName | default $jwt.internalJwtSecretName }}
             items:
-              - key: {{ .Values.secrets.internalJwtPublicKeyKey | default .Values.global.jwt.publicKeyKey }}
+              - key: {{ .Values.secrets.internalJwtPublicKeyKey | default $jwt.publicKeyKey }}
                 path: internal_jwt_public.key
         {{- if .Values.webhook.enabled }}
         - name: webhook-certs

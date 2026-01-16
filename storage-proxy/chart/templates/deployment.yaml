@@ -1,3 +1,6 @@
+{{- $global := .Values.global | default dict }}
+{{- $jwt := (get $global "jwt") | default dict }}
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -72,9 +75,9 @@ spec:
             name: {{ include "storage-proxy.fullname" . }}
         - name: internal-jwt-public-key
           secret:
-            secretName: {{ .Values.secrets.internalJwtSecretName | default .Values.global.jwt.internalJwtSecretName }}
+            secretName: {{ .Values.secrets.internalJwtSecretName | default $jwt.internalJwtSecretName }}
             items:
-              - key: {{ .Values.secrets.internalJwtPublicKeyKey | default .Values.global.jwt.publicKeyKey }}
+              - key: {{ .Values.secrets.internalJwtPublicKeyKey | default $jwt.publicKeyKey }}
                 path: internal_jwt_public.key
         - name: cache
           {{- if .Values.persistence.enabled }}

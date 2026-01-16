@@ -66,10 +66,10 @@ func main() {
 	}
 
 	// Initialize internal auth validator
-	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(cfg.InternalAuthPublicKeyPath)
+	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(internalauth.DefaultInternalJWTPublicKeyPath)
 	if err != nil {
 		logger.Fatal("Failed to load internal auth public key",
-			zap.String("path", cfg.InternalAuthPublicKeyPath),
+			zap.String("path", internalauth.DefaultInternalJWTPublicKeyPath),
 			zap.Error(err),
 		)
 	}

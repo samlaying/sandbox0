@@ -29,7 +29,6 @@ type Config struct {
 	JWTRefreshTokenTTL time.Duration `yaml:"jwt_refresh_token_ttl"`
 
 	// Internal authentication (for generating tokens to internal-gateway)
-	InternalJWTPrivateKeyPath string `yaml:"internal_jwt_private_key_path"`
 
 	// Rate limiting
 	RateLimitRPS   int `yaml:"rate_limit_rps"`
@@ -127,7 +126,6 @@ func defaultConfig() *Config {
 		JWTSecret:                 "",
 		JWTAccessTokenTTL:         15 * time.Minute,
 		JWTRefreshTokenTTL:        7 * 24 * time.Hour,
-		InternalJWTPrivateKeyPath: "/secrets/internal_jwt_private.key",
 		RateLimitRPS:              100,
 		RateLimitBurst:            200,
 		ProxyTimeout:              30 * time.Second,

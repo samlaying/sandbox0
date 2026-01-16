@@ -34,7 +34,6 @@ type Config struct {
 	DefaultClusterId string `yaml:"default_cluster_id"`
 
 	// Security
-	InternalAuthPublicKey string `yaml:"internal_auth_public_key"` // Ed25519 public key for internal auth (base64 encoded)
 
 	// Cache
 	CacheRoot string `yaml:"cache_root"`
@@ -127,17 +126,8 @@ func load(path string) (*Config, error) {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	// Require either new internal auth or legacy JWT secret
-	if c.InternalAuthPublicKey == "" {
-		return ErrMissingAuthConfig
-	}
 	return nil
 }
-
-// Errors
-var (
-	ErrMissingAuthConfig = &ConfigError{"INTERNAL_AUTH_PUBLIC_KEY is required"}
-)
 
 // ConfigError represents a configuration error
 type ConfigError struct {

@@ -30,22 +30,18 @@ type Config struct {
 	// Cache configuration
 	CacheMaxBytes int64         `yaml:"cache_max_bytes"`
 	CacheTTL      time.Duration `yaml:"cache_ttl"`
-
-	// Internal auth configuration
-	InternalAuthPublicKeyPath string `yaml:"internal_auth_public_key_path"`
 }
 
 // defaultConfig returns the default configuration
 func defaultConfig() *Config {
 	return &Config{
-		HTTPPort:                  49983,
-		LogLevel:                  "info",
-		StorageProxyBaseURL:       "storage-proxy.sandbox0-system.svc.cluster.local",
-		StorageProxyReplicas:      3,
-		RootPath:                  "/workspace",
-		CacheMaxBytes:             100 * 1024 * 1024,
-		CacheTTL:                  30 * time.Second,
-		InternalAuthPublicKeyPath: "/config/internal_jwt_public.key",
+		HTTPPort:             49983,
+		LogLevel:             "info",
+		StorageProxyBaseURL:  "storage-proxy.sandbox0-system.svc.cluster.local",
+		StorageProxyReplicas: 3,
+		RootPath:             "/workspace",
+		CacheMaxBytes:        100 * 1024 * 1024,
+		CacheTTL:             30 * time.Second,
 	}
 }
 

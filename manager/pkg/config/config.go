@@ -41,10 +41,6 @@ type Config struct {
 	WebhookCertPath string `yaml:"webhook_cert_path"`
 	WebhookKeyPath  string `yaml:"webhook_key_path"`
 
-	// Internal Auth
-	InternalAuthPublicKeyPath  string `yaml:"internal_auth_public_key_path"`
-	InternalAuthPrivateKeyPath string `yaml:"internal_auth_private_key_path"`
-
 	// Sandbox
 	DefaultSandboxTTL time.Duration `yaml:"default_sandbox_ttl"`
 }
@@ -52,24 +48,22 @@ type Config struct {
 // defaultConfig returns the default configuration
 func defaultConfig() *Config {
 	return &Config{
-		HTTPPort:                   8080,
-		DefaultTemplate:            "default",
-		DefaultTemplateNamespace:   "sb0",
-		DefaultClusterId:           "default",
-		KubeConfig:                 "",
-		Namespace:                  "default",
-		LeaderElection:             true,
-		ResyncPeriod:               30 * time.Second,
-		DatabaseURL:                "",
-		CleanupInterval:            60 * time.Second,
-		LogLevel:                   "info",
-		MetricsPort:                9090,
-		WebhookPort:                9443,
-		WebhookCertPath:            "/tmp/k8s-webhook-server/serving-certs/tls.crt",
-		WebhookKeyPath:             "/tmp/k8s-webhook-server/serving-certs/tls.key",
-		InternalAuthPublicKeyPath:  "/config/internal_jwt_public.key",
-		InternalAuthPrivateKeyPath: "/secrets/internal_jwt_private.key",
-		DefaultSandboxTTL:          5 * time.Minute,
+		HTTPPort:                 8080,
+		DefaultTemplate:          "default",
+		DefaultTemplateNamespace: "sb0",
+		DefaultClusterId:         "default",
+		KubeConfig:               "",
+		Namespace:                "default",
+		LeaderElection:           true,
+		ResyncPeriod:             30 * time.Second,
+		DatabaseURL:              "",
+		CleanupInterval:          60 * time.Second,
+		LogLevel:                 "info",
+		MetricsPort:              9090,
+		WebhookPort:              9443,
+		WebhookCertPath:          "/tmp/k8s-webhook-server/serving-certs/tls.crt",
+		WebhookKeyPath:           "/tmp/k8s-webhook-server/serving-certs/tls.key",
+		DefaultSandboxTTL:        5 * time.Minute,
 	}
 }
 

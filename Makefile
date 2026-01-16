@@ -116,6 +116,15 @@ helm-update:
 		fi; \
 	done
 
+helm-clean:
+	@mkdir -p helm/charts
+	@for service in $(SERVICES); do \
+		if [ -d "$$service/chart" ]; then \
+			echo "Deleting chart for $$service..."; \
+			rm -rf helm/charts/$$service; \
+		fi; \
+	done
+
 # Release helm chart and git tag in one shot:
 #   make release VERSION=v0.1.0
 release:
