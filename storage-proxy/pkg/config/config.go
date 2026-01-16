@@ -30,13 +30,10 @@ type Config struct {
 	S3SessionToken string `yaml:"s3_session_token"`
 
 	DefaultCacheSize string `yaml:"default_cache_size"`
-	DefaultCacheDir  string `yaml:"default_cache_dir"`
+	CacheDir         string `yaml:"cache_dir"`
 	DefaultClusterId string `yaml:"default_cluster_id"`
 
 	// Security
-
-	// Cache
-	CacheRoot string `yaml:"cache_root"`
 
 	// Monitoring
 	MetricsEnabled bool `yaml:"metrics_enabled"`
@@ -65,9 +62,8 @@ func defaultConfig() *Config {
 		DatabaseURL:       "",
 		S3Region:          "us-east-1",
 		DefaultCacheSize:  "1G",
-		DefaultCacheDir:   "/var/lib/storage-proxy/cache",
+		CacheDir:          "/var/lib/storage-proxy/cache",
 		DefaultClusterId:  "default",
-		CacheRoot:         "/var/lib/storage-proxy/cache",
 		MetricsEnabled:    true,
 		MetricsPort:       9090,
 		LogLevel:          "info",

@@ -56,7 +56,7 @@ ENV GRPC_PORT=8080 \
     HTTP_PORT=8081 \
     METRICS_PORT=9090 \
     LOG_LEVEL=info \
-    CACHE_ROOT=/var/lib/storage-proxy/cache \
+    CACHE_DIR=/var/lib/storage-proxy/cache \
     AUDIT_FILE=/var/log/storage-proxy/audit.log
 
 # Health check

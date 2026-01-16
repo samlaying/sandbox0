@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=internal-gateway
-DOCKER_IMAGE=sandbox0/internal-gateway
+DOCKER_IMAGE=sandbox0ai/internal-gateway
 VERSION?=latest
 
 # Go parameters

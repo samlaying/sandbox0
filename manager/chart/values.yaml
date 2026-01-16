@@ -95,7 +95,8 @@ config:
 
   # Template defaults
   default_template: "default"
-  default_template_namespace: "sb0"
+  default_template_namespace: "sandbox0"
+  default_template_image: "sandbox0ai/otemplates:default-v0.1.0"
   default_cluster_id: "default"
 
   # Kubernetes

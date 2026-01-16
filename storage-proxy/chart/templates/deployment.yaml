@@ -66,7 +66,7 @@ spec:
               subPath: internal_jwt_public.key
               readOnly: true
             - name: cache
-              mountPath: {{ .Values.config.cache_root }}
+              mountPath: {{ .Values.config.cache_dir }}
             - name: logs
               mountPath: /var/log/storage-proxy
       volumes:
@@ -80,12 +80,7 @@ spec:
               - key: {{ .Values.secrets.internalJwtPublicKeyKey | default $jwt.publicKeyKey }}
                 path: internal_jwt_public.key
         - name: cache
-          {{- if .Values.persistence.enabled }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-cache" (include "storage-proxy.fullname" .)) }}
-          {{- else }}
           emptyDir: {}
-          {{- end }}
         - name: logs
           emptyDir: {}
       {{- with .Values.nodeSelector }}

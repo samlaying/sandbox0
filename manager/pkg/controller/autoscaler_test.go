@@ -61,7 +61,7 @@ func TestAutoScaler_SlowStartScaleUp(t *testing.T) {
 	template := &v1alpha1.SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "tpl",
-			Namespace: "sb0",
+			Namespace: "sandbox0",
 		},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{
@@ -122,7 +122,7 @@ func TestAutoScaler_ScaleUpClampedToMaxIdle(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 3, AutoScale: true},
 		},
@@ -165,7 +165,7 @@ func TestAutoScaler_ScaleDownOnNoTraffic(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 2, MaxIdle: 50, AutoScale: true},
 		},
@@ -205,7 +205,7 @@ func TestAutoScaler_ScaleUpCooldownRespected(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 50, AutoScale: true},
 		},
@@ -255,7 +255,7 @@ func TestAutoScaler_ClampToMinIdle(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 7, MaxIdle: 50, AutoScale: true},
 		},
@@ -283,7 +283,7 @@ func TestAutoScaler_MaxIdleLessThanMinIdle_ClampsToMinIdle(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 5, MaxIdle: 3, AutoScale: true},
 		},
@@ -311,7 +311,7 @@ func TestAutoScaler_ReplicaSetMissing_NoError(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 10, AutoScale: true},
 		},
@@ -329,7 +329,7 @@ func TestAutoScaler_AutoScaleDisabled_NoChange(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 10, AutoScale: false},
 		},
@@ -372,7 +372,7 @@ func TestAutoScaler_IgnoreBadOrOldClaimAnnotations(t *testing.T) {
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 50, AutoScale: true},
 		},
@@ -438,7 +438,7 @@ func TestAutoScaler_PersistsLastClaimTimeEvenWithoutReplicaChange(t *testing.T) 
 	now := time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC)
 
 	template := &v1alpha1.SandboxTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sb0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tpl", Namespace: "sandbox0"},
 		Spec: v1alpha1.SandboxTemplateSpec{
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 10, AutoScale: true},
 		},

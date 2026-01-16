@@ -1,7 +1,7 @@
 # Global configuration shared across all services
 # Override these values in production!
 global:
-  tag: &globalTag "latest"
+  tag: &globalTag "v0.1.0"
   # Database configuration (shared by all services)
   database:
     url: "postgres://sandbox0:sandbox0@postgresql:5432/sandbox0?sslmode=disable"
@@ -127,9 +127,9 @@ manager:
       cpu: 100m
       memory: 256Mi
   
-  # Optional: override global database URL
-  # config:
-  #   database_url: "postgres://custom-url"
+  config:
+    default_template: "default"
+    default_template_namespace: "sandbox0"
 
 # ------------------------------------------------------------------------------
 # Storage-proxy - JuiceFS storage proxy for persistent volumes
@@ -151,14 +151,8 @@ storage-proxy:
   
   # Cache configuration
   config:
-    cache_root: "/var/cache/storage-proxy"
-    cache_size: "10737418240"  # 10GB
+    default_cache_size: "1G"   # per sandboxvolume
   
-  persistence:
-    enabled: true
-    size: 40Gi
-    storageClass: "default"
-
 # ------------------------------------------------------------------------------
 # Netd - Network daemon for L7 proxy and eBPF policies
 # ------------------------------------------------------------------------------
@@ -211,8 +205,9 @@ rustfs:
       region: "us-east-1"
 
   # StorageClass used for RustFS PVCs.
-  storageclass:
-    name: "default"
+  # Leave storageclass unset to use the cluster's default StorageClass
+  # storageclass:
+  #   name: ""
 
 # ------------------------------------------------------------------------------
 # PostgreSQL - Built-in database (optional)
@@ -249,4 +244,5 @@ postgresql:
     persistence:
       enabled: true
       size: 20Gi
-      storageClass: "default"
+      # Leave storageClass unset to use the cluster's default StorageClass
+      # storageClass: ""

@@ -102,7 +102,7 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	}
 
 	// 3. Initialize chunk store with local cache
-	cacheDir := filepath.Join(m.config.DefaultCacheDir, volumeID)
+	cacheDir := filepath.Join(m.config.CacheDir, volumeID)
 	defaultCacheSize := parseSizeString(m.config.DefaultCacheSize, 1<<30)
 
 	chunkConf := chunk.Config{
@@ -118,7 +118,7 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 		CacheDir:      cacheDir,
 		CacheSize:     uint64(parseSizeString(config.CacheSize, defaultCacheSize)),
 		FreeSpace:     0.1,
-		CacheMode:     0600,
+		CacheMode:     0o600,
 		AutoCreate:    true,
 	}
 

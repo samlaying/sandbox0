@@ -9,7 +9,7 @@ MANIFEST_PUSH_TARGETS = $(PLATFORM:=.push-manifest)
 BUILD_OPT=""
 IMAGE_TAG=latest
 IMAGE_PREFIX=k8s-plugin
-IMAGE_REGISTRY=sandbox0
+IMAGE_REGISTRY=sandbox0ai
 BINARY=k8s-plugin
 
 

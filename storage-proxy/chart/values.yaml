@@ -65,15 +65,6 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Persistent volume for cache
-persistence:
-  enabled: true
-  storageClass: ""
-  accessModes:
-    - ReadWriteOnce
-  size: 100Gi
-  existingClaim: ""
-
 # Secrets - only for file-based secrets (keys, certs)
 # Uses global.jwt.internalJwtSecretName by default
 secrets:
@@ -108,11 +99,11 @@ config:
   s3_secret_key: ""  # defaults to {{ .Values.global.juicefs.s3_secret_key }}
   s3_session_token: ""  # defaults to {{ .Values.global.juicefs.s3_session_token }}
 
-  # Cache defaults
-  default_cache_size: "1G"
-  default_cache_dir: "/var/lib/storage-proxy/cache"
+  # Cache
+  default_cache_size: "1G" # per sandboxvolume
+  cache_dir: "/var/lib/storage-proxy/cache"
+
   default_cluster_id: "default"
-  cache_root: "/var/lib/storage-proxy/cache"
 
   # Security - file path for public key
   # Internal auth keys are mounted at fixed paths (/config, /secrets).

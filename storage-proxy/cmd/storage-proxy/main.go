@@ -35,7 +35,6 @@ import (
 )
 
 func main() {
-
 	// Setup logger (logrus for compatibility)
 	logrusLogger := logrus.New()
 	logrusLogger.SetFormatter(&logrus.JSONFormatter{})
@@ -72,7 +71,7 @@ func main() {
 		zap.Int("grpc_port", cfg.GRPCPort),
 		zap.Int("http_port", cfg.HTTPPort),
 		zap.String("log_level", cfg.LogLevel),
-		zap.String("cache_dir", cfg.DefaultCacheDir),
+		zap.String("cache_dir", cfg.CacheDir),
 	)
 
 	// Initialize database connection pool

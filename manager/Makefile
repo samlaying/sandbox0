@@ -1,3 +1,7 @@
+
+DOCKER_IMAGE=sandbox0ai/manager
+VERSION?=latest
+
 .PHONY: generate
 generate: ## Generate clientset, informers, and listers
 	@echo "Generating code..."
@@ -59,10 +63,17 @@ build: manifests generate ## Build the manager binary
 	@echo "Building the procd binary..."
 	@go build -o bin/procd ./cmd/procd
 
+# Build Docker image
+docker-build:
+	docker build -t $(DOCKER_IMAGE):$(VERSION) .
+
+# Push Docker image
+docker-push:
+	docker push $(DOCKER_IMAGE):$(VERSION)
+
 .PHONY: test
 test: ## Run all tests and show coverage summary
 	@GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./...
-
 
 .PHONY: lint
 lint: ## Run linter

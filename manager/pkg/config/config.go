@@ -16,6 +16,7 @@ type Config struct {
 	// template
 	DefaultTemplate          string `yaml:"default_template"`
 	DefaultTemplateNamespace string `yaml:"default_template_namespace"`
+	DefaultTemplateImage     string `yaml:"default_template_image"`
 	DefaultClusterId         string `yaml:"default_cluster_id"`
 
 	// Kubernetes
@@ -50,7 +51,8 @@ func defaultConfig() *Config {
 	return &Config{
 		HTTPPort:                 8080,
 		DefaultTemplate:          "default",
-		DefaultTemplateNamespace: "sb0",
+		DefaultTemplateNamespace: "sandbox0",
+		DefaultTemplateImage:     "sandbox0ai/otemplates:default-v0.1.0",
 		DefaultClusterId:         "default",
 		KubeConfig:               "",
 		Namespace:                "default",

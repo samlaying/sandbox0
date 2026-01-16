@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME := netd
-IMAGE_NAME := sandbox0/netd
+IMAGE_NAME := sandbox0ai/netd
 IMAGE_TAG := latest
 
 # Build the binary

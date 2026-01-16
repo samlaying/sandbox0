@@ -1,5 +1,8 @@
 .PHONY: proto build docker clean test
 
+DOCKER_IMAGE=sandbox0ai/storage-proxy
+VERSION?=latest
+
 # Generate protobuf code
 proto:
 	mkdir -p proto/fs
@@ -14,8 +17,11 @@ build: proto
 	go build -o bin/storage-proxy ./cmd/storage-proxy
 
 # Build Docker image
-docker:
-	docker build -t sandbox0/storage-proxy:latest .
+docker-build:
+	docker build -t $(DOCKER_IMAGE):$(VERSION) .
+
+docker-push:
+	docker push $(DOCKER_IMAGE):$(VERSION)
 
 # Run tests
 test:

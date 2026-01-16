@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=edge-gateway
-DOCKER_IMAGE=sandbox0/edge-gateway
+DOCKER_IMAGE=sandbox0ai/edge-gateway
 VERSION?=latest
 
 # Go parameters

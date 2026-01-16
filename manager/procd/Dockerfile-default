@@ -1,0 +1,172 @@
+# sandbox0 default sandbox template (runtime-only).
+# This image intentionally does NOT define an ENTRYPOINT/CMD.
+# The platform will inject and start the sandbox control process (procd) at runtime.
+
+FROM ubuntu:24.04
+
+# Avoid prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Align with common E2B runtime defaults (safe pip behavior).
+ENV PIP_DEFAULT_TIMEOUT=100 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install languages using Ubuntu 24.04 (Noble) default software repositories.
+# This ensures stability and follows the OS's native versions:
+# - Python 3.12 (with IPython for better REPL experience)
+# - Node.js (installed from NodeSource to get 20.x)
+# - Ruby 3.2
+# - PHP 8.3
+# - Go 1.22
+# - R 4.3
+# - Perl 5.38
+# - Lua 5.4 / LuaJIT
+# Base OS tooling + NodeSource repo (stable; changes rarely).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+  && rm -rf /var/lib/apt/lists/*
+
+# Languages + runtime shared libraries (stable; changes rarely).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    build-essential \
+    bash \
+    zsh \
+    git \
+    sudo \
+    util-linux \
+    fonts-noto-cjk \
+    # Runtime libraries needed by common Python wheels (opencv/soundfile/sklearn, etc.)
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libsndfile1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python-is-python3 \
+    ipython3 \
+    ruby-full \
+    lua5.4 \
+    luajit \
+    php-cli \
+    r-base \
+    perl \
+    golang \
+    nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+# Agent-friendly CLI utilities + DB/cloud tooling (expected to evolve; keep in its own layer for cache).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    jq \
+    # Search / navigation / inspection
+    ripgrep \
+    fd-find \
+    fzf \
+    less \
+    tree \
+    file \
+    wget \
+    # Archives / compression
+    zip \
+    unzip \
+    p7zip-full \
+    xz-utils \
+    # Process / networking / debugging
+    procps \
+    htop \
+    lsof \
+    netcat-openbsd \
+    socat \
+    rsync \
+    openssh-client \
+    dnsutils \
+    iproute2 \
+    iputils-ping \
+    traceroute \
+    strace \
+    ltrace \
+    tcpdump \
+    time \
+    bc \
+    moreutils \
+    # Terminal / editors
+    tmux \
+    vim-tiny \
+    nano \
+    # JSON/YAML + better file viewers
+    yq \
+    bat \
+    # HTTP + disk tools
+    httpie \
+    ncdu \
+    duf \
+    # DB client CLIs
+    postgresql-client \
+    default-mysql-client \
+    sqlite3 \
+    redis-tools \
+    # Cloud / repo tooling
+    git-lfs \
+    gh \
+    rclone \
+    awscli \
+  # Ubuntu uses 'fdfind' and 'batcat' binary names; create common aliases for tooling compatibility.
+  && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
+  && (command -v batcat >/dev/null 2>&1 && ln -sf /usr/bin/batcat /usr/local/bin/bat || true) \
+  && rm -rf /var/lib/apt/lists/*
+
+# Preinstall a "common E2B-like" Python stack (WITHOUT Jupyter server).
+# Notes:
+# - We intentionally do NOT install: jupyter-server, ipykernel (sandbox0 doesn't use Jupyter for code execution).
+RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel \
+  && python3 -m pip install --no-cache-dir \
+    aiohttp==3.12.14 \
+    beautifulsoup4==4.13.4 \
+    bokeh==3.7.3 \
+    gensim==4.3.3 \
+    imageio==2.37.0 \
+    joblib==1.5.0 \
+    librosa==0.11.0 \
+    nltk==3.9.1 \
+    numba==0.61.2 \
+    numpy==1.26.4 \
+    opencv-python==4.11.0.86 \
+    openpyxl==3.1.5 \
+    orjson==3.10.18 \
+    pandas==2.2.3 \
+    pillow==11.3.0 \
+    plotly==6.0.1 \
+    kaleido==1.0.0 \
+    pytest==8.3.5 \
+    python-docx==1.1.2 \
+    pytz==2025.2 \
+    requests==2.32.4 \
+    scikit-image==0.25.2 \
+    scikit-learn==1.6.1 \
+    scipy==1.13.1 \
+    seaborn==0.13.2 \
+    soundfile==0.13.1 \
+    spacy==3.8.2 \
+    sympy==1.14.0 \
+    textblob==0.19.0 \
+    tornado==6.5.1 \
+    urllib3==2.6.0 \
+    xarray==2025.4.0 \
+    xlrd==2.0.1
+
+# Add Go to PATH
+ENV PATH=$PATH:/usr/lib/go/bin:/root/go/bin
+
+WORKDIR /root
+
+# Intentionally no ENTRYPOINT/CMD here.

@@ -33,9 +33,9 @@ chart_version = sys.argv[2]
 app_version = sys.argv[3]
 
 s = path.read_text()
-s2 = re.sub(r'(?m)^version:\s*.*$', f"version: {chart_version}", s)
-s2 = re.sub(r'(?m)^appVersion:\s*.*$', f'appVersion: "{app_version}"', s2)
-if s2 == s:
+s2, n1 = re.subn(r'(?m)^version:\s*.*$', f"version: {chart_version}", s)
+s2, n2 = re.subn(r'(?m)^appVersion:\s*.*$', f'appVersion: "{app_version}"', s2)
+if n1 == 0 or n2 == 0:
     raise SystemExit(f"error: did not update {path} (unexpected format?)")
 path.write_text(s2)
 PY
@@ -58,24 +58,4 @@ if n != 1:
 path.write_text(s2)
 PY
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "note: git not found; updated chart files only" >&2
-  exit 0
-fi
-
-if ! git -C "${ROOT_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "note: not a git repository; updated chart files only" >&2
-  exit 0
-fi
-
-# 3) Commit and tag
-git -C "${ROOT_DIR}" add "${CHART_YAML}" "${VALUES_YAML}"
-git -C "${ROOT_DIR}" commit -m "release: ${VERSION}"
-
-if git -C "${ROOT_DIR}" rev-parse "${VERSION}" >/dev/null 2>&1; then
-  echo "error: git tag ${VERSION} already exists" >&2
-  exit 1
-fi
-git -C "${ROOT_DIR}" tag "${VERSION}"
-
-echo "Done: committed and tagged ${VERSION}"
+echo "Done: updated chart files, version ${VERSION}"
