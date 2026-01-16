@@ -20,6 +20,7 @@ import (
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/db"
 	grpcserver "github.com/sandbox0-ai/infra/storage-proxy/pkg/grpc"
 	httpserver "github.com/sandbox0-ai/infra/storage-proxy/pkg/http"
+	"github.com/sandbox0-ai/infra/storage-proxy/pkg/juicefs"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/snapshot"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/volume"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/watcher"
@@ -93,6 +94,11 @@ func main() {
 		repo = db.NewRepository(pool)
 	} else {
 		zapLogger.Warn("DATABASE_URL not set, running without database persistence")
+	}
+
+	// Initialize JuiceFS filesystem if not already initialized
+	if err := initializeJuiceFS(cfg, zapLogger); err != nil {
+		zapLogger.Fatal("Failed to initialize JuiceFS", zap.Error(err))
 	}
 
 	// Create volume manager
@@ -361,4 +367,35 @@ type volumeContextAdapter struct {
 
 func (a *volumeContextAdapter) FlushAll(path string) error {
 	return a.vfs.FlushAll(path)
+}
+
+// initializeJuiceFS initializes the JuiceFS filesystem if not already initialized
+func initializeJuiceFS(cfg *config.Config, logger *zap.Logger) error {
+	logger.Info("Checking JuiceFS initialization status")
+
+	// Skip if essential config is missing
+	if cfg.MetaURL == "" || cfg.S3Bucket == "" {
+		logger.Warn("JuiceFS config incomplete, skipping initialization",
+			zap.String("meta_url", cfg.MetaURL),
+			zap.String("s3_bucket", cfg.S3Bucket))
+		return nil
+	}
+
+	initConfig := &juicefs.InitConfig{
+		MetaURL:        cfg.MetaURL,
+		S3Bucket:       cfg.S3Bucket,
+		S3Region:       cfg.S3Region,
+		S3Endpoint:     cfg.S3Endpoint,
+		S3AccessKey:    cfg.S3AccessKey,
+		S3SecretKey:    cfg.S3SecretKey,
+		S3SessionToken: cfg.S3SessionToken,
+	}
+
+	initializer := juicefs.NewInitializer(initConfig, logger)
+
+	if err := initializer.Initialize(); err != nil {
+		return fmt.Errorf("initialize juicefs: %w", err)
+	}
+
+	return nil
 }

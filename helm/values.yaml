@@ -100,10 +100,10 @@ internal-gateway:
   resources:
     #limits:
     #  cpu: 500m
-    #  memory: 256Mi
+    #  memory: 512Mi
     requests:
       cpu: 100m
-      memory: 128Mi
+      memory: 256Mi
   
   config:
     manager_url: "http://manager:8080"
@@ -120,9 +120,9 @@ manager:
     tag: *globalTag
   
   resources:
-    limits:
-      cpu: 500m
-      memory: 512Mi
+    #limits:
+    #  cpu: 500m
+    #  memory: 512Mi
     requests:
       cpu: 100m
       memory: 256Mi
@@ -142,9 +142,9 @@ storage-proxy:
     tag: *globalTag
   
   resources:
-    limits:
-      cpu: 1000m
-      memory: 2Gi
+    #limits:
+    #  cpu: 1000m
+    #  memory: 2Gi
     requests:
       cpu: 200m
       memory: 512Mi
@@ -172,8 +172,8 @@ netd:
     #  cpu: 200m
     #  memory: 256Mi
     requests:
-      cpu: 50m
-      memory: 64Mi
+      cpu: 100m
+      memory: 128Mi
   
   config:
     # Network policy - if true, blocks sandbox all traffic when netd is not ready
