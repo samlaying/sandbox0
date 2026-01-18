@@ -70,7 +70,6 @@ type ContainerSpec struct {
 	ImagePullPolicy string           `json:"imagePullPolicy,omitempty"`
 	Env             []EnvVar         `json:"env,omitempty"`
 	Resources       ResourceQuota    `json:"resources"`
-	VolumeMounts    []VolumeMount    `json:"volumeMounts,omitempty"`
 	SecurityContext *SecurityContext `json:"securityContext,omitempty"`
 }
 
@@ -78,13 +77,6 @@ type ContainerSpec struct {
 type EnvVar struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
-}
-
-// VolumeMount represents a volume mount
-type VolumeMount struct {
-	Name      string `json:"name"`
-	MountPath string `json:"mountPath"`
-	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
 // ResourceRequirements defines resource requirements for containers

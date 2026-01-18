@@ -137,21 +137,6 @@ spec:
                         format: int64
                         type: integer
                     type: object
-                  volumeMounts:
-                    items:
-                      description: VolumeMount represents a volume mount
-                      properties:
-                        mountPath:
-                          type: string
-                        name:
-                          type: string
-                        readOnly:
-                          type: boolean
-                      required:
-                      - mountPath
-                      - name
-                      type: object
-                    type: array
                 required:
                 - image
                 - resources
