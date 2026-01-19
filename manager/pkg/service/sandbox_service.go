@@ -10,6 +10,7 @@ import (
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/manager/pkg/controller"
 	"github.com/sandbox0-ai/infra/manager/pkg/metrics"
+	"github.com/sandbox0-ai/infra/pkg/templatenaming"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -145,14 +146,43 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 		zap.String("teamID", req.TeamID),
 	)
 
-	// Get the template
-	template, err := s.templateLister.Get(req.Namespace, req.Template)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("template %s not found in namespace %s", req.Template, req.Namespace)
+	// Resolve tenant template name:
+	// prefer team-scoped template, fall back to public, and always enforce ownership checks.
+	resolvedName := req.Template
+	var template *v1alpha1.SandboxTemplate
+	var err error
+
+	if req.TeamID != "" {
+		privateName := templatenaming.TemplateNameForCluster(templatenaming.ScopeTeam, req.TeamID, req.Template)
+		t, getErr := s.templateLister.Get(req.Namespace, privateName)
+		if getErr == nil {
+			template = t
+			resolvedName = privateName
 		}
-		return nil, fmt.Errorf("get template: %w", err)
 	}
+
+	if template == nil {
+		template, err = s.templateLister.Get(req.Namespace, req.Template)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return nil, fmt.Errorf("template %s not found in namespace %s", req.Template, req.Namespace)
+			}
+			return nil, fmt.Errorf("get template: %w", err)
+		}
+	}
+
+	// Enforce tenant isolation (best-effort based on scheduler-projected metadata).
+	if template.Labels != nil && template.Labels["sandbox0.ai/template-scope"] == templatenaming.ScopeTeam {
+		teamID := ""
+		if template.Annotations != nil {
+			teamID = template.Annotations["sandbox0.ai/template-team-id"]
+		}
+		if teamID != "" && teamID != req.TeamID {
+			return nil, fmt.Errorf("forbidden: template belongs to a different team")
+		}
+	}
+
+	_ = resolvedName // reserved for audit/debugging (name used is template.ObjectMeta.Name)
 
 	// Try to claim an idle pod first
 	var pod *corev1.Pod

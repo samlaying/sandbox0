@@ -22,7 +22,7 @@ type Claims struct {
 	TeamID    string   `json:"team_id"`
 	Email     string   `json:"email"`
 	Name      string   `json:"name"`
-	Roles     []string `json:"roles"`
+	TeamRole  string   `json:"team_role"`
 	IsAdmin   bool     `json:"is_admin"`
 	TokenType string   `json:"token_type"` // "access" or "refresh"
 }
@@ -54,7 +54,7 @@ type TokenPair struct {
 }
 
 // IssueTokenPair issues both access and refresh tokens
-func (i *Issuer) IssueTokenPair(userID, teamID, email, name string, roles []string, isAdmin bool) (*TokenPair, error) {
+func (i *Issuer) IssueTokenPair(userID, teamID, teamRole, email, name string, isAdmin bool) (*TokenPair, error) {
 	now := time.Now()
 	accessExpiry := now.Add(i.accessTokenTTL)
 	refreshExpiry := now.Add(i.refreshTokenTTL)
@@ -72,7 +72,7 @@ func (i *Issuer) IssueTokenPair(userID, teamID, email, name string, roles []stri
 		TeamID:    teamID,
 		Email:     email,
 		Name:      name,
-		Roles:     roles,
+		TeamRole:  teamRole,
 		IsAdmin:   isAdmin,
 		TokenType: "access",
 	}

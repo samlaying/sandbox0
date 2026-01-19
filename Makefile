@@ -1,6 +1,6 @@
 .PHONY: all build build-all obuild obuild-all test test-all lint tidy vendor clean helm-update release docker-build-all docker-push-all
 
-SERVICES := edge-gateway internal-gateway manager procd storage-proxy netd k8s-plugin
+SERVICES := edge-gateway internal-gateway manager procd scheduler storage-proxy netd k8s-plugin
 
 # Default version
 VERSION ?= latest
@@ -128,7 +128,7 @@ obuild:
 	fi
 
 # Prevent make from treating service names as targets
-edge-gateway internal-gateway manager procd storage-proxy netd k8s-plugin:
+edge-gateway internal-gateway manager procd scheduler storage-proxy netd k8s-plugin:
 	@:
 
 lint:

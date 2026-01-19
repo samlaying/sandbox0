@@ -30,7 +30,7 @@ var (
 			Name: "scheduler_template_allocations",
 			Help: "Number of template allocations per cluster",
 		},
-		[]string{"cluster_id", "template_id", "namespace", "type"}, // type: min_idle, max_idle
+		[]string{"cluster_id", "template_id", "tenant", "type"}, // type: min_idle, max_idle
 	)
 
 	// ClusterCapacity tracks cluster capacity metrics
@@ -48,7 +48,7 @@ var (
 			Name: "scheduler_template_sync_status",
 			Help: "Template sync status (1=synced, 0=error, 0.5=pending)",
 		},
-		[]string{"cluster_id", "template_id", "namespace"},
+		[]string{"cluster_id", "template_id", "tenant"},
 	)
 
 	// OrphansRemoved tracks orphaned templates removed

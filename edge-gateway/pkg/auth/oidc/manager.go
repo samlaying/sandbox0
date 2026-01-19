@@ -232,13 +232,16 @@ func (m *Manager) findOrCreateUser(ctx context.Context, provider *Provider, user
 		Email:         userInfo.Email,
 		Name:          userInfo.Name,
 		AvatarURL:     userInfo.Picture,
-		Roles:         []string{provider.GetDefaultRole()},
 		EmailVerified: userInfo.EmailVerified,
 		IsAdmin:       false,
 	}
 
-	if err := m.repo.CreateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("create user: %w", err)
+	teamName := "Personal Team"
+	if user.Name != "" {
+		teamName = fmt.Sprintf("%s Team", user.Name)
+	}
+	if _, _, err := m.repo.CreateUserWithDefaultTeam(ctx, user, teamName); err != nil {
+		return nil, fmt.Errorf("create user with team: %w", err)
 	}
 
 	// Create identity
@@ -250,20 +253,6 @@ func (m *Manager) findOrCreateUser(ctx context.Context, provider *Provider, user
 	}
 	if err := m.repo.CreateUserIdentity(ctx, identity); err != nil {
 		m.logger.Warn("Failed to create identity", zap.Error(err))
-	}
-
-	// Add to default team if configured
-	if teamID := provider.GetDefaultTeamID(); teamID != "" {
-		member := &db.TeamMember{
-			TeamID: teamID,
-			UserID: user.ID,
-			Role:   provider.GetDefaultRole(),
-		}
-		if err := m.repo.AddTeamMember(ctx, member); err != nil {
-			m.logger.Warn("Failed to add user to default team", zap.Error(err))
-		}
-		user.DefaultTeamID = &teamID
-		_ = m.repo.UpdateUser(ctx, user)
 	}
 
 	return user, nil

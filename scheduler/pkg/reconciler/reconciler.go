@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/templatenaming"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/metrics"
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Reconciler handles the reconciliation of templates across clusters
@@ -104,8 +106,8 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	// Build a set of valid template IDs for orphan detection
 	validTemplates := make(map[string]bool)
 	for _, template := range templates {
-		key := template.Namespace + "/" + template.TemplateID
-		validTemplates[key] = true
+		clusterTemplateID := templatenaming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
+		validTemplates[clusterTemplateID] = true
 	}
 
 	// 4. For each template, compute allocations and sync to clusters
@@ -113,7 +115,8 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		if err := r.reconcileTemplate(ctx, template, clusters); err != nil {
 			r.logger.Error("Failed to reconcile template",
 				zap.String("template_id", template.TemplateID),
-				zap.String("namespace", template.Namespace),
+				zap.String("scope", template.Scope),
+				zap.String("team_id", template.TeamID),
 				zap.Error(err),
 			)
 		}
@@ -200,6 +203,11 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 	// Compute allocations based on weights
 	allocations := r.computeAllocations(template, clusters)
 
+	tenantLabel := "public"
+	if template.Scope == templatenaming.ScopeTeam {
+		tenantLabel = templatenaming.TenantKey(template.TeamID)
+	}
+
 	// Sync each allocation to its cluster
 	for _, alloc := range allocations {
 		cluster := r.findCluster(clusters, alloc.ClusterID)
@@ -210,14 +218,28 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 		// Build the spec for this cluster
 		clusterSpec := r.buildClusterSpec(template.Spec, alloc)
 
+		clusterTemplateID := templatenaming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
+		tpl := &v1alpha1.SandboxTemplate{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.SchemeGroupVersion.String(),
+				Kind:       "SandboxTemplate",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: clusterTemplateID,
+				Labels: map[string]string{
+					"sandbox0.ai/template-scope":      template.Scope,
+					"sandbox0.ai/template-logical-id": template.TemplateID,
+				},
+				Annotations: map[string]string{
+					"sandbox0.ai/template-team-id": template.TeamID,
+					"sandbox0.ai/template-user-id": template.UserID,
+				},
+			},
+			Spec: clusterSpec,
+		}
+
 		// Sync to the cluster
-		err := r.igClient.CreateOrUpdateTemplate(
-			ctx,
-			cluster.InternalGatewayURL,
-			template.TemplateID,
-			template.Namespace,
-			clusterSpec,
-		)
+		err := r.igClient.CreateOrUpdateTemplate(ctx, cluster.InternalGatewayURL, tpl)
 
 		if err != nil {
 			r.logger.Error("Failed to sync template to cluster",
@@ -226,7 +248,7 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 				zap.Error(err),
 			)
 			errStr := err.Error()
-			if dbErr := r.repo.UpdateAllocationSyncStatus(ctx, template.TemplateID, template.Namespace, alloc.ClusterID, "error", &errStr); dbErr != nil {
+			if dbErr := r.repo.UpdateAllocationSyncStatus(ctx, template.Scope, template.TeamID, template.TemplateID, alloc.ClusterID, "error", &errStr); dbErr != nil {
 				r.logger.Warn("Failed to update allocation sync status", zap.Error(dbErr))
 			}
 			continue
@@ -241,12 +263,12 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 				zap.Error(err),
 			)
 		}
-		if err := r.repo.UpdateAllocationSyncStatus(ctx, template.TemplateID, template.Namespace, alloc.ClusterID, "synced", nil); err != nil {
+		if err := r.repo.UpdateAllocationSyncStatus(ctx, template.Scope, template.TeamID, template.TemplateID, alloc.ClusterID, "synced", nil); err != nil {
 			r.logger.Warn("Failed to update allocation sync status", zap.Error(err))
 		}
 
 		// Update sync status metric
-		metrics.TemplateSyncStatus.WithLabelValues(alloc.ClusterID, template.TemplateID, template.Namespace).Set(1.0)
+		metrics.TemplateSyncStatus.WithLabelValues(alloc.ClusterID, template.TemplateID, tenantLabel).Set(1.0)
 	}
 
 	return nil
@@ -277,6 +299,10 @@ func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cl
 
 	globalMinIdle := template.Spec.Pool.MinIdle
 	globalMaxIdle := template.Spec.Pool.MaxIdle
+	tenantLabel := "public"
+	if template.Scope == templatenaming.ScopeTeam {
+		tenantLabel = templatenaming.TenantKey(template.TeamID)
+	}
 
 	// First pass: weight-based allocation
 	var allocations []*db.TemplateAllocation
@@ -381,12 +407,13 @@ func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cl
 		allocatedMaxIdle += maxIdle
 
 		// Update metrics
-		metrics.TemplateAllocations.WithLabelValues(cluster.ClusterID, template.TemplateID, template.Namespace, "min_idle").Set(float64(minIdle))
-		metrics.TemplateAllocations.WithLabelValues(cluster.ClusterID, template.TemplateID, template.Namespace, "max_idle").Set(float64(maxIdle))
+		metrics.TemplateAllocations.WithLabelValues(cluster.ClusterID, template.TemplateID, tenantLabel, "min_idle").Set(float64(minIdle))
+		metrics.TemplateAllocations.WithLabelValues(cluster.ClusterID, template.TemplateID, tenantLabel, "max_idle").Set(float64(maxIdle))
 
 		allocations = append(allocations, &db.TemplateAllocation{
 			TemplateID: template.TemplateID,
-			Namespace:  template.Namespace,
+			Scope:      template.Scope,
+			TeamID:     template.TeamID,
 			ClusterID:  cluster.ClusterID,
 			MinIdle:    minIdle,
 			MaxIdle:    maxIdle,
@@ -443,21 +470,18 @@ func (r *Reconciler) cleanupOrphanTemplates(ctx context.Context, cluster *db.Clu
 
 	orphansRemoved := 0
 	for _, stat := range stats.Templates {
-		key := stat.Namespace + "/" + stat.TemplateID
-		if !validTemplates[key] {
+		if !validTemplates[stat.TemplateID] {
 			// This template exists in the cluster but not in our database - it's an orphan
 			r.logger.Info("Removing orphan template from cluster",
 				zap.String("cluster_id", cluster.ClusterID),
 				zap.String("template_id", stat.TemplateID),
-				zap.String("namespace", stat.Namespace),
 			)
 
-			err := r.igClient.DeleteTemplate(ctx, cluster.InternalGatewayURL, stat.TemplateID, stat.Namespace)
+			err := r.igClient.DeleteTemplate(ctx, cluster.InternalGatewayURL, stat.TemplateID)
 			if err != nil {
 				r.logger.Error("Failed to delete orphan template",
 					zap.String("cluster_id", cluster.ClusterID),
 					zap.String("template_id", stat.TemplateID),
-					zap.String("namespace", stat.Namespace),
 					zap.Error(err),
 				)
 				continue

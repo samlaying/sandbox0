@@ -93,8 +93,7 @@ func (m *AuthMiddleware) authenticateAPIKey(c *gin.Context, keyValue string) (*a
 		AuthMethod:  auth.AuthMethodAPIKey,
 		TeamID:      apiKey.TeamID,
 		APIKeyID:    apiKey.ID,
-		Roles:       apiKey.Roles,
-		Permissions: auth.ExpandRolePermissions(apiKey.Roles),
+		Permissions: auth.ExpandRolesPermissions(apiKey.Roles),
 	}, nil
 }
 
@@ -127,22 +126,21 @@ func (m *AuthMiddleware) authenticateJWT(c *gin.Context, tokenString string) (*a
 	// Extract claims
 	teamID, _ := claims["team_id"].(string)
 	userID, _ := claims["user_id"].(string)
+	teamRole, _ := claims["team_role"].(string)
+	isAdmin, _ := claims["is_admin"].(bool)
 
-	var roles []string
-	if r, ok := claims["roles"].([]any); ok {
-		for _, v := range r {
-			if s, ok := v.(string); ok {
-				roles = append(roles, s)
-			}
-		}
+	permissions := auth.ExpandRolePermissions(teamRole)
+	if isAdmin {
+		permissions = append(permissions, "*")
 	}
 
 	return &auth.AuthContext{
-		AuthMethod:  auth.AuthMethodJWT,
-		TeamID:      teamID,
-		UserID:      userID,
-		Roles:       roles,
-		Permissions: auth.ExpandRolePermissions(roles),
+		AuthMethod:    auth.AuthMethodJWT,
+		TeamID:        teamID,
+		UserID:        userID,
+		TeamRole:      teamRole,
+		IsSystemAdmin: isAdmin,
+		Permissions:   permissions,
 	}, nil
 }
 

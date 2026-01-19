@@ -165,14 +165,13 @@ Key Prometheus metrics exposed:
 ### scheduler_templates
 ```sql
 - template_id (PK)
-- namespace (PK)
 - spec (JSONB - SandboxTemplateSpec)
 - created_at, updated_at
 ```
 
 ### scheduler_template_allocations
 ```sql
-- template_id, namespace, cluster_id (composite PK)
+- template_id, cluster_id (composite PK)
 - min_idle, max_idle
 - last_synced_at
 - sync_status (pending/synced/error)
@@ -236,7 +235,6 @@ curl -X POST http://edge-gateway/api/v1/templates \
   -H "Content-Type: application/json" \
   -d '{
     "name": "python-template",
-    "namespace": "sandbox0",
     "spec": {
       "image": "sandbox0ai/python:3.11",
       "pool": {

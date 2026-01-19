@@ -23,8 +23,11 @@ type AuthContext struct {
 	// APIKeyID is the API key ID (only present for API key auth)
 	APIKeyID string
 
-	// Roles are the roles assigned to the authenticated entity
-	Roles []string
+	// TeamRole is the role within the current team (JWT only)
+	TeamRole string
+
+	// IsSystemAdmin indicates platform-level administrator privileges
+	IsSystemAdmin bool
 
 	// Permissions are the specific permissions granted
 	Permissions []string
@@ -60,10 +63,22 @@ const (
 	PermSandboxVolumeDelete = "sandboxvolume:delete"
 )
 
-// RolePermissions maps roles to their permissions
+// RolePermissions maps team roles to their permissions
 var RolePermissions = map[string][]string{
 	"admin": {
-		"*:*", // All permissions
+		// Team admin does not imply platform-wide privileges.
+		PermSandboxCreate,
+		PermSandboxRead,
+		PermSandboxWrite,
+		PermSandboxDelete,
+		PermTemplateCreate,
+		PermTemplateRead,
+		PermTemplateWrite,
+		PermTemplateDelete,
+		PermSandboxVolumeCreate,
+		PermSandboxVolumeRead,
+		PermSandboxVolumeWrite,
+		PermSandboxVolumeDelete,
 	},
 	"developer": {
 		PermSandboxCreate,
@@ -100,19 +115,8 @@ func FromContext(ctx context.Context) *AuthContext {
 func (ac *AuthContext) HasPermission(permission string) bool {
 	// Check direct permissions
 	for _, p := range ac.Permissions {
-		if p == permission || p == "*:*" {
+		if p == permission || p == "*:*" || p == "*" {
 			return true
-		}
-	}
-
-	// Check role-based permissions
-	for _, role := range ac.Roles {
-		if perms, ok := RolePermissions[role]; ok {
-			for _, p := range perms {
-				if p == permission || p == "*:*" {
-					return true
-				}
-			}
 		}
 	}
 
@@ -121,16 +125,27 @@ func (ac *AuthContext) HasPermission(permission string) bool {
 
 // HasRole checks if the auth context has a specific role
 func (ac *AuthContext) HasRole(role string) bool {
-	for _, r := range ac.Roles {
-		if r == role {
-			return true
-		}
-	}
-	return false
+	return ac.TeamRole == role
 }
 
-// ExpandRolePermissions expands roles to permissions
-func ExpandRolePermissions(roles []string) []string {
+// ExpandRolePermissions expands a team role into permissions.
+func ExpandRolePermissions(role string) []string {
+	permSet := make(map[string]struct{})
+	if perms, ok := RolePermissions[role]; ok {
+		for _, p := range perms {
+			permSet[p] = struct{}{}
+		}
+	}
+
+	permissions := make([]string, 0, len(permSet))
+	for p := range permSet {
+		permissions = append(permissions, p)
+	}
+	return permissions
+}
+
+// ExpandRolesPermissions expands a list of roles into permissions (used by API keys).
+func ExpandRolesPermissions(roles []string) []string {
 	permSet := make(map[string]struct{})
 	for _, role := range roles {
 		if perms, ok := RolePermissions[role]; ok {

@@ -13,7 +13,6 @@ type User struct {
 	AvatarURL     string    `json:"avatar_url,omitempty"`
 	PasswordHash  string    `json:"-"` // Never serialize password hash
 	DefaultTeamID *string   `json:"default_team_id,omitempty"`
-	Roles         []string  `json:"roles"`
 	EmailVerified bool      `json:"email_verified"`
 	IsAdmin       bool      `json:"is_admin"`
 	CreatedAt     time.Time `json:"created_at"`

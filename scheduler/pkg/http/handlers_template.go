@@ -3,31 +3,33 @@ package http
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	"go.uber.org/zap"
 )
 
-// TemplateRequest represents the request body for creating/updating a template
+// TemplateRequest represents the request body for updating a template
 type TemplateRequest struct {
-	Namespace string                       `json:"namespace"`
-	Spec      v1alpha1.SandboxTemplateSpec `json:"spec"`
+	Public *bool                        `json:"public,omitempty"`
+	Spec   v1alpha1.SandboxTemplateSpec `json:"spec"`
 }
 
 // listTemplates lists all templates
 func (s *Server) listTemplates(c *gin.Context) {
-	namespace := c.Query("namespace")
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
 
 	var templates []*db.Template
 	var err error
 
-	if namespace != "" {
-		templates, err = s.repo.ListTemplatesByNamespace(c.Request.Context(), namespace)
-	} else {
-		templates, err = s.repo.ListTemplates(c.Request.Context())
-	}
+	templates, err = s.repo.ListVisibleTemplates(c.Request.Context(), claims.TeamID)
 
 	if err != nil {
 		s.logger.Error("Failed to list templates", zap.Error(err))
@@ -51,12 +53,36 @@ func (s *Server) getTemplate(c *gin.Context) {
 		return
 	}
 
-	namespace := c.Query("namespace")
-	if namespace == "" {
-		namespace = "sandbox0" // Default namespace
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
 	}
 
-	template, err := s.repo.GetTemplate(c.Request.Context(), templateID, namespace)
+	// Optional: force public template
+	if v := c.Query("public"); v != "" {
+		public, err := strconv.ParseBool(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public query param"})
+			return
+		}
+		if public {
+			template, err := s.repo.GetTemplate(c.Request.Context(), "public", "", templateID)
+			if err != nil {
+				s.logger.Error("Failed to get template", zap.Error(err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get template"})
+				return
+			}
+			if template == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+				return
+			}
+			c.JSON(http.StatusOK, template)
+			return
+		}
+	}
+
+	template, err := s.repo.GetTemplateForTeam(c.Request.Context(), claims.TeamID, templateID)
 	if err != nil {
 		s.logger.Error("Failed to get template", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -76,9 +102,9 @@ func (s *Server) getTemplate(c *gin.Context) {
 // createTemplate creates a new template
 func (s *Server) createTemplate(c *gin.Context) {
 	var req struct {
-		Name      string                       `json:"name"`
-		Namespace string                       `json:"namespace"`
-		Spec      v1alpha1.SandboxTemplateSpec `json:"spec"`
+		Name   string                       `json:"name"`
+		Public bool                         `json:"public,omitempty"`
+		Spec   v1alpha1.SandboxTemplateSpec `json:"spec"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -91,12 +117,28 @@ func (s *Server) createTemplate(c *gin.Context) {
 		return
 	}
 
-	if req.Namespace == "" {
-		req.Namespace = "sandbox0" // Default namespace
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	scope := "team"
+	teamID := claims.TeamID
+	if req.Public {
+		if !internalauth.HasPermission(c.Request.Context(), "*") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "system-admin required for public templates"})
+			return
+		}
+		scope = "public"
+		teamID = ""
+	} else if teamID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team_id is required for private templates"})
+		return
 	}
 
 	// Check if template already exists
-	existing, err := s.repo.GetTemplate(c.Request.Context(), req.Name, req.Namespace)
+	existing, err := s.repo.GetTemplate(c.Request.Context(), scope, teamID, req.Name)
 	if err != nil {
 		s.logger.Error("Failed to check existing template", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create template"})
@@ -109,7 +151,9 @@ func (s *Server) createTemplate(c *gin.Context) {
 
 	template := &db.Template{
 		TemplateID: req.Name,
-		Namespace:  req.Namespace,
+		Scope:      scope,
+		TeamID:     teamID,
+		UserID:     claims.UserID,
 		Spec:       req.Spec,
 	}
 
@@ -123,7 +167,8 @@ func (s *Server) createTemplate(c *gin.Context) {
 
 	s.logger.Info("Template created",
 		zap.String("template_id", req.Name),
-		zap.String("namespace", req.Namespace),
+		zap.String("scope", scope),
+		zap.String("team_id", teamID),
 	)
 
 	// Trigger immediate reconciliation to sync to clusters
@@ -132,7 +177,7 @@ func (s *Server) createTemplate(c *gin.Context) {
 	}
 
 	// Get the created template to return with timestamps
-	created, _ := s.repo.GetTemplate(c.Request.Context(), req.Name, req.Namespace)
+	created, _ := s.repo.GetTemplate(c.Request.Context(), scope, teamID, req.Name)
 	if created != nil {
 		c.JSON(http.StatusCreated, created)
 	} else {
@@ -148,18 +193,34 @@ func (s *Server) updateTemplate(c *gin.Context) {
 		return
 	}
 
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
 	var req TemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
 		return
 	}
 
-	if req.Namespace == "" {
-		req.Namespace = "sandbox0" // Default namespace
+	scope := "team"
+	teamID := claims.TeamID
+	if req.Public != nil && *req.Public {
+		if !internalauth.HasPermission(c.Request.Context(), "*") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "system-admin required for public templates"})
+			return
+		}
+		scope = "public"
+		teamID = ""
+	} else if teamID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team_id is required for private templates"})
+		return
 	}
 
 	// Check if template exists
-	existing, err := s.repo.GetTemplate(c.Request.Context(), templateID, req.Namespace)
+	existing, err := s.repo.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
 		s.logger.Error("Failed to get template", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update template"})
@@ -172,7 +233,9 @@ func (s *Server) updateTemplate(c *gin.Context) {
 
 	template := &db.Template{
 		TemplateID: templateID,
-		Namespace:  req.Namespace,
+		Scope:      scope,
+		TeamID:     teamID,
+		UserID:     claims.UserID,
 		Spec:       req.Spec,
 	}
 
@@ -186,7 +249,8 @@ func (s *Server) updateTemplate(c *gin.Context) {
 
 	s.logger.Info("Template updated",
 		zap.String("template_id", templateID),
-		zap.String("namespace", req.Namespace),
+		zap.String("scope", scope),
+		zap.String("team_id", teamID),
 	)
 
 	// Trigger immediate reconciliation to sync changes to clusters
@@ -195,7 +259,7 @@ func (s *Server) updateTemplate(c *gin.Context) {
 	}
 
 	// Get the updated template to return with timestamps
-	updated, _ := s.repo.GetTemplate(c.Request.Context(), templateID, req.Namespace)
+	updated, _ := s.repo.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if updated != nil {
 		c.JSON(http.StatusOK, updated)
 	} else {
@@ -211,13 +275,38 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 		return
 	}
 
-	namespace := c.Query("namespace")
-	if namespace == "" {
-		namespace = "sandbox0" // Default namespace
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	public := false
+	if v := c.Query("public"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public query param"})
+			return
+		}
+		public = b
+	}
+
+	scope := "team"
+	teamID := claims.TeamID
+	if public {
+		if !internalauth.HasPermission(c.Request.Context(), "*") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "system-admin required for public templates"})
+			return
+		}
+		scope = "public"
+		teamID = ""
+	} else if teamID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team_id is required for private templates"})
+		return
 	}
 
 	// Check if template exists
-	existing, err := s.repo.GetTemplate(c.Request.Context(), templateID, namespace)
+	existing, err := s.repo.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
 		s.logger.Error("Failed to get template", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
@@ -229,7 +318,7 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 	}
 
 	// Get all allocations to clean up from clusters
-	allocations, err := s.repo.ListAllocationsByTemplate(c.Request.Context(), templateID, namespace)
+	allocations, err := s.repo.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
 		s.logger.Error("Failed to get template allocations", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
@@ -265,14 +354,14 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 	}
 
 	// Delete allocations from database
-	if err := s.repo.DeleteAllocationsByTemplate(c.Request.Context(), templateID, namespace); err != nil {
+	if err := s.repo.DeleteAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
 		s.logger.Error("Failed to delete template allocations", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete template"})
 		return
 	}
 
 	// Delete template from database
-	if err := s.repo.DeleteTemplate(c.Request.Context(), templateID, namespace); err != nil {
+	if err := s.repo.DeleteTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
 		s.logger.Error("Failed to delete template", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to delete template",
@@ -282,7 +371,8 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 
 	s.logger.Info("Template deleted from database",
 		zap.String("template_id", templateID),
-		zap.String("namespace", namespace),
+		zap.String("scope", scope),
+		zap.String("team_id", teamID),
 		zap.Int("affected_clusters", len(allocations)),
 	)
 
@@ -307,12 +397,33 @@ func (s *Server) getTemplateAllocations(c *gin.Context) {
 		return
 	}
 
-	namespace := c.Query("namespace")
-	if namespace == "" {
-		namespace = "sandbox0" // Default namespace
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
 	}
 
-	allocations, err := s.repo.ListAllocationsByTemplate(c.Request.Context(), templateID, namespace)
+	scope := "team"
+	teamID := claims.TeamID
+	if v := c.Query("public"); v != "" {
+		public, err := strconv.ParseBool(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid public query param"})
+			return
+		}
+		if public {
+			scope = "public"
+			teamID = ""
+		}
+	}
+
+	// Default behavior: private-only for allocations unless public=true is explicitly requested.
+	if scope == "team" && teamID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "team_id is required for private templates"})
+		return
+	}
+
+	allocations, err := s.repo.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
 		s.logger.Error("Failed to get template allocations", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{

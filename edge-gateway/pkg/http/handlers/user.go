@@ -17,7 +17,6 @@ type UserResponse struct {
 	Name          string    `json:"name"`
 	AvatarURL     string    `json:"avatar_url,omitempty"`
 	DefaultTeamID *string   `json:"default_team_id,omitempty"`
-	Roles         []string  `json:"roles"`
 	EmailVerified bool      `json:"email_verified"`
 	IsAdmin       bool      `json:"is_admin"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -35,7 +34,6 @@ func NewUserResponse(u *db.User) *UserResponse {
 		Name:          u.Name,
 		AvatarURL:     u.AvatarURL,
 		DefaultTeamID: u.DefaultTeamID,
-		Roles:         u.Roles,
 		EmailVerified: u.EmailVerified,
 		IsAdmin:       u.IsAdmin,
 		CreatedAt:     u.CreatedAt,

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -82,14 +83,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if user.DefaultTeamID != nil {
 		teamID = *user.DefaultTeamID
 	}
+	teamRole, err := h.resolveTeamRole(c.Request.Context(), teamID, user.ID)
+	if err != nil {
+		h.logger.Warn("Failed to resolve team role for login", zap.Error(err))
+		c.JSON(http.StatusForbidden, gin.H{"error": "user is not a member of the selected team"})
+		return
+	}
 
 	// Issue tokens
 	tokens, err := h.jwtIssuer.IssueTokenPair(
 		user.ID,
 		teamID,
+		teamRole,
 		user.Email,
 		user.Name,
-		user.Roles,
 		user.IsAdmin,
 	)
 	if err != nil {
@@ -140,14 +147,20 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if user.DefaultTeamID != nil {
 		teamID = *user.DefaultTeamID
 	}
+	teamRole, err := h.resolveTeamRole(c.Request.Context(), teamID, user.ID)
+	if err != nil {
+		h.logger.Warn("Failed to resolve team role for register", zap.Error(err))
+		c.JSON(http.StatusForbidden, gin.H{"error": "user is not a member of the selected team"})
+		return
+	}
 
 	// Issue tokens
 	tokens, err := h.jwtIssuer.IssueTokenPair(
 		user.ID,
 		teamID,
+		teamRole,
 		user.Email,
 		user.Name,
-		user.Roles,
 		user.IsAdmin,
 	)
 	if err != nil {
@@ -196,14 +209,20 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	if user.DefaultTeamID != nil {
 		teamID = *user.DefaultTeamID
 	}
+	teamRole, err := h.resolveTeamRole(c.Request.Context(), teamID, user.ID)
+	if err != nil {
+		h.logger.Warn("Failed to resolve team role for refresh", zap.Error(err))
+		c.JSON(http.StatusForbidden, gin.H{"error": "user is not a member of the selected team"})
+		return
+	}
 
 	// Issue new tokens
 	tokens, err := h.jwtIssuer.IssueTokenPair(
 		user.ID,
 		teamID,
+		teamRole,
 		user.Email,
 		user.Name,
-		user.Roles,
 		user.IsAdmin,
 	)
 	if err != nil {
@@ -270,6 +289,17 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 }
 
+func (h *AuthHandler) resolveTeamRole(ctx context.Context, teamID, userID string) (string, error) {
+	if teamID == "" {
+		return "", nil
+	}
+	member, err := h.repo.GetTeamMember(ctx, teamID, userID)
+	if err != nil {
+		return "", err
+	}
+	return member.Role, nil
+}
+
 // OIDCLogin initiates OIDC login
 func (h *AuthHandler) OIDCLogin(c *gin.Context) {
 	providerID := c.Param("provider")
@@ -321,14 +351,20 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 	if user.DefaultTeamID != nil {
 		teamID = *user.DefaultTeamID
 	}
+	teamRole, err := h.resolveTeamRole(c.Request.Context(), teamID, user.ID)
+	if err != nil {
+		h.logger.Warn("Failed to resolve team role for OIDC login", zap.Error(err))
+		c.JSON(http.StatusForbidden, gin.H{"error": "user is not a member of the selected team"})
+		return
+	}
 
 	// Issue tokens
 	tokens, err := h.jwtIssuer.IssueTokenPair(
 		user.ID,
 		teamID,
+		teamRole,
 		user.Email,
 		user.Name,
-		user.Roles,
 		user.IsAdmin,
 	)
 	if err != nil {

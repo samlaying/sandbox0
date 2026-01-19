@@ -88,16 +88,20 @@ func (p *Provider) Register(ctx context.Context, email, password, name string) (
 		Email:         email,
 		Name:          name,
 		PasswordHash:  string(passwordHash),
-		Roles:         []string{"viewer"},
 		EmailVerified: !p.config.EmailVerificationRequired,
 		IsAdmin:       false,
 	}
 
-	if err := p.repo.CreateUser(ctx, user); err != nil {
+	teamName := "Personal Team"
+	if user.Name != "" {
+		teamName = fmt.Sprintf("%s Team", user.Name)
+	}
+
+	if _, _, err := p.repo.CreateUserWithDefaultTeam(ctx, user, teamName); err != nil {
 		if errors.Is(err, db.ErrUserAlreadyExists) {
 			return nil, ErrEmailAlreadyExists
 		}
-		return nil, fmt.Errorf("create user: %w", err)
+		return nil, fmt.Errorf("create user with team: %w", err)
 	}
 
 	return user, nil
@@ -175,7 +179,6 @@ func (p *Provider) EnsureInitUser(ctx context.Context) error {
 		Email:         p.config.InitUser.Email,
 		Name:          p.config.InitUser.Name,
 		PasswordHash:  string(passwordHash),
-		Roles:         []string{"admin"},
 		EmailVerified: true,
 		IsAdmin:       true,
 	}

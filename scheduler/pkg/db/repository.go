@@ -13,28 +13,31 @@ import (
 
 // Cluster represents a registered data-plane cluster
 type Cluster struct {
-	ClusterID          string    `json:"cluster_id"`
-	InternalGatewayURL string    `json:"internal_gateway_url"`
-	Weight             int       `json:"weight"`
-	Enabled            bool      `json:"enabled"`
+	ClusterID          string     `json:"cluster_id"`
+	InternalGatewayURL string     `json:"internal_gateway_url"`
+	Weight             int        `json:"weight"`
+	Enabled            bool       `json:"enabled"`
 	LastSeenAt         *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // Template represents a SandboxTemplate stored in the scheduler
 type Template struct {
-	TemplateID string                    `json:"template_id"`
-	Namespace  string                    `json:"namespace"`
+	TemplateID string                       `json:"template_id"`
+	Scope      string                       `json:"scope"`             // public, team
+	TeamID     string                       `json:"team_id,omitempty"` // only for scope=team
+	UserID     string                       `json:"user_id,omitempty"` // creator/updater user id (best-effort)
 	Spec       v1alpha1.SandboxTemplateSpec `json:"spec"`
-	CreatedAt  time.Time                 `json:"created_at"`
-	UpdatedAt  time.Time                 `json:"updated_at"`
+	CreatedAt  time.Time                    `json:"created_at"`
+	UpdatedAt  time.Time                    `json:"updated_at"`
 }
 
 // TemplateAllocation represents how a template is allocated to a cluster
 type TemplateAllocation struct {
 	TemplateID   string     `json:"template_id"`
-	Namespace    string     `json:"namespace"`
+	Scope        string     `json:"scope"`             // public, team
+	TeamID       string     `json:"team_id,omitempty"` // only for scope=team
 	ClusterID    string     `json:"cluster_id"`
 	MinIdle      int32      `json:"min_idle"`
 	MaxIdle      int32      `json:"max_idle"`
@@ -209,26 +212,28 @@ func (r *Repository) CreateTemplate(ctx context.Context, template *Template) err
 	}
 
 	_, err = r.pool.Exec(ctx, `
-		INSERT INTO scheduler_templates (template_id, namespace, spec)
-		VALUES ($1, $2, $3)
-	`, template.TemplateID, template.Namespace, specJSON)
+		INSERT INTO scheduler_templates (template_id, scope, team_id, user_id, spec)
+		VALUES ($1, $2, $3, $4, $5)
+	`, template.TemplateID, template.Scope, template.TeamID, template.UserID, specJSON)
 	if err != nil {
 		return fmt.Errorf("create template: %w", err)
 	}
 	return nil
 }
 
-// GetTemplate gets a template by ID and namespace
-func (r *Repository) GetTemplate(ctx context.Context, templateID, namespace string) (*Template, error) {
+// GetTemplate gets a template by primary key (scope, team_id, template_id).
+func (r *Repository) GetTemplate(ctx context.Context, scope, teamID, templateID string) (*Template, error) {
 	var template Template
 	var specJSON []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT template_id, namespace, spec, created_at, updated_at
+		SELECT template_id, scope, team_id, user_id, spec, created_at, updated_at
 		FROM scheduler_templates
-		WHERE template_id = $1 AND namespace = $2
-	`, templateID, namespace).Scan(
+		WHERE scope = $1 AND team_id = $2 AND template_id = $3
+	`, scope, teamID, templateID).Scan(
 		&template.TemplateID,
-		&template.Namespace,
+		&template.Scope,
+		&template.TeamID,
+		&template.UserID,
 		&specJSON,
 		&template.CreatedAt,
 		&template.UpdatedAt,
@@ -246,12 +251,27 @@ func (r *Repository) GetTemplate(ctx context.Context, templateID, namespace stri
 	return &template, nil
 }
 
+// GetTemplateForTeam gets a template visible to a team.
+// It prefers the team's private template (scope=team) and falls back to public.
+func (r *Repository) GetTemplateForTeam(ctx context.Context, teamID, templateID string) (*Template, error) {
+	if teamID != "" {
+		privateTpl, err := r.GetTemplate(ctx, "team", teamID, templateID)
+		if err != nil {
+			return nil, err
+		}
+		if privateTpl != nil {
+			return privateTpl, nil
+		}
+	}
+	return r.GetTemplate(ctx, "public", "", templateID)
+}
+
 // ListTemplates lists all templates
 func (r *Repository) ListTemplates(ctx context.Context) ([]*Template, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT template_id, namespace, spec, created_at, updated_at
+		SELECT template_id, scope, team_id, user_id, spec, created_at, updated_at
 		FROM scheduler_templates
-		ORDER BY namespace, template_id
+		ORDER BY scope, team_id, template_id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list templates: %w", err)
@@ -264,7 +284,9 @@ func (r *Repository) ListTemplates(ctx context.Context) ([]*Template, error) {
 		var specJSON []byte
 		if err := rows.Scan(
 			&template.TemplateID,
-			&template.Namespace,
+			&template.Scope,
+			&template.TeamID,
+			&template.UserID,
 			&specJSON,
 			&template.CreatedAt,
 			&template.UpdatedAt,
@@ -279,16 +301,16 @@ func (r *Repository) ListTemplates(ctx context.Context) ([]*Template, error) {
 	return templates, nil
 }
 
-// ListTemplatesByNamespace lists templates in a specific namespace
-func (r *Repository) ListTemplatesByNamespace(ctx context.Context, namespace string) ([]*Template, error) {
+// ListVisibleTemplates lists templates visible to a team (public + that team's private).
+func (r *Repository) ListVisibleTemplates(ctx context.Context, teamID string) ([]*Template, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT template_id, namespace, spec, created_at, updated_at
+		SELECT template_id, scope, team_id, user_id, spec, created_at, updated_at
 		FROM scheduler_templates
-		WHERE namespace = $1
-		ORDER BY template_id
-	`, namespace)
+		WHERE scope = 'public' OR (scope = 'team' AND team_id = $1)
+		ORDER BY scope, template_id
+	`, teamID)
 	if err != nil {
-		return nil, fmt.Errorf("list templates by namespace: %w", err)
+		return nil, fmt.Errorf("list visible templates: %w", err)
 	}
 	defer rows.Close()
 
@@ -298,7 +320,9 @@ func (r *Repository) ListTemplatesByNamespace(ctx context.Context, namespace str
 		var specJSON []byte
 		if err := rows.Scan(
 			&template.TemplateID,
-			&template.Namespace,
+			&template.Scope,
+			&template.TeamID,
+			&template.UserID,
 			&specJSON,
 			&template.CreatedAt,
 			&template.UpdatedAt,
@@ -322,9 +346,9 @@ func (r *Repository) UpdateTemplate(ctx context.Context, template *Template) err
 
 	_, err = r.pool.Exec(ctx, `
 		UPDATE scheduler_templates
-		SET spec = $3
-		WHERE template_id = $1 AND namespace = $2
-	`, template.TemplateID, template.Namespace, specJSON)
+		SET spec = $5, user_id = $4
+		WHERE scope = $1 AND team_id = $2 AND template_id = $3
+	`, template.Scope, template.TeamID, template.TemplateID, template.UserID, specJSON)
 	if err != nil {
 		return fmt.Errorf("update template: %w", err)
 	}
@@ -332,10 +356,10 @@ func (r *Repository) UpdateTemplate(ctx context.Context, template *Template) err
 }
 
 // DeleteTemplate deletes a template
-func (r *Repository) DeleteTemplate(ctx context.Context, templateID, namespace string) error {
+func (r *Repository) DeleteTemplate(ctx context.Context, scope, teamID, templateID string) error {
 	_, err := r.pool.Exec(ctx, `
-		DELETE FROM scheduler_templates WHERE template_id = $1 AND namespace = $2
-	`, templateID, namespace)
+		DELETE FROM scheduler_templates WHERE scope = $1 AND team_id = $2 AND template_id = $3
+	`, scope, teamID, templateID)
 	if err != nil {
 		return fmt.Errorf("delete template: %w", err)
 	}
@@ -347,11 +371,11 @@ func (r *Repository) DeleteTemplate(ctx context.Context, templateID, namespace s
 // UpsertAllocation creates or updates a template allocation
 func (r *Repository) UpsertAllocation(ctx context.Context, alloc *TemplateAllocation) error {
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO scheduler_template_allocations (template_id, namespace, cluster_id, min_idle, max_idle, sync_status)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (template_id, namespace, cluster_id)
-		DO UPDATE SET min_idle = $4, max_idle = $5, sync_status = $6
-	`, alloc.TemplateID, alloc.Namespace, alloc.ClusterID, alloc.MinIdle, alloc.MaxIdle, alloc.SyncStatus)
+		INSERT INTO scheduler_template_allocations (template_id, scope, team_id, cluster_id, min_idle, max_idle, sync_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (scope, team_id, template_id, cluster_id)
+		DO UPDATE SET min_idle = $5, max_idle = $6, sync_status = $7
+	`, alloc.TemplateID, alloc.Scope, alloc.TeamID, alloc.ClusterID, alloc.MinIdle, alloc.MaxIdle, alloc.SyncStatus)
 	if err != nil {
 		return fmt.Errorf("upsert allocation: %w", err)
 	}
@@ -359,15 +383,16 @@ func (r *Repository) UpsertAllocation(ctx context.Context, alloc *TemplateAlloca
 }
 
 // GetAllocation gets an allocation
-func (r *Repository) GetAllocation(ctx context.Context, templateID, namespace, clusterID string) (*TemplateAllocation, error) {
+func (r *Repository) GetAllocation(ctx context.Context, scope, teamID, templateID, clusterID string) (*TemplateAllocation, error) {
 	var alloc TemplateAllocation
 	err := r.pool.QueryRow(ctx, `
-		SELECT template_id, namespace, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
+		SELECT template_id, scope, team_id, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
 		FROM scheduler_template_allocations
-		WHERE template_id = $1 AND namespace = $2 AND cluster_id = $3
-	`, templateID, namespace, clusterID).Scan(
+		WHERE scope = $1 AND team_id = $2 AND template_id = $3 AND cluster_id = $4
+	`, scope, teamID, templateID, clusterID).Scan(
 		&alloc.TemplateID,
-		&alloc.Namespace,
+		&alloc.Scope,
+		&alloc.TeamID,
 		&alloc.ClusterID,
 		&alloc.MinIdle,
 		&alloc.MaxIdle,
@@ -387,13 +412,13 @@ func (r *Repository) GetAllocation(ctx context.Context, templateID, namespace, c
 }
 
 // ListAllocationsByTemplate lists all allocations for a template
-func (r *Repository) ListAllocationsByTemplate(ctx context.Context, templateID, namespace string) ([]*TemplateAllocation, error) {
+func (r *Repository) ListAllocationsByTemplate(ctx context.Context, scope, teamID, templateID string) ([]*TemplateAllocation, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT template_id, namespace, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
+		SELECT template_id, scope, team_id, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
 		FROM scheduler_template_allocations
-		WHERE template_id = $1 AND namespace = $2
+		WHERE scope = $1 AND team_id = $2 AND template_id = $3
 		ORDER BY cluster_id
-	`, templateID, namespace)
+	`, scope, teamID, templateID)
 	if err != nil {
 		return nil, fmt.Errorf("list allocations by template: %w", err)
 	}
@@ -404,7 +429,8 @@ func (r *Repository) ListAllocationsByTemplate(ctx context.Context, templateID, 
 		var alloc TemplateAllocation
 		if err := rows.Scan(
 			&alloc.TemplateID,
-			&alloc.Namespace,
+			&alloc.Scope,
+			&alloc.TeamID,
 			&alloc.ClusterID,
 			&alloc.MinIdle,
 			&alloc.MaxIdle,
@@ -424,10 +450,10 @@ func (r *Repository) ListAllocationsByTemplate(ctx context.Context, templateID, 
 // ListAllocationsByCluster lists all allocations for a cluster
 func (r *Repository) ListAllocationsByCluster(ctx context.Context, clusterID string) ([]*TemplateAllocation, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT template_id, namespace, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
+		SELECT template_id, scope, team_id, cluster_id, min_idle, max_idle, last_synced_at, sync_status, sync_error, created_at, updated_at
 		FROM scheduler_template_allocations
 		WHERE cluster_id = $1
-		ORDER BY namespace, template_id
+		ORDER BY scope, team_id, template_id
 	`, clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("list allocations by cluster: %w", err)
@@ -439,7 +465,8 @@ func (r *Repository) ListAllocationsByCluster(ctx context.Context, clusterID str
 		var alloc TemplateAllocation
 		if err := rows.Scan(
 			&alloc.TemplateID,
-			&alloc.Namespace,
+			&alloc.Scope,
+			&alloc.TeamID,
 			&alloc.ClusterID,
 			&alloc.MinIdle,
 			&alloc.MaxIdle,
@@ -457,12 +484,12 @@ func (r *Repository) ListAllocationsByCluster(ctx context.Context, clusterID str
 }
 
 // UpdateAllocationSyncStatus updates the sync status of an allocation
-func (r *Repository) UpdateAllocationSyncStatus(ctx context.Context, templateID, namespace, clusterID, status string, syncError *string) error {
+func (r *Repository) UpdateAllocationSyncStatus(ctx context.Context, scope, teamID, templateID, clusterID, status string, syncError *string) error {
 	_, err := r.pool.Exec(ctx, `
 		UPDATE scheduler_template_allocations
-		SET sync_status = $4, sync_error = $5, last_synced_at = CASE WHEN $4 = 'synced' THEN NOW() ELSE last_synced_at END
-		WHERE template_id = $1 AND namespace = $2 AND cluster_id = $3
-	`, templateID, namespace, clusterID, status, syncError)
+		SET sync_status = $5, sync_error = $6, last_synced_at = CASE WHEN $5 = 'synced' THEN NOW() ELSE last_synced_at END
+		WHERE scope = $1 AND team_id = $2 AND template_id = $3 AND cluster_id = $4
+	`, scope, teamID, templateID, clusterID, status, syncError)
 	if err != nil {
 		return fmt.Errorf("update allocation sync status: %w", err)
 	}
@@ -470,10 +497,10 @@ func (r *Repository) UpdateAllocationSyncStatus(ctx context.Context, templateID,
 }
 
 // DeleteAllocationsByTemplate deletes all allocations for a template
-func (r *Repository) DeleteAllocationsByTemplate(ctx context.Context, templateID, namespace string) error {
+func (r *Repository) DeleteAllocationsByTemplate(ctx context.Context, scope, teamID, templateID string) error {
 	_, err := r.pool.Exec(ctx, `
-		DELETE FROM scheduler_template_allocations WHERE template_id = $1 AND namespace = $2
-	`, templateID, namespace)
+		DELETE FROM scheduler_template_allocations WHERE scope = $1 AND team_id = $2 AND template_id = $3
+	`, scope, teamID, templateID)
 	if err != nil {
 		return fmt.Errorf("delete allocations by template: %w", err)
 	}
@@ -481,10 +508,10 @@ func (r *Repository) DeleteAllocationsByTemplate(ctx context.Context, templateID
 }
 
 // DeleteAllocation deletes a specific allocation
-func (r *Repository) DeleteAllocation(ctx context.Context, templateID, namespace, clusterID string) error {
+func (r *Repository) DeleteAllocation(ctx context.Context, scope, teamID, templateID, clusterID string) error {
 	_, err := r.pool.Exec(ctx, `
-		DELETE FROM scheduler_template_allocations WHERE template_id = $1 AND namespace = $2 AND cluster_id = $3
-	`, templateID, namespace, clusterID)
+		DELETE FROM scheduler_template_allocations WHERE scope = $1 AND team_id = $2 AND template_id = $3 AND cluster_id = $4
+	`, scope, teamID, templateID, clusterID)
 	if err != nil {
 		return fmt.Errorf("delete allocation: %w", err)
 	}

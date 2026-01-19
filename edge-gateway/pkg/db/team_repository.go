@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,7 +21,6 @@ type TeamMemberWithUser struct {
 	Email         string    `json:"email"`
 	Name          string    `json:"name"`
 	AvatarURL     string    `json:"avatar_url"`
-	Roles         []string  `json:"roles"`
 	EmailVerified bool      `json:"email_verified"`
 	IsAdmin       bool      `json:"is_admin"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -210,7 +208,7 @@ func (r *Repository) RemoveTeamMember(ctx context.Context, teamID, userID string
 func (r *Repository) GetTeamMembers(ctx context.Context, teamID string) ([]*TeamMemberWithUser, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT tm.id, tm.team_id, tm.user_id, tm.role, tm.joined_at,
-		       u.id, u.email, u.name, u.avatar_url, u.roles, u.email_verified, u.is_admin, u.created_at, u.updated_at
+		       u.id, u.email, u.name, u.avatar_url, u.email_verified, u.is_admin, u.created_at, u.updated_at
 		FROM team_members tm
 		INNER JOIN users u ON tm.user_id = u.id
 		WHERE tm.team_id = $1
@@ -224,18 +222,13 @@ func (r *Repository) GetTeamMembers(ctx context.Context, teamID string) ([]*Team
 	var members []*TeamMemberWithUser
 	for rows.Next() {
 		var m TeamMemberWithUser
-		var rolesJSON []byte
 
 		if err := rows.Scan(
 			&m.ID, &m.TeamID, &m.UserID, &m.Role, &m.JoinedAt,
 			&m.UserID2, &m.Email, &m.Name, &m.AvatarURL,
-			&rolesJSON, &m.EmailVerified, &m.IsAdmin, &m.CreatedAt, &m.UpdatedAt,
+			&m.EmailVerified, &m.IsAdmin, &m.CreatedAt, &m.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan member: %w", err)
-		}
-
-		if len(rolesJSON) > 0 {
-			_ = json.Unmarshal(rolesJSON, &m.Roles)
 		}
 
 		members = append(members, &m)

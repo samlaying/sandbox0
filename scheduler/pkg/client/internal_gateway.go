@@ -146,8 +146,9 @@ func (c *InternalGatewayClient) GetTemplateStats(ctx context.Context, baseURL st
 	return &stats, nil
 }
 
-// CreateOrUpdateTemplate creates or updates a template in a cluster via internal-gateway
-func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, baseURL string, templateID, namespace string, spec v1alpha1.SandboxTemplateSpec) error {
+// CreateOrUpdateTemplate creates or updates a template in a cluster via internal-gateway.
+// The template name must be a Kubernetes DNS-1123 label.
+func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, baseURL string, template *v1alpha1.SandboxTemplate) error {
 	// Generate internal token for internal-gateway
 	token, err := c.internalAuthGen.Generate("internal-gateway", "scheduler", "scheduler", internalauth.GenerateOptions{
 		Permissions: []string{"*:*"},
@@ -157,7 +158,8 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 	}
 
 	// First, try to get the template to determine if it exists
-	getURL := fmt.Sprintf("%s/api/v1/templates/%s?namespace=%s", baseURL, templateID, namespace)
+	templateID := template.Name
+	getURL := fmt.Sprintf("%s/api/v1/templates/%s", baseURL, templateID)
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
 	if err != nil {
 		return fmt.Errorf("create get request: %w", err)
@@ -173,12 +175,7 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 	templateExists := getResp.StatusCode == http.StatusOK
 
 	// Build request body
-	body := map[string]interface{}{
-		"name":      templateID,
-		"namespace": namespace,
-		"spec":      spec,
-	}
-	bodyJSON, err := json.Marshal(body)
+	bodyJSON, err := json.Marshal(template)
 	if err != nil {
 		return fmt.Errorf("marshal body: %w", err)
 	}
@@ -220,7 +217,6 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 
 	c.logger.Debug("Template synced to cluster",
 		zap.String("template_id", templateID),
-		zap.String("namespace", namespace),
 		zap.String("base_url", baseURL),
 		zap.Bool("created", !templateExists),
 	)
@@ -229,7 +225,7 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 }
 
 // DeleteTemplate deletes a template from a cluster via internal-gateway
-func (c *InternalGatewayClient) DeleteTemplate(ctx context.Context, baseURL string, templateID, namespace string) error {
+func (c *InternalGatewayClient) DeleteTemplate(ctx context.Context, baseURL string, templateID string) error {
 	// Generate internal token for internal-gateway
 	token, err := c.internalAuthGen.Generate("internal-gateway", "scheduler", "scheduler", internalauth.GenerateOptions{
 		Permissions: []string{"*:*"},
@@ -239,7 +235,7 @@ func (c *InternalGatewayClient) DeleteTemplate(ctx context.Context, baseURL stri
 	}
 
 	// Build request URL
-	url := fmt.Sprintf("%s/api/v1/templates/%s?namespace=%s", baseURL, templateID, namespace)
+	url := fmt.Sprintf("%s/api/v1/templates/%s", baseURL, templateID)
 
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
@@ -266,7 +262,6 @@ func (c *InternalGatewayClient) DeleteTemplate(ctx context.Context, baseURL stri
 
 	c.logger.Debug("Template deleted from cluster",
 		zap.String("template_id", templateID),
-		zap.String("namespace", namespace),
 		zap.String("base_url", baseURL),
 	)
 

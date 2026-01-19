@@ -1,6 +1,9 @@
 -- Scheduler database schema
 -- This migration creates the tables needed for the scheduler service
 
+CREATE SCHEMA IF NOT EXISTS s;
+SET search_path TO s;
+
 -- Clusters table: stores registered data-plane clusters
 CREATE TABLE IF NOT EXISTS scheduler_clusters (
     cluster_id VARCHAR(255) PRIMARY KEY,
@@ -15,17 +18,21 @@ CREATE TABLE IF NOT EXISTS scheduler_clusters (
 -- Templates table: stores SandboxTemplate definitions (source of truth)
 CREATE TABLE IF NOT EXISTS scheduler_templates (
     template_id VARCHAR(255) NOT NULL,
-    namespace VARCHAR(255) NOT NULL DEFAULT 'sandbox0',
+    scope VARCHAR(32) NOT NULL DEFAULT 'public', -- public, team
+    team_id VARCHAR(255) NOT NULL DEFAULT '',    -- only for scope=team
+    user_id VARCHAR(255) NOT NULL DEFAULT '',    -- creator/updater user id (best-effort)
     spec JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (template_id, namespace)
+    PRIMARY KEY (scope, team_id, template_id),
+    CONSTRAINT scheduler_templates_scope_check CHECK (scope IN ('public', 'team'))
 );
 
 -- Template allocations table: tracks how templates are distributed across clusters
 CREATE TABLE IF NOT EXISTS scheduler_template_allocations (
     template_id VARCHAR(255) NOT NULL,
-    namespace VARCHAR(255) NOT NULL DEFAULT 'sandbox0',
+    scope VARCHAR(32) NOT NULL DEFAULT 'public', -- public, team
+    team_id VARCHAR(255) NOT NULL DEFAULT '',    -- only for scope=team
     cluster_id VARCHAR(255) NOT NULL REFERENCES scheduler_clusters(cluster_id) ON DELETE CASCADE,
     min_idle INTEGER NOT NULL DEFAULT 0,
     max_idle INTEGER NOT NULL DEFAULT 0,
@@ -34,13 +41,15 @@ CREATE TABLE IF NOT EXISTS scheduler_template_allocations (
     sync_error TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (template_id, namespace, cluster_id),
-    FOREIGN KEY (template_id, namespace) REFERENCES scheduler_templates(template_id, namespace) ON DELETE CASCADE
+    PRIMARY KEY (scope, team_id, template_id, cluster_id),
+    FOREIGN KEY (scope, team_id, template_id) REFERENCES scheduler_templates(scope, team_id, template_id) ON DELETE CASCADE,
+    CONSTRAINT scheduler_allocations_scope_check CHECK (scope IN ('public', 'team'))
 );
 
 -- Index for efficient queries
 CREATE INDEX IF NOT EXISTS idx_scheduler_clusters_enabled ON scheduler_clusters(enabled);
-CREATE INDEX IF NOT EXISTS idx_scheduler_templates_namespace ON scheduler_templates(namespace);
+CREATE INDEX IF NOT EXISTS idx_scheduler_templates_template_id ON scheduler_templates(template_id);
+CREATE INDEX IF NOT EXISTS idx_scheduler_templates_team_id ON scheduler_templates(team_id);
 CREATE INDEX IF NOT EXISTS idx_scheduler_allocations_cluster ON scheduler_template_allocations(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_scheduler_allocations_sync_status ON scheduler_template_allocations(sync_status);
 
