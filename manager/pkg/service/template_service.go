@@ -40,9 +40,8 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *v1alpha1
 	// Ensure namespace is set. If not, use "default" or whatever.
 	// We should probably use the same namespace as the manager or let the user specify.
 	if template.Namespace == "" {
-		if cfg := config.LoadConfig(); cfg != nil {
-			template.Namespace = cfg.DefaultTemplateNamespace // Fallback
-		}
+		cfg := config.LoadConfig()
+		template.Namespace = cfg.DefaultTemplateNamespace // Fallback
 	}
 
 	// Set default values if needed

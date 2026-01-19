@@ -21,7 +21,7 @@ type Config struct {
 	DatabaseURL string `yaml:"database_url"`
 
 	// Upstream service
-	InternalGatewayURL string `yaml:"internal_gateway_url"`
+	DefaultInternalGatewayURL string `yaml:"default_internal_gateway_url"`
 
 	// Scheduler configuration (optional, for multi-cluster mode)
 	SchedulerEnabled bool   `yaml:"scheduler_enabled"`
@@ -122,19 +122,19 @@ type TeamMappingConfig struct {
 // defaultConfig returns the default configuration
 func defaultConfig() *Config {
 	return &Config{
-		Edition:            "self-hosted",
-		HTTPPort:           8080,
-		LogLevel:           "info",
-		DatabaseURL:        "postgres://localhost:5432/sandbox0?sslmode=disable",
-		InternalGatewayURL: "http://internal-gateway.sandbox0-system:8443",
-		JWTSecret:          "",
-		JWTAccessTokenTTL:  15 * time.Minute,
-		JWTRefreshTokenTTL: 7 * 24 * time.Hour,
-		RateLimitRPS:       100,
-		RateLimitBurst:     200,
-		ProxyTimeout:       30 * time.Second,
-		ShutdownTimeout:    30 * time.Second,
-		BaseURL:            "http://localhost:8080",
+		Edition:                   "self-hosted",
+		HTTPPort:                  8080,
+		LogLevel:                  "info",
+		DatabaseURL:               "postgres://localhost:5432/sandbox0?sslmode=disable",
+		DefaultInternalGatewayURL: "http://internal-gateway.sandbox0-system:8443",
+		JWTSecret:                 "",
+		JWTAccessTokenTTL:         15 * time.Minute,
+		JWTRefreshTokenTTL:        7 * 24 * time.Hour,
+		RateLimitRPS:              100,
+		RateLimitBurst:            200,
+		ProxyTimeout:              30 * time.Second,
+		ShutdownTimeout:           30 * time.Second,
+		BaseURL:                   "http://localhost:8080",
 		BuiltInAuth: BuiltInAuthConfig{
 			Enabled:           true,
 			AllowRegistration: false,

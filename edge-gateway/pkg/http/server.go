@@ -27,7 +27,7 @@ type Server struct {
 	cfg             *config.Config
 	pool            *pgxpool.Pool
 	repo            *db.Repository
-	proxyRouter     *proxy.Router
+	igRouter        *proxy.Router
 	schedulerRouter *proxy.Router // Optional: proxy to scheduler for templates
 	authMiddleware  *middleware.AuthMiddleware
 	rateLimiter     *middleware.RateLimiter
@@ -65,8 +65,8 @@ func NewServer(
 	repo := db.NewRepository(pool)
 
 	// Create proxy router to internal-gateway
-	proxyRouter, err := proxy.NewRouter(
-		cfg.InternalGatewayURL,
+	igRouter, err := proxy.NewRouter(
+		cfg.DefaultInternalGatewayURL,
 		logger,
 		cfg.ProxyTimeout,
 	)
@@ -137,7 +137,7 @@ func NewServer(
 		cfg:             cfg,
 		pool:            pool,
 		repo:            repo,
-		proxyRouter:     proxyRouter,
+		igRouter:        igRouter,
 		schedulerRouter: schedulerRouter,
 		authMiddleware:  authMiddleware,
 		rateLimiter:     rateLimiter,
@@ -256,15 +256,16 @@ func (s *Server) setupRoutes() {
 			clusters.Any("", s.schedulerRouter.ProxyToTarget)
 			clusters.Any("/*path", s.schedulerRouter.ProxyToTarget)
 
-			// Sandbox claim routes go to scheduler for routing
+			// Sandbox routes go to scheduler for routing
 			sandboxes := api.Group("/v1/sandboxes")
 			sandboxes.Use(s.injectInternalTokenForTarget("scheduler"))
-			sandboxes.POST("/claim", s.schedulerRouter.ProxyToTarget)
+			sandboxes.Any("", s.schedulerRouter.ProxyToTarget)
+			sandboxes.Any("/*path", s.schedulerRouter.ProxyToTarget)
 		}
 
-		// All other API routes go to internal-gateway
+		// All other API routes go to default internal-gateway
 		api.Use(s.injectInternalToken())
-		api.Any("/*path", s.proxyRouter.ProxyToTarget)
+		api.Any("/*path", s.igRouter.ProxyToTarget)
 	}
 }
 

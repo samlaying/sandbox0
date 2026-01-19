@@ -5,16 +5,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/juicedata/juicefs/pkg/meta"
+	"github.com/juicedata/juicefs/pkg/vfs"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
-	"github.com/sandbox0-ai/infra/storage-proxy/pkg/naming"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/volume"
 	pb "github.com/sandbox0-ai/infra/storage-proxy/proto/fs"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/juicedata/juicefs/pkg/meta"
-	"github.com/juicedata/juicefs/pkg/vfs"
 )
 
 // FileSystemServer implements the gRPC FileSystem service

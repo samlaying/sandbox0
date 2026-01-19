@@ -8,7 +8,7 @@ import (
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/pkg/clock"
-	"github.com/sandbox0-ai/infra/pkg/templatenaming"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/metrics"
@@ -129,7 +129,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	// Build a set of valid template IDs for orphan detection
 	validTemplates := make(map[string]bool)
 	for _, template := range templates {
-		clusterTemplateID := templatenaming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
+		clusterTemplateID := naming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
 		validTemplates[clusterTemplateID] = true
 	}
 
@@ -301,8 +301,8 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 	allocations := r.computeAllocations(template, clusters)
 
 	tenantLabel := "public"
-	if template.Scope == templatenaming.ScopeTeam {
-		tenantLabel = templatenaming.TenantKey(template.TeamID)
+	if template.Scope == naming.ScopeTeam {
+		tenantLabel = naming.TenantKey(template.TeamID)
 	}
 
 	// Sync each allocation to its cluster
@@ -315,7 +315,7 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 		// Build the spec for this cluster
 		clusterSpec := r.buildClusterSpec(template.Spec, alloc)
 
-		clusterTemplateID := templatenaming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
+		clusterTemplateID := naming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
 		tpl := &v1alpha1.SandboxTemplate{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: v1alpha1.SchemeGroupVersion.String(),
@@ -337,7 +337,6 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 
 		// Sync to the cluster
 		err := r.igClient.CreateOrUpdateTemplate(ctx, cluster.InternalGatewayURL, tpl)
-
 		if err != nil {
 			r.logger.Error("Failed to sync template to cluster",
 				zap.String("template_id", template.TemplateID),
@@ -397,8 +396,8 @@ func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cl
 	globalMinIdle := template.Spec.Pool.MinIdle
 	globalMaxIdle := template.Spec.Pool.MaxIdle
 	tenantLabel := "public"
-	if template.Scope == templatenaming.ScopeTeam {
-		tenantLabel = templatenaming.TenantKey(template.TeamID)
+	if template.Scope == naming.ScopeTeam {
+		tenantLabel = naming.TenantKey(template.TeamID)
 	}
 
 	// First pass: weight-based allocation

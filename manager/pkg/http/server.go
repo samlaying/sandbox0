@@ -67,7 +67,7 @@ func (s *Server) setupRoutes() {
 		// Sandbox management
 		sandboxes := v1.Group("/sandboxes")
 		{
-			sandboxes.POST("/claim", s.claimSandbox)
+			sandboxes.POST("", s.claimSandbox)
 			sandboxes.GET("/:id", s.getSandbox)
 			sandboxes.GET("/:id/status", s.getSandboxStatus)
 			sandboxes.GET("/:id/stats", s.getSandboxStats)

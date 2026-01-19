@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -101,7 +102,10 @@ func (pm *PoolManager) ReconcilePool(ctx context.Context, template *v1alpha1.San
 
 // getOrCreateReplicaSet gets or creates the ReplicaSet for a template
 func (pm *PoolManager) getOrCreateReplicaSet(ctx context.Context, template *v1alpha1.SandboxTemplate) (*appsv1.ReplicaSet, error) {
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		return nil, fmt.Errorf("generate replicaset name: %w", err)
+	}
 	// Try to get existing ReplicaSet
 	rs, err := pm.k8sClient.AppsV1().ReplicaSets(template.ObjectMeta.Namespace).Get(ctx, rsName, metav1.GetOptions{})
 	if err == nil {

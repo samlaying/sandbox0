@@ -10,7 +10,7 @@ import (
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/manager/pkg/controller"
 	"github.com/sandbox0-ai/infra/manager/pkg/metrics"
-	"github.com/sandbox0-ai/infra/pkg/templatenaming"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -153,7 +153,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	var err error
 
 	if req.TeamID != "" {
-		privateName := templatenaming.TemplateNameForCluster(templatenaming.ScopeTeam, req.TeamID, req.Template)
+		privateName := naming.TemplateNameForCluster(naming.ScopeTeam, req.TeamID, req.Template)
 		t, getErr := s.templateLister.Get(req.Namespace, privateName)
 		if getErr == nil {
 			template = t
@@ -172,7 +172,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	}
 
 	// Enforce tenant isolation (best-effort based on scheduler-projected metadata).
-	if template.Labels != nil && template.Labels["sandbox0.ai/template-scope"] == templatenaming.ScopeTeam {
+	if template.Labels != nil && template.Labels["sandbox0.ai/template-scope"] == naming.ScopeTeam {
 		teamID := ""
 		if template.Annotations != nil {
 			teamID = template.Annotations["sandbox0.ai/template-team-id"]
@@ -361,9 +361,11 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 
 // createNewPod creates a new pod for cold start
 func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.SandboxTemplate, req *ClaimRequest) (*corev1.Pod, error) {
-	rs := v1alpha1.GenReplicasetName(template)
 	// Simulate K8s pod name generation: rs-name + "-" + 5 random chars
-	podName := fmt.Sprintf("%s-%s", rs, utilrand.String(5))
+	podName, err := naming.SandboxNameForTemplate(template, utilrand.String(5))
+	if err != nil {
+		return nil, fmt.Errorf("generate sandbox name: %w", err)
+	}
 
 	// Build pod spec from template
 	pod := &corev1.Pod{

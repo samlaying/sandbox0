@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -150,7 +151,7 @@ func (s *Server) validate(ar *admissionv1.AdmissionReview) *admissionv1.Admissio
 			}
 		}
 
-		if err := v1alpha1.CheckTemplate(&template); err != nil {
+		if err := naming.CheckTemplate(&template); err != nil {
 			s.logger.Warn("Template validation failed",
 				zap.String("namespace", req.Namespace),
 				zap.String("name", req.Name),

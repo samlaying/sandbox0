@@ -21,7 +21,6 @@ type Config struct {
 
 	// Kubernetes
 	KubeConfig     string        `yaml:"kube_config"`
-	Namespace      string        `yaml:"namespace"`
 	LeaderElection bool          `yaml:"leader_election"`
 	ResyncPeriod   time.Duration `yaml:"resync_period"`
 
@@ -55,7 +54,6 @@ func defaultConfig() *Config {
 		DefaultTemplateImage:     "sandbox0ai/otemplates:default-v0.1.0",
 		DefaultClusterId:         "default",
 		KubeConfig:               "",
-		Namespace:                "default",
 		LeaderElection:           true,
 		ResyncPeriod:             30 * time.Second,
 		DatabaseURL:              "",

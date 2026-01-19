@@ -29,7 +29,7 @@ func main() {
 
 	logger.Info("Starting edge-gateway",
 		zap.Int("port", cfg.HTTPPort),
-		zap.String("internal_gateway_url", cfg.InternalGatewayURL),
+		zap.String("internal_gateway_url", cfg.DefaultInternalGatewayURL),
 	)
 
 	// Create context with cancellation

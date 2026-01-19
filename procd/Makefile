@@ -16,6 +16,11 @@ define IMAGE_TAG
 $(1)-$(TAG)
 endef
 
+
+.PHONY: build
+build: ## Build the manager binary
+	go build -o bin/procd ./cmd/procd
+
 # Convenience aliases: default template (if present).
 docker-build:
 	@$(MAKE) docker-build-default

@@ -10,7 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
-	"github.com/sandbox0-ai/infra/pkg/templatenaming"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	"go.uber.org/zap"
 )
@@ -19,8 +19,8 @@ type SandboxClaimRequest struct {
 	Template string `json:"template"`
 }
 
-// claimSandbox routes and proxies sandbox claim to the selected internal-gateway.
-func (s *Server) claimSandbox(c *gin.Context) {
+// createSandbox routes and proxies sandbox claim to the selected internal-gateway.
+func (s *Server) createSandbox(c *gin.Context) {
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
@@ -81,7 +81,6 @@ func (s *Server) claimSandbox(c *gin.Context) {
 		c.Request.Header.Set("X-User-ID", claims.UserID)
 	}
 
-	c.Request.URL.Path = "/api/v1/sandboxes"
 	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	router, err := s.getInternalGatewayProxy(selected.InternalGatewayURL)
@@ -94,6 +93,77 @@ func (s *Server) claimSandbox(c *gin.Context) {
 	s.logger.Info("Sandbox claim routed",
 		zap.String("cluster_id", selected.ClusterID),
 		zap.String("selected_by", selectedBy),
+	)
+
+	router.ProxyToTarget(c)
+}
+
+// proxySandbox routes sandbox operations to the correct internal-gateway based on sandbox ID.
+func (s *Server) proxySandbox(c *gin.Context) {
+	sandboxID := c.Param("id")
+	if sandboxID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sandbox_id is required"})
+		return
+	}
+
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authentication"})
+		return
+	}
+
+	parsed, err := naming.ParseSandboxName(sandboxID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sandbox_id"})
+		return
+	}
+
+	cluster, err := s.getClusterByID(c.Request.Context(), parsed.ClusterID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if cluster == nil || !cluster.Enabled {
+		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+		return
+	}
+
+	if s.internalAuthGen == nil {
+		s.logger.Error("Internal auth generator not configured")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal authentication not configured"})
+		return
+	}
+
+	token, err := s.internalAuthGen.Generate(
+		"internal-gateway",
+		claims.TeamID,
+		claims.UserID,
+		internalauth.GenerateOptions{
+			Permissions: claims.Permissions,
+		},
+	)
+	if err != nil {
+		s.logger.Error("Failed to generate internal token for internal-gateway", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal authentication failed"})
+		return
+	}
+
+	c.Request.Header.Set(internalauth.DefaultTokenHeader, token)
+	c.Request.Header.Set("X-Team-ID", claims.TeamID)
+	if claims.UserID != "" {
+		c.Request.Header.Set("X-User-ID", claims.UserID)
+	}
+
+	router, err := s.getInternalGatewayProxy(cluster.InternalGatewayURL)
+	if err != nil {
+		s.logger.Error("Failed to get internal gateway proxy", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to route sandbox"})
+		return
+	}
+
+	s.logger.Info("Sandbox request routed",
+		zap.String("sandbox_id", sandboxID),
+		zap.String("cluster_id", parsed.ClusterID),
 	)
 
 	router.ProxyToTarget(c)
@@ -129,7 +199,7 @@ func (s *Server) selectClusterForTemplate(c *gin.Context, templateID, teamID str
 		clusterMap[cluster.ClusterID] = cluster
 	}
 
-	clusterTemplateID := templatenaming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
+	clusterTemplateID := naming.TemplateNameForCluster(template.Scope, template.TeamID, template.TemplateID)
 	maxAge := s.cfg.ReconcileInterval * 2
 
 	var selected *db.Cluster

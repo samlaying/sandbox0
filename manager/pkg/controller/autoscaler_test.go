@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -72,7 +73,10 @@ func TestAutoScaler_SlowStartScaleUp(t *testing.T) {
 		},
 	}
 
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -127,7 +131,10 @@ func TestAutoScaler_ScaleUpClampedToMaxIdle(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 3, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
@@ -170,7 +177,10 @@ func TestAutoScaler_ScaleDownOnNoTraffic(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 2, MaxIdle: 50, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	// No recent claims: we make last scale time old so scale-down cooldown passes.
@@ -210,7 +220,10 @@ func TestAutoScaler_ScaleUpCooldownRespected(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 50, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	// last scale time is very recent, so ScaleUpCooldown should prevent bump.
@@ -260,7 +273,10 @@ func TestAutoScaler_ClampToMinIdle(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 7, MaxIdle: 50, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
@@ -288,7 +304,10 @@ func TestAutoScaler_MaxIdleLessThanMinIdle_ClampsToMinIdle(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 5, MaxIdle: 3, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
@@ -334,7 +353,10 @@ func TestAutoScaler_AutoScaleDisabled_NoChange(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 10, AutoScale: false},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
@@ -377,7 +399,10 @@ func TestAutoScaler_IgnoreBadOrOldClaimAnnotations(t *testing.T) {
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 50, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{
@@ -443,7 +468,10 @@ func TestAutoScaler_PersistsLastClaimTimeEvenWithoutReplicaChange(t *testing.T) 
 			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 10, AutoScale: true},
 		},
 	}
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		t.Fatalf("replicaset name: %v", err)
+	}
 
 	k8s := fake.NewSimpleClientset()
 	mustCreateRS(t, k8s, &appsv1.ReplicaSet{

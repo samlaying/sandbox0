@@ -28,6 +28,10 @@ type Server struct {
 
 	internalGatewayProxies   map[string]*proxy.Router
 	internalGatewayProxiesMu sync.RWMutex
+
+	clusterCache   map[string]*db.Cluster
+	clusterCacheAt time.Time
+	clusterCacheMu sync.RWMutex
 }
 
 // Reconciler interface for triggering reconciliation
@@ -55,13 +59,15 @@ func NewServer(
 	router.Use(requestLogger(logger))
 
 	server := &Server{
-		router:          router,
-		cfg:             cfg,
-		repo:            repo,
-		authValidator:   authValidator,
-		internalAuthGen: internalAuthGen,
-		reconciler:      reconciler,
-		logger:          logger,
+		router:                 router,
+		cfg:                    cfg,
+		repo:                   repo,
+		authValidator:          authValidator,
+		internalAuthGen:        internalAuthGen,
+		reconciler:             reconciler,
+		logger:                 logger,
+		internalGatewayProxies: make(map[string]*proxy.Router),
+		clusterCache:           make(map[string]*db.Cluster),
 	}
 
 	server.setupRoutes()
@@ -108,7 +114,9 @@ func (s *Server) setupRoutes() {
 		// Sandbox routing (edge-gateway)
 		sandboxes := v1.Group("/sandboxes")
 		{
-			sandboxes.POST("/claim", s.claimSandbox)
+			sandboxes.POST("", s.createSandbox)
+			sandboxes.Any("/:id", s.proxySandbox)
+			sandboxes.Any("/:id/*path", s.proxySandbox)
 		}
 	}
 }
@@ -275,4 +283,53 @@ func (s *Server) getInternalGatewayProxy(targetURL string) (*proxy.Router, error
 	}
 	s.internalGatewayProxies[targetURL] = p
 	return p, nil
+}
+
+func (s *Server) getClusterByID(ctx context.Context, clusterID string) (*db.Cluster, error) {
+	if clusterID == "" {
+		return nil, fmt.Errorf("cluster_id is required")
+	}
+	if cluster := s.getClusterFromCache(clusterID); cluster != nil {
+		return cluster, nil
+	}
+	if err := s.refreshClusterCache(ctx); err != nil {
+		return nil, err
+	}
+	return s.getClusterFromCache(clusterID), nil
+}
+
+func (s *Server) getClusterFromCache(clusterID string) *db.Cluster {
+	s.clusterCacheMu.RLock()
+	defer s.clusterCacheMu.RUnlock()
+	return s.clusterCache[clusterID]
+}
+
+func (s *Server) refreshClusterCache(ctx context.Context) error {
+	cacheTTL := s.cfg.ReconcileInterval
+	if cacheTTL <= 0 {
+		cacheTTL = 30 * time.Second
+	}
+
+	s.clusterCacheMu.RLock()
+	cacheAge := time.Since(s.clusterCacheAt)
+	s.clusterCacheMu.RUnlock()
+	if cacheAge <= cacheTTL {
+		return nil
+	}
+
+	clusters, err := s.repo.ListEnabledClusters(ctx)
+	if err != nil {
+		return fmt.Errorf("list enabled clusters: %w", err)
+	}
+
+	cache := make(map[string]*db.Cluster, len(clusters))
+	for _, cluster := range clusters {
+		cache[cluster.ClusterID] = cluster
+	}
+
+	s.clusterCacheMu.Lock()
+	s.clusterCache = cache
+	s.clusterCacheAt = time.Now()
+	s.clusterCacheMu.Unlock()
+	return nil
 }

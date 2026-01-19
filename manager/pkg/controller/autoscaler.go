@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -102,7 +103,10 @@ func (as *AutoScaler) ReconcileAutoScale(ctx context.Context, template *v1alpha1
 	cfg := defaultAutoScaleConfig()
 
 	// Load ReplicaSet and use it as the actuator + cooldown state holder.
-	rsName := v1alpha1.GenReplicasetName(template)
+	rsName, err := naming.ReplicasetNameForTemplate(template)
+	if err != nil {
+		return fmt.Errorf("generate replicaset name: %w", err)
+	}
 	rs, err := as.k8sClient.AppsV1().ReplicaSets(template.Namespace).Get(ctx, rsName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {

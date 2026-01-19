@@ -110,7 +110,7 @@ func main() {
 	crdInformerFactory := externalversions.NewSharedInformerFactoryWithOptions(
 		crdClient,
 		cfg.ResyncPeriod,
-		externalversions.WithNamespace(cfg.Namespace),
+		externalversions.WithNamespace(cfg.DefaultTemplateNamespace),
 	)
 
 	// Get SandboxTemplate informer from the factory
