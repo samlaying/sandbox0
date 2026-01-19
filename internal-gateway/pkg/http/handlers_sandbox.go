@@ -42,11 +42,6 @@ func (s *Server) createSandbox(c *gin.Context) {
 	s.proxyToManager(c)
 }
 
-// listSandboxes lists sandboxes for the authenticated team
-func (s *Server) listSandboxes(c *gin.Context) {
-	s.proxyToManager(c)
-}
-
 // getSandbox gets a sandbox by ID
 func (s *Server) getSandbox(c *gin.Context) {
 	sandboxID := c.Param("id")

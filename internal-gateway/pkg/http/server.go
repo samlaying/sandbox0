@@ -136,7 +136,6 @@ func (s *Server) setupRoutes() {
 		sandboxes := v1.Group("/sandboxes")
 		{
 			sandboxes.POST("", s.authMiddleware.RequirePermission(auth.PermSandboxCreate), s.createSandbox)
-			sandboxes.GET("", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.listSandboxes)
 			sandboxes.GET("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandbox)
 			sandboxes.GET("/:id/status", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandboxStatus)
 			sandboxes.PATCH("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.updateSandbox)

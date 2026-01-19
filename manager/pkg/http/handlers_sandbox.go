@@ -55,35 +55,6 @@ func (s *Server) claimSandbox(c *gin.Context) {
 	c.JSON(http.StatusCreated, resp)
 }
 
-// listSandboxes lists sandboxes
-func (s *Server) listSandboxes(c *gin.Context) {
-	// Get team ID from claims
-	claims := internalauth.ClaimsFromContext(c.Request.Context())
-	if claims == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "missing authentication",
-		})
-		return
-	}
-
-	sandboxes, err := s.sandboxService.ListSandboxes(c.Request.Context(), claims.TeamID)
-	if err != nil {
-		s.logger.Error("Failed to list sandboxes",
-			zap.String("teamID", claims.TeamID),
-			zap.Error(err),
-		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("failed to list sandboxes: %v", err),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"sandboxes": sandboxes,
-		"count":     len(sandboxes),
-	})
-}
-
 // getSandbox gets a sandbox
 func (s *Server) getSandbox(c *gin.Context) {
 	sandboxID := c.Param("id")

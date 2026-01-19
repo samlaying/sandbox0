@@ -466,32 +466,6 @@ func (s *SandboxService) getSandboxPod(ctx context.Context, sandboxID string) (*
 	return s.podLister.Pods("").Get(sandboxID)
 }
 
-// ListSandboxes lists all sandboxes for a team
-func (s *SandboxService) ListSandboxes(ctx context.Context, teamID string) ([]*Sandbox, error) {
-	// List all pods with active pool type (claimed sandboxes)
-	pods, err := s.podLister.Pods("").List(labels.SelectorFromSet(map[string]string{
-		controller.LabelPoolType: controller.PoolTypeActive,
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("list pods: %w", err)
-	}
-
-	var sandboxes []*Sandbox
-	for _, pod := range pods {
-		// Filter by team ID if specified
-		if teamID != "" && pod.Annotations[controller.AnnotationTeamID] != teamID {
-			continue
-		}
-
-		sandboxID := pod.Labels[controller.LabelSandboxID]
-		if sandboxID != "" {
-			sandboxes = append(sandboxes, s.podToSandbox(pod, sandboxID))
-		}
-	}
-
-	return sandboxes, nil
-}
-
 // podToSandbox converts a pod to a sandbox object
 func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbox {
 	status := s.podPhaseToSandboxStatus(pod.Status.Phase)
