@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +35,13 @@ type Server struct {
 	requestLogger   *middleware.RequestLogger
 	logger          *zap.Logger
 	internalAuthGen *internalauth.Generator
+
+	internalGatewayProxies   map[string]*proxy.Router
+	internalGatewayProxiesMu sync.RWMutex
+
+	clusterCache   map[string]string
+	clusterCacheAt time.Time
+	clusterCacheMu sync.RWMutex
 
 	// Auth components
 	builtinProvider *builtin.Provider
@@ -133,17 +141,19 @@ func NewServer(
 	apiKeyHandler := handlers.NewAPIKeyHandler(repo, logger)
 
 	server := &Server{
-		router:          router,
-		cfg:             cfg,
-		pool:            pool,
-		repo:            repo,
-		igRouter:        igRouter,
-		schedulerRouter: schedulerRouter,
-		authMiddleware:  authMiddleware,
-		rateLimiter:     rateLimiter,
-		requestLogger:   requestLogger,
-		logger:          logger,
-		internalAuthGen: internalAuthGen,
+		router:                 router,
+		cfg:                    cfg,
+		pool:                   pool,
+		repo:                   repo,
+		igRouter:               igRouter,
+		schedulerRouter:        schedulerRouter,
+		authMiddleware:         authMiddleware,
+		rateLimiter:            rateLimiter,
+		requestLogger:          requestLogger,
+		logger:                 logger,
+		internalAuthGen:        internalAuthGen,
+		internalGatewayProxies: make(map[string]*proxy.Router),
+		clusterCache:           make(map[string]string),
 
 		builtinProvider: builtinProvider,
 		oidcManager:     oidcManager,
@@ -256,11 +266,11 @@ func (s *Server) setupRoutes() {
 			clusters.Any("", s.schedulerRouter.ProxyToTarget)
 			clusters.Any("/*path", s.schedulerRouter.ProxyToTarget)
 
-			// Sandbox routes go to scheduler for routing
+			// Sandbox creation goes to scheduler, others route to internal-gateway
 			sandboxes := api.Group("/v1/sandboxes")
-			sandboxes.Use(s.injectInternalTokenForTarget("scheduler"))
-			sandboxes.Any("", s.schedulerRouter.ProxyToTarget)
-			sandboxes.Any("/*path", s.schedulerRouter.ProxyToTarget)
+			sandboxes.POST("", s.injectInternalTokenForTarget("scheduler"), s.schedulerRouter.ProxyToTarget)
+			sandboxes.Any("/:id", s.proxySandbox)
+			sandboxes.Any("/:id/*path", s.proxySandbox)
 		}
 
 		// All other API routes go to default internal-gateway
