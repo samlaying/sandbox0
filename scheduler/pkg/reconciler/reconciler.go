@@ -21,8 +21,9 @@ type Reconciler struct {
 	igClient          *client.InternalGatewayClient
 	logger            *zap.Logger
 	interval          time.Duration
-	clusterCache      map[string]*client.ClusterSummary
-	cacheMu           sync.RWMutex
+	templateStats     map[string]map[string]client.TemplateStat
+	templateStatsAt   map[string]time.Time
+	statsMu           sync.RWMutex
 	lastReconcileTime time.Time
 	lastReconcileErr  error
 	statusMu          sync.RWMutex
@@ -36,11 +37,12 @@ func NewReconciler(
 	logger *zap.Logger,
 ) *Reconciler {
 	return &Reconciler{
-		repo:         repo,
-		igClient:     igClient,
-		logger:       logger,
-		interval:     interval,
-		clusterCache: make(map[string]*client.ClusterSummary),
+		repo:            repo,
+		igClient:        igClient,
+		logger:          logger,
+		interval:        interval,
+		templateStats:   make(map[string]map[string]client.TemplateStat),
+		templateStatsAt: make(map[string]time.Time),
 	}
 }
 
@@ -93,10 +95,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		return
 	}
 
-	// 2. Fetch cluster summaries in parallel
-	r.fetchClusterSummaries(ctx, clusters)
-
-	// 3. Get all templates
+	// 2. Get all templates
 	templates, err := r.repo.ListTemplates(ctx)
 	if err != nil {
 		r.logger.Error("Failed to list templates", zap.Error(err))
@@ -110,7 +109,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		validTemplates[clusterTemplateID] = true
 	}
 
-	// 4. For each template, compute allocations and sync to clusters
+	// 3. For each template, compute allocations and sync to clusters
 	for _, template := range templates {
 		if err := r.reconcileTemplate(ctx, template, clusters); err != nil {
 			r.logger.Error("Failed to reconcile template",
@@ -122,7 +121,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		}
 	}
 
-	// 5. Clean up orphaned templates (templates in clusters but not in database)
+	// 4. Clean up orphaned templates (templates in clusters but not in database)
 	orphansRemoved := 0
 	for _, cluster := range clusters {
 		removed, err := r.cleanupOrphanTemplates(ctx, cluster, validTemplates)
@@ -151,51 +150,61 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	)
 }
 
-// fetchClusterSummaries fetches summaries for all clusters in parallel
-func (r *Reconciler) fetchClusterSummaries(ctx context.Context, clusters []*db.Cluster) {
-	var wg sync.WaitGroup
-	summaries := make(map[string]*client.ClusterSummary)
-	var mu sync.Mutex
+// GetTemplateIdleCount returns idle count for a template in a cluster.
+func (r *Reconciler) GetTemplateIdleCount(clusterID, templateID string) (int32, bool) {
+	r.statsMu.RLock()
+	defer r.statsMu.RUnlock()
 
-	for _, cluster := range clusters {
-		wg.Add(1)
-		go func(c *db.Cluster) {
-			defer wg.Done()
-
-			summary, err := r.igClient.GetClusterSummary(ctx, c.InternalGatewayURL)
-			if err != nil {
-				r.logger.Warn("Failed to get cluster summary",
-					zap.String("cluster_id", c.ClusterID),
-					zap.Error(err),
-				)
-				return
-			}
-
-			mu.Lock()
-			summaries[c.ClusterID] = summary
-			mu.Unlock()
-
-			// Update metrics
-			metrics.ClusterCapacity.WithLabelValues(c.ClusterID, "nodes").Set(float64(summary.NodeCount))
-			metrics.ClusterCapacity.WithLabelValues(c.ClusterID, "idle_pods").Set(float64(summary.IdlePodCount))
-			metrics.ClusterCapacity.WithLabelValues(c.ClusterID, "active_pods").Set(float64(summary.ActivePodCount))
-			metrics.ClusterCapacity.WithLabelValues(c.ClusterID, "total_pods").Set(float64(summary.TotalPodCount))
-
-			// Update last seen timestamp
-			if err := r.repo.UpdateClusterLastSeen(ctx, c.ClusterID); err != nil {
-				r.logger.Warn("Failed to update cluster last seen",
-					zap.String("cluster_id", c.ClusterID),
-					zap.Error(err),
-				)
-			}
-		}(cluster)
+	statsByTemplate, ok := r.templateStats[clusterID]
+	if !ok {
+		return 0, false
 	}
 
-	wg.Wait()
+	stat, ok := statsByTemplate[templateID]
+	if !ok {
+		return 0, false
+	}
 
-	r.cacheMu.Lock()
-	r.clusterCache = summaries
-	r.cacheMu.Unlock()
+	return stat.IdleCount, true
+}
+
+// GetTemplateStatsAge returns age since last stats update for a cluster.
+func (r *Reconciler) GetTemplateStatsAge(clusterID string) (time.Duration, bool) {
+	r.statsMu.RLock()
+	defer r.statsMu.RUnlock()
+
+	updatedAt, ok := r.templateStatsAt[clusterID]
+	if !ok || updatedAt.IsZero() {
+		return 0, false
+	}
+
+	return time.Since(updatedAt), true
+}
+
+// UpdateTemplateStats updates stats cache for a template in a cluster.
+func (r *Reconciler) UpdateTemplateStats(clusterID, templateID string, idleCount, activeCount int32, updatedAt time.Time) {
+	if clusterID == "" || templateID == "" {
+		return
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now()
+	}
+
+	r.statsMu.Lock()
+	defer r.statsMu.Unlock()
+
+	statsByTemplate := r.templateStats[clusterID]
+	if statsByTemplate == nil {
+		statsByTemplate = make(map[string]client.TemplateStat)
+		r.templateStats[clusterID] = statsByTemplate
+	}
+
+	statsByTemplate[templateID] = client.TemplateStat{
+		TemplateID:  templateID,
+		IdleCount:   idleCount,
+		ActiveCount: activeCount,
+	}
+	r.templateStatsAt[clusterID] = updatedAt
 }
 
 // reconcileTemplate reconciles a single template across all clusters
@@ -275,9 +284,7 @@ func (r *Reconciler) reconcileTemplate(ctx context.Context, template *db.Templat
 }
 
 // computeAllocations computes how to distribute minIdle/maxIdle across clusters
-// It uses a two-pass algorithm:
-// 1. First pass: distribute based on weights
-// 2. Apply capacity constraints (clamp based on cluster capacity)
+// It distributes based on weights among enabled clusters.
 func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cluster) []*db.TemplateAllocation {
 	if len(clusters) == 0 {
 		return nil
@@ -330,77 +337,6 @@ func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cl
 		}
 		if maxIdle < minIdle {
 			maxIdle = minIdle
-		}
-
-		// Get cluster capacity from cache and apply clamp
-		r.cacheMu.RLock()
-		summary, hasSummary := r.clusterCache[cluster.ClusterID]
-		r.cacheMu.RUnlock()
-
-		originalMinIdle, originalMaxIdle := minIdle, maxIdle
-		clampReason := ""
-
-		if hasSummary {
-			// Estimate cluster capacity: nodes * pods_per_node - currently_used
-			// Use a conservative estimate of ~10 sandbox pods per node
-			estimatedCapacity := int32(summary.NodeCount * 10)
-			availableCapacity := estimatedCapacity - summary.TotalPodCount
-
-			if availableCapacity < 0 {
-				availableCapacity = 0
-			}
-
-			// Apply capacity clamp
-			if minIdle > availableCapacity {
-				minIdle = availableCapacity
-				clampReason = "min_idle clamped by capacity"
-			}
-			if maxIdle > availableCapacity {
-				maxIdle = availableCapacity
-				if clampReason != "" {
-					clampReason = "min_idle and max_idle clamped by capacity"
-				} else {
-					clampReason = "max_idle clamped by capacity"
-				}
-			}
-
-			// Ensure maxIdle >= minIdle after clamping
-			if maxIdle < minIdle {
-				maxIdle = minIdle
-			}
-
-			// Log capacity-based adjustments
-			if clampReason != "" {
-				metrics.CapacityClamps.WithLabelValues(cluster.ClusterID, template.TemplateID).Inc()
-				r.logger.Warn("Allocation clamped by cluster capacity",
-					zap.String("cluster_id", cluster.ClusterID),
-					zap.String("template_id", template.TemplateID),
-					zap.Int32("original_min_idle", originalMinIdle),
-					zap.Int32("original_max_idle", originalMaxIdle),
-					zap.Int32("clamped_min_idle", minIdle),
-					zap.Int32("clamped_max_idle", maxIdle),
-					zap.Int32("available_capacity", availableCapacity),
-					zap.Int32("estimated_capacity", estimatedCapacity),
-					zap.Int32("current_pods", summary.TotalPodCount),
-					zap.Int("nodes", summary.NodeCount),
-					zap.String("reason", clampReason),
-				)
-			} else {
-				r.logger.Debug("Allocation within capacity",
-					zap.String("cluster_id", cluster.ClusterID),
-					zap.String("template_id", template.TemplateID),
-					zap.Int32("min_idle", minIdle),
-					zap.Int32("max_idle", maxIdle),
-					zap.Int32("available_capacity", availableCapacity),
-					zap.Float64("weight_ratio", weightRatio),
-				)
-			}
-		} else {
-			// No capacity info available, log warning but proceed
-			r.logger.Warn("No capacity info for cluster, skipping capacity clamp",
-				zap.String("cluster_id", cluster.ClusterID),
-				zap.String("template_id", template.TemplateID),
-			)
 		}
 
 		allocatedMinIdle += minIdle

@@ -45,6 +45,8 @@ type Server struct {
 	userHandler   *handlers.UserHandler
 	teamHandler   *handlers.TeamHandler
 	apiKeyHandler *handlers.APIKeyHandler
+
+	schedulerClient *http.Client
 }
 
 // NewServer creates a new HTTP server
@@ -153,6 +155,8 @@ func NewServer(
 		userHandler:   userHandler,
 		teamHandler:   teamHandler,
 		apiKeyHandler: apiKeyHandler,
+
+		schedulerClient: &http.Client{Timeout: cfg.ProxyTimeout},
 	}
 
 	server.setupRoutes()
@@ -256,6 +260,9 @@ func (s *Server) setupRoutes() {
 			clusters.Any("", s.schedulerRouter.ProxyToTarget())
 			clusters.Any("/*path", s.schedulerRouter.ProxyToTarget())
 		}
+
+		// Sandbox claim route: optionally route to scheduler-selected cluster
+		api.POST("/v1/sandboxes/claim", s.injectInternalTokenForTarget("internal-gateway"), s.routeSandboxClaim)
 
 		// All other API routes go to internal-gateway
 		api.Use(s.injectInternalToken())

@@ -1,8 +1,8 @@
 -- Scheduler database schema
 -- This migration creates the tables needed for the scheduler service
 
-CREATE SCHEMA IF NOT EXISTS s;
-SET search_path TO s;
+CREATE SCHEMA IF NOT EXISTS scheduler;
+SET search_path TO scheduler;
 
 -- Clusters table: stores registered data-plane clusters
 CREATE TABLE IF NOT EXISTS scheduler_clusters (

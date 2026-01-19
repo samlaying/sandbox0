@@ -27,6 +27,8 @@ type Server struct {
 // Reconciler interface for triggering reconciliation
 type Reconciler interface {
 	TriggerReconcile(ctx context.Context)
+	GetTemplateIdleCount(clusterID, templateID string) (int32, bool)
+	GetTemplateStatsAge(clusterID string) (time.Duration, bool)
 }
 
 // NewServer creates a new HTTP server
@@ -93,6 +95,12 @@ func (s *Server) setupRoutes() {
 			clusters.POST("", s.createCluster)
 			clusters.PUT("/:id", s.updateCluster)
 			clusters.DELETE("/:id", s.deleteCluster)
+		}
+
+		// Sandbox routing (edge-gateway)
+		sandboxes := v1.Group("/sandboxes")
+		{
+			sandboxes.POST("/route", s.routeSandbox)
 		}
 	}
 }

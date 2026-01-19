@@ -74,9 +74,10 @@ func main() {
 	}
 
 	// Initialize database and clock if DATABASE_URL is provided
+	var pool *pgxpool.Pool
 	var clk *clock.Clock
 	if cfg.DatabaseURL != "" {
-		pool, err := initDatabase(ctx, cfg.DatabaseURL, logger)
+		pool, err = initDatabase(ctx, cfg.DatabaseURL, logger)
 		if err != nil {
 			logger.Fatal("Failed to connect to database", zap.Error(err))
 		}
@@ -132,6 +133,9 @@ func main() {
 		clk,
 		logger,
 	)
+	if pool != nil {
+		operator.SetTemplateStatsPublisher(controller.NewPGTemplateStatsPublisher(pool, cfg.DefaultClusterId, logger))
+	}
 
 	// Create listers
 	podLister := informerFactory.Core().V1().Pods().Lister()

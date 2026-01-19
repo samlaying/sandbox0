@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
@@ -35,12 +36,16 @@ type Operator struct {
 	recorder    record.EventRecorder
 	clock       TimeProvider
 	logger      *zap.Logger
+	statsPublisher TemplateStatsPublisher
 
 	workqueue workqueue.TypedRateLimitingInterface[string]
 
 	// Template informer and lister (to be injected)
 	templateInformer cache.SharedIndexInformer
 	templateLister   TemplateListerImpl
+
+	statsMu   sync.Mutex
+	lastStats map[string]TemplateCounts
 }
 
 // TemplateListerImpl implements TemplateLister
@@ -103,6 +108,7 @@ func NewOperator(
 		templateLister: TemplateListerImpl{
 			indexer: templateInformer.GetIndexer(),
 		},
+		lastStats: make(map[string]TemplateCounts),
 	}
 
 	// Setup event handlers for SandboxTemplate
@@ -110,6 +116,13 @@ func NewOperator(
 		AddFunc:    op.handleTemplateAdd,
 		UpdateFunc: op.handleTemplateUpdate,
 		DeleteFunc: op.handleTemplateDelete,
+	})
+
+	// Setup event handlers for Pods to refresh template stats on pod changes.
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    op.handlePodAdd,
+		UpdateFunc: op.handlePodUpdate,
+		DeleteFunc: op.handlePodDelete,
 	})
 
 	return op
@@ -270,6 +283,29 @@ func (op *Operator) updateTemplateStatus(ctx context.Context, template *v1alpha1
 	metrics.IdlePodsTotal.WithLabelValues(template.Name).Set(float64(idleCount))
 	metrics.ActivePodsTotal.WithLabelValues(template.Name).Set(float64(activeCount))
 
+	// Publish stats if changed.
+	statsKey := template.Namespace + "/" + template.Name
+	shouldPublish := false
+	op.statsMu.Lock()
+	last := op.lastStats[statsKey]
+	if last.IdleCount != idleCount || last.ActiveCount != activeCount {
+		op.lastStats[statsKey] = TemplateCounts{
+			IdleCount:   idleCount,
+			ActiveCount: activeCount,
+		}
+		shouldPublish = true
+	}
+	op.statsMu.Unlock()
+
+	if shouldPublish && op.statsPublisher != nil {
+		if err := op.statsPublisher.PublishTemplateStats(ctx, template, idleCount, activeCount); err != nil {
+			op.logger.Warn("Failed to publish template stats",
+				zap.String("template", template.ObjectMeta.Name),
+				zap.Error(err),
+			)
+		}
+	}
+
 	// Update status if changed
 	if template.Status.IdleCount != idleCount || template.Status.ActiveCount != activeCount {
 		template.Status.IdleCount = idleCount
@@ -382,7 +418,59 @@ func (op *Operator) enqueueTemplate(template *v1alpha1.SandboxTemplate) {
 	op.workqueue.Add(key)
 }
 
+func (op *Operator) enqueueTemplateKey(namespace, name string) {
+	key := namespace + "/" + name
+	op.workqueue.Add(key)
+}
+
+func (op *Operator) handlePodAdd(obj any) {
+	pod := obj.(*corev1.Pod)
+	op.enqueueTemplateForPod(pod)
+}
+
+func (op *Operator) handlePodUpdate(oldObj, newObj any) {
+	oldPod := oldObj.(*corev1.Pod)
+	newPod := newObj.(*corev1.Pod)
+	if oldPod.ResourceVersion == newPod.ResourceVersion {
+		return
+	}
+	op.enqueueTemplateForPod(newPod)
+}
+
+func (op *Operator) handlePodDelete(obj any) {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			runtime.HandleError(fmt.Errorf("couldn't get pod from tombstone %#v", obj))
+			return
+		}
+		pod, ok = tombstone.Obj.(*corev1.Pod)
+		if !ok {
+			runtime.HandleError(fmt.Errorf("tombstone contained object that is not a Pod %#v", obj))
+			return
+		}
+	}
+	op.enqueueTemplateForPod(pod)
+}
+
+func (op *Operator) enqueueTemplateForPod(pod *corev1.Pod) {
+	if pod == nil || pod.Labels == nil {
+		return
+	}
+	templateID := pod.Labels[LabelTemplateID]
+	if templateID == "" {
+		return
+	}
+	op.enqueueTemplateKey(pod.Namespace, templateID)
+}
+
 // GetTemplateLister returns the template lister
 func (op *Operator) GetTemplateLister() TemplateLister {
 	return &op.templateLister
+}
+
+// SetTemplateStatsPublisher injects a stats publisher (optional).
+func (op *Operator) SetTemplateStatsPublisher(publisher TemplateStatsPublisher) {
+	op.statsPublisher = publisher
 }

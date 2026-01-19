@@ -9,10 +9,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/pubsub"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/config"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	httpserver "github.com/sandbox0-ai/infra/scheduler/pkg/http"
+	schedpubsub "github.com/sandbox0-ai/infra/scheduler/pkg/pubsub"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/reconciler"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -87,6 +89,13 @@ func main() {
 
 	// Create HTTP server
 	httpServer := httpserver.NewServer(cfg, repo, authValidator, rec, logger)
+
+	// Start template idle listener
+	if cfg.DatabaseURL != "" {
+		schedpubsub.StartTemplateIdleListener(ctx, cfg.DatabaseURL, logger, func(event pubsub.TemplateIdleEvent) {
+			rec.UpdateTemplateStats(event.ClusterID, event.TemplateID, event.IdleCount, event.ActiveCount, event.Timestamp)
+		})
+	}
 
 	// Start reconciler in background
 	go rec.Start(ctx)

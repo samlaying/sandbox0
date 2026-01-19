@@ -41,6 +41,19 @@ func (r *Router) ProxyToTarget() gin.HandlerFunc {
 	}
 }
 
+// ProxyToURL creates a reverse proxy handler for a given target URL.
+func (r *Router) ProxyToURL(targetURL string) (gin.HandlerFunc, error) {
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse target URL: %w", err)
+	}
+
+	proxy := r.createReverseProxyDirector(parsedURL)
+	return func(c *gin.Context) {
+		proxy.ServeHTTP(c.Writer, c.Request)
+	}, nil
+}
+
 // createReverseProxyDirector creates an httputil.ReverseProxy with proper configuration
 func (r *Router) createReverseProxyDirector(target *url.URL) *httputil.ReverseProxy {
 	director := func(req *http.Request) {
