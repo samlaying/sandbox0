@@ -1,20 +1,36 @@
 package pubsub
 
-import "time"
+import (
+	"time"
+
+	"github.com/sandbox0-ai/infra/pkg/clock"
+)
 
 // TemplateIdleChannel is the PostgreSQL NOTIFY channel for template stats updates.
 const TemplateIdleChannel = "template_idle_events"
 
-// TemplateIdleEvent represents template idle/active counts in a cluster.
-type TemplateIdleEvent struct {
-	ClusterID   string    `json:"cluster_id"`
-	TemplateID  string    `json:"template_id"`
-	IdleCount   int32     `json:"idle_count"`
-	ActiveCount int32     `json:"active_count"`
-	Timestamp   time.Time `json:"ts"`
+// EventBase provides a shared clock for pubsub events.
+type EventBase struct {
+	Clock     *clock.Clock `json:"-"`
+	Timestamp time.Time    `json:"ts"`
 }
 
-// NowUTC returns a UTC timestamp for event payloads.
-func NowUTC() time.Time {
-	return time.Now().UTC()
+// NewEventBase creates a base event with a synchronized clock.
+func NewEventBase(clk *clock.Clock) EventBase {
+	eb := EventBase{Clock: clk}
+	if clk != nil {
+		eb.Timestamp = clk.Now().UTC()
+	} else {
+		eb.Timestamp = time.Now().UTC()
+	}
+	return eb
+}
+
+// TemplateIdleEvent represents template idle/active counts in a cluster.
+type TemplateIdleEvent struct {
+	EventBase
+	ClusterID   string `json:"cluster_id"`
+	TemplateID  string `json:"template_id"`
+	IdleCount   int32  `json:"idle_count"`
+	ActiveCount int32  `json:"active_count"`
 }

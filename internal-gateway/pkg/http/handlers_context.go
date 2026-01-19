@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/middleware"
@@ -246,56 +247,15 @@ func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
 	c.Request.Header.Set("X-Token-For-Procd", procdStorageToken)
 
 	// Create and execute reverse proxy
-	director := func(req *http.Request) {
-		req.URL.Scheme = procdURL.Scheme
-		req.URL.Host = procdURL.Host
-		req.Host = procdURL.Host
-	}
-
-	proxy := &reverseProxy{
-		director: director,
-		logger:   s.logger,
-	}
-	proxy.ServeHTTP(c.Writer, c.Request)
-}
-
-// reverseProxy is a simple reverse proxy implementation
-type reverseProxy struct {
-	director func(*http.Request)
-	logger   *zap.Logger
-}
-
-func (p *reverseProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	p.director(r)
-
-	client := &http.Client{}
-	resp, err := client.Do(r)
+	router, err := proxy.NewRouter(procdURL.String(), s.logger, 10*time.Second)
 	if err != nil {
-		p.logger.Error("Proxy request failed", zap.Error(err))
-		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte(`{"error": "upstream service unavailable"}`))
+		s.logger.Error("Failed to create procd proxy router",
+			zap.String("procd_url", procdURL.String()),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "proxy initialization failed"})
 		return
 	}
-	defer resp.Body.Close()
 
-	// Copy response headers
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-
-	w.WriteHeader(resp.StatusCode)
-
-	// Copy response body
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			w.Write(buf[:n])
-		}
-		if err != nil {
-			break
-		}
-	}
+	router.ProxyToTarget(c)
 }

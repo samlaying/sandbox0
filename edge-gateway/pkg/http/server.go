@@ -45,8 +45,6 @@ type Server struct {
 	userHandler   *handlers.UserHandler
 	teamHandler   *handlers.TeamHandler
 	apiKeyHandler *handlers.APIKeyHandler
-
-	schedulerClient *http.Client
 }
 
 // NewServer creates a new HTTP server
@@ -155,8 +153,6 @@ func NewServer(
 		userHandler:   userHandler,
 		teamHandler:   teamHandler,
 		apiKeyHandler: apiKeyHandler,
-
-		schedulerClient: &http.Client{Timeout: cfg.ProxyTimeout},
 	}
 
 	server.setupRoutes()
@@ -251,22 +247,24 @@ func (s *Server) setupRoutes() {
 			// Template routes go to scheduler
 			templates := api.Group("/v1/templates")
 			templates.Use(s.injectInternalTokenForTarget("scheduler"))
-			templates.Any("", s.schedulerRouter.ProxyToTarget())
-			templates.Any("/*path", s.schedulerRouter.ProxyToTarget())
+			templates.Any("", s.schedulerRouter.ProxyToTarget)
+			templates.Any("/*path", s.schedulerRouter.ProxyToTarget)
 
 			// Cluster management routes also go to scheduler
 			clusters := api.Group("/v1/clusters")
 			clusters.Use(s.injectInternalTokenForTarget("scheduler"))
-			clusters.Any("", s.schedulerRouter.ProxyToTarget())
-			clusters.Any("/*path", s.schedulerRouter.ProxyToTarget())
-		}
+			clusters.Any("", s.schedulerRouter.ProxyToTarget)
+			clusters.Any("/*path", s.schedulerRouter.ProxyToTarget)
 
-		// Sandbox claim route: optionally route to scheduler-selected cluster
-		api.POST("/v1/sandboxes/claim", s.injectInternalTokenForTarget("internal-gateway"), s.routeSandboxClaim)
+			// Sandbox claim routes go to scheduler for routing
+			sandboxes := api.Group("/v1/sandboxes")
+			sandboxes.Use(s.injectInternalTokenForTarget("scheduler"))
+			sandboxes.POST("/claim", s.schedulerRouter.ProxyToTarget)
+		}
 
 		// All other API routes go to internal-gateway
 		api.Use(s.injectInternalToken())
-		api.Any("/*path", s.proxyRouter.ProxyToTarget())
+		api.Any("/*path", s.proxyRouter.ProxyToTarget)
 	}
 }
 

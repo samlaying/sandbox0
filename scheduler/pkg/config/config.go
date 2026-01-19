@@ -21,7 +21,6 @@ type Config struct {
 	ReconcileInterval time.Duration `yaml:"reconcile_interval"`
 
 	// Timeouts
-	ClusterTimeout  time.Duration `yaml:"cluster_timeout"`
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 }
 
@@ -32,7 +31,6 @@ func defaultConfig() *Config {
 		LogLevel:          "info",
 		DatabaseURL:       "postgres://sandbox0:sandbox0@postgresql:5432/sandbox0?sslmode=disable",
 		ReconcileInterval: 30 * time.Second,
-		ClusterTimeout:    10 * time.Second,
 		ShutdownTimeout:   30 * time.Second,
 	}
 }

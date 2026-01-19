@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/clock"
 	"github.com/sandbox0-ai/infra/pkg/templatenaming"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
@@ -21,6 +22,7 @@ type Reconciler struct {
 	igClient          *client.InternalGatewayClient
 	logger            *zap.Logger
 	interval          time.Duration
+	clock             *clock.Clock
 	clusterCache      map[string]*client.ClusterSummary
 	cacheMu           sync.RWMutex
 	templateStats     map[string]map[string]client.TemplateStat
@@ -31,11 +33,26 @@ type Reconciler struct {
 	statusMu          sync.RWMutex
 }
 
+func (r *Reconciler) now() time.Time {
+	if r.clock != nil {
+		return r.clock.Now()
+	}
+	return time.Now()
+}
+
+func (r *Reconciler) since(t time.Time) time.Duration {
+	if r.clock != nil {
+		return r.clock.Since(t)
+	}
+	return time.Since(t)
+}
+
 // NewReconciler creates a new Reconciler
 func NewReconciler(
 	repo *db.Repository,
 	igClient *client.InternalGatewayClient,
 	interval time.Duration,
+	clk *clock.Clock,
 	logger *zap.Logger,
 ) *Reconciler {
 	return &Reconciler{
@@ -43,6 +60,7 @@ func NewReconciler(
 		igClient:        igClient,
 		logger:          logger,
 		interval:        interval,
+		clock:           clk,
 		clusterCache:    make(map[string]*client.ClusterSummary),
 		templateStats:   make(map[string]map[string]client.TemplateStat),
 		templateStatsAt: make(map[string]time.Time),
@@ -71,13 +89,13 @@ func (r *Reconciler) Start(ctx context.Context) {
 // reconcile performs one reconciliation cycle
 func (r *Reconciler) reconcile(ctx context.Context) {
 	r.logger.Debug("Starting reconciliation cycle")
-	start := time.Now()
+	start := r.now()
 	defer func() {
-		duration := time.Since(start)
+		duration := r.since(start)
 		metrics.ReconcileDuration.Observe(duration.Seconds())
 
 		r.statusMu.Lock()
-		r.lastReconcileTime = time.Now()
+		r.lastReconcileTime = r.now()
 		r.statusMu.Unlock()
 	}()
 
@@ -149,7 +167,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	r.statusMu.Unlock()
 
 	r.logger.Info("Reconciliation cycle completed",
-		zap.Duration("duration", time.Since(start)),
+		zap.Duration("duration", r.since(start)),
 		zap.Int("clusters", len(clusters)),
 		zap.Int("templates", len(templates)),
 		zap.Int("orphans_removed", orphansRemoved),
@@ -193,7 +211,7 @@ func (r *Reconciler) fetchClusterSummaries(ctx context.Context, clusters []*db.C
 				}
 				r.statsMu.Lock()
 				r.templateStats[c.ClusterID] = statsByTemplate
-				r.templateStatsAt[c.ClusterID] = time.Now()
+				r.templateStatsAt[c.ClusterID] = r.now()
 				r.statsMu.Unlock()
 			}
 
@@ -248,7 +266,7 @@ func (r *Reconciler) GetTemplateStatsAge(clusterID string) (time.Duration, bool)
 		return 0, false
 	}
 
-	return time.Since(updatedAt), true
+	return r.since(updatedAt), true
 }
 
 // UpdateTemplateStats updates stats cache for a template in a cluster.
@@ -257,7 +275,7 @@ func (r *Reconciler) UpdateTemplateStats(clusterID, templateID string, idleCount
 		return
 	}
 	if updatedAt.IsZero() {
-		updatedAt = time.Now()
+		updatedAt = r.now()
 	}
 
 	r.statsMu.Lock()

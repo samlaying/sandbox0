@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/infra/pkg/clock"
 	"github.com/sandbox0-ai/infra/pkg/pubsub"
 	"go.uber.org/zap"
 )
@@ -26,14 +27,16 @@ type TemplateStatsPublisher interface {
 type PGTemplateStatsPublisher struct {
 	pool      *pgxpool.Pool
 	clusterID string
+	clk       *clock.Clock
 	logger    *zap.Logger
 }
 
 // NewPGTemplateStatsPublisher creates a new publisher.
-func NewPGTemplateStatsPublisher(pool *pgxpool.Pool, clusterID string, logger *zap.Logger) *PGTemplateStatsPublisher {
+func NewPGTemplateStatsPublisher(pool *pgxpool.Pool, clusterID string, clk *clock.Clock, logger *zap.Logger) *PGTemplateStatsPublisher {
 	return &PGTemplateStatsPublisher{
 		pool:      pool,
 		clusterID: clusterID,
+		clk:       clk,
 		logger:    logger,
 	}
 }
@@ -51,11 +54,11 @@ func (p *PGTemplateStatsPublisher) PublishTemplateStats(ctx context.Context, tem
 	}
 
 	event := pubsub.TemplateIdleEvent{
+		EventBase:   pubsub.NewEventBase(p.clk),
 		ClusterID:   p.clusterID,
 		TemplateID:  template.Name,
 		IdleCount:   idleCount,
 		ActiveCount: activeCount,
-		Timestamp:   pubsub.NowUTC(),
 	}
 
 	payload, err := json.Marshal(event)

@@ -46,7 +46,7 @@ func NewServer(
 	proxy2Mgr, err := proxy.NewRouter(
 		cfg.ManagerURL,
 		logger,
-		cfg.ProxyTimeout,
+		time.Second*10,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create manager proxy router: %w", err)
@@ -55,7 +55,7 @@ func NewServer(
 	proxy2sp, err := proxy.NewRouter(
 		cfg.StorageProxyURL,
 		logger,
-		cfg.ProxyTimeout,
+		time.Second*10,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create storage-proxy proxy router: %w", err)

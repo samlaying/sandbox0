@@ -33,25 +33,9 @@ func NewRouter(targetUrl string, logger *zap.Logger, timeout time.Duration) (*Ro
 }
 
 // ProxyToTarget creates a reverse proxy handler for target service
-func (r *Router) ProxyToTarget() gin.HandlerFunc {
+func (r *Router) ProxyToTarget(c *gin.Context) {
 	proxy := r.createReverseProxyDirector(r.targetUrl)
-
-	return func(c *gin.Context) {
-		proxy.ServeHTTP(c.Writer, c.Request)
-	}
-}
-
-// ProxyToURL creates a reverse proxy handler for a given target URL.
-func (r *Router) ProxyToURL(targetURL string) (gin.HandlerFunc, error) {
-	parsedURL, err := url.Parse(targetURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse target URL: %w", err)
-	}
-
-	proxy := r.createReverseProxyDirector(parsedURL)
-	return func(c *gin.Context) {
-		proxy.ServeHTTP(c.Writer, c.Request)
-	}, nil
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 // createReverseProxyDirector creates an httputil.ReverseProxy with proper configuration
@@ -87,8 +71,8 @@ func (r *Router) createReverseProxyDirector(target *url.URL) *httputil.ReversePr
 	proxy := &httputil.ReverseProxy{
 		Director: director,
 		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 20,
 			IdleConnTimeout:     90 * time.Second,
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {

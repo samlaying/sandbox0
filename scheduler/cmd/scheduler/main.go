@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sandbox0-ai/infra/pkg/clock"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/pubsub"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
@@ -43,6 +44,21 @@ func main() {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer pool.Close()
+
+	// Initialize clock for cross-cluster time synchronization
+	clk, err := clock.New(ctx, &pgxPoolAdapter{pool: pool},
+		clock.WithSyncInterval(30*time.Second),
+		clock.WithLogger(&zapClockLogger{logger: logger}),
+	)
+	if err != nil {
+		logger.Fatal("Failed to initialize clock", zap.Error(err))
+	}
+	defer clk.Close()
+
+	logger.Info("Clock initialized for cross-cluster time synchronization",
+		zap.Int64("offset_ms", clk.Offset().Milliseconds()),
+		zap.Int64("rtt_ms", clk.LastRTT().Milliseconds()),
+	)
 
 	// Create repository
 	repo := db.NewRepository(pool)
@@ -82,17 +98,23 @@ func main() {
 	)
 
 	// Create internal-gateway client
-	igClient := client.NewInternalGatewayClient(internalAuthGen, cfg.ClusterTimeout, logger)
+	igClient := client.NewInternalGatewayClient(internalAuthGen, logger)
 
 	// Create reconciler
-	rec := reconciler.NewReconciler(repo, igClient, cfg.ReconcileInterval, logger)
+	rec := reconciler.NewReconciler(repo, igClient, cfg.ReconcileInterval, clk, logger)
 
 	// Create HTTP server
-	httpServer := httpserver.NewServer(cfg, repo, authValidator, rec, logger)
+	httpServer := httpserver.NewServer(cfg, repo, authValidator, internalAuthGen, rec, logger)
 
 	// Start template idle listener
 	if cfg.DatabaseURL != "" {
 		schedpubsub.StartTemplateIdleListener(ctx, cfg.DatabaseURL, logger, func(event pubsub.TemplateIdleEvent) {
+			logger.Info("Received template idle event",
+				zap.String("cluster_id", event.ClusterID),
+				zap.String("template_id", event.TemplateID),
+				zap.Int32("idle_count", event.IdleCount),
+				zap.Int32("active_count", event.ActiveCount),
+			)
 			rec.UpdateTemplateStats(event.ClusterID, event.TemplateID, event.IdleCount, event.ActiveCount, event.Timestamp)
 		})
 	}
@@ -180,4 +202,58 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 	)
 
 	return pool, nil
+}
+
+// pgxPoolAdapter adapts pgxpool.Pool to clock.DB interface
+type pgxPoolAdapter struct {
+	pool *pgxpool.Pool
+}
+
+type pgxRowAdapter struct {
+	row interface {
+		Scan(dest ...any) error
+	}
+}
+
+func (r *pgxRowAdapter) Scan(dest ...any) error {
+	return r.row.Scan(dest...)
+}
+
+func (a *pgxPoolAdapter) QueryRow(ctx context.Context, sql string, args ...any) clock.Row {
+	return &pgxRowAdapter{row: a.pool.QueryRow(ctx, sql, args...)}
+}
+
+// zapClockLogger adapts zap.Logger to clock.Logger interface
+type zapClockLogger struct {
+	logger *zap.Logger
+}
+
+func (z *zapClockLogger) Info(msg string, keysAndValues ...any) {
+	z.logger.Info(msg, toZapFields(keysAndValues)...)
+}
+
+func (z *zapClockLogger) Warn(msg string, keysAndValues ...any) {
+	z.logger.Warn(msg, toZapFields(keysAndValues)...)
+}
+
+func (z *zapClockLogger) Error(msg string, keysAndValues ...any) {
+	z.logger.Error(msg, toZapFields(keysAndValues)...)
+}
+
+// toZapFields converts key-value pairs to zap fields
+func toZapFields(keysAndValues []any) []zap.Field {
+	if len(keysAndValues)%2 != 0 {
+		return []zap.Field{zap.Any("args", keysAndValues)}
+	}
+
+	fields := make([]zap.Field, 0, len(keysAndValues)/2)
+	for i := 0; i < len(keysAndValues); i += 2 {
+		key, ok := keysAndValues[i].(string)
+		if !ok {
+			continue
+		}
+		fields = append(fields, zap.Any(key, keysAndValues[i+1]))
+	}
+
+	return fields
 }

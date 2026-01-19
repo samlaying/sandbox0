@@ -25,7 +25,6 @@ type Config struct {
 	AllowedCallers []string `yaml:"allowed_callers"`
 
 	// Timeouts
-	ProxyTimeout      time.Duration `yaml:"proxy_timeout"`
 	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`
 	HealthCheckPeriod time.Duration `yaml:"health_check_period"`
 }
@@ -37,8 +36,7 @@ func defaultConfig() *Config {
 		LogLevel:          "info",
 		ManagerURL:        "http://manager.sandbox0-system:8080",
 		StorageProxyURL:   "http://storage-proxy.sandbox0-system:8081",
-		AllowedCallers:    []string{"edge-gateway"},
-		ProxyTimeout:      30 * time.Second,
+		AllowedCallers:    []string{"edge-gateway", "scheduler"},
 		ShutdownTimeout:   30 * time.Second,
 		HealthCheckPeriod: 10 * time.Second,
 	}

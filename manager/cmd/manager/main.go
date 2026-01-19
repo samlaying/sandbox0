@@ -134,7 +134,7 @@ func main() {
 		logger,
 	)
 	if pool != nil {
-		operator.SetTemplateStatsPublisher(controller.NewPGTemplateStatsPublisher(pool, cfg.DefaultClusterId, logger))
+		operator.SetTemplateStatsPublisher(controller.NewPGTemplateStatsPublisher(pool, cfg.DefaultClusterId, clk, logger))
 	}
 
 	// Create listers

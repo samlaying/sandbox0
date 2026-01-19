@@ -36,7 +36,7 @@ func (s *Server) getClusterSummary(c *gin.Context) {
 	c.Request.URL.Path = "/api/v1/cluster/summary"
 
 	// Forward to manager
-	s.proxy2Mgr.ProxyToTarget()(c)
+	s.proxy2Mgr.ProxyToTarget(c)
 }
 
 // getTemplateStats proxies template stats request to manager
@@ -64,5 +64,5 @@ func (s *Server) getTemplateStats(c *gin.Context) {
 	c.Request.URL.Path = "/api/v1/templates/stats"
 
 	// Forward to manager
-	s.proxy2Mgr.ProxyToTarget()(c)
+	s.proxy2Mgr.ProxyToTarget(c)
 }

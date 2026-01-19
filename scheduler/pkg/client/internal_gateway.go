@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
@@ -22,13 +21,11 @@ type InternalGatewayClient struct {
 }
 
 // NewInternalGatewayClient creates a new internal-gateway client
-func NewInternalGatewayClient(internalAuthGen *internalauth.Generator, timeout time.Duration, logger *zap.Logger) *InternalGatewayClient {
+func NewInternalGatewayClient(internalAuthGen *internalauth.Generator, logger *zap.Logger) *InternalGatewayClient {
 	return &InternalGatewayClient{
 		internalAuthGen: internalAuthGen,
 		logger:          logger,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		httpClient:      &http.Client{},
 	}
 }
 
@@ -44,7 +41,6 @@ type ClusterSummary struct {
 // TemplateStat represents statistics for a single template
 type TemplateStat struct {
 	TemplateID  string `json:"template_id"`
-	Namespace   string `json:"namespace"`
 	IdleCount   int32  `json:"idle_count"`
 	ActiveCount int32  `json:"active_count"`
 	MinIdle     int32  `json:"min_idle"`

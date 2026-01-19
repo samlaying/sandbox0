@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/proxy"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/config"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	"go.uber.org/zap"
@@ -16,12 +18,16 @@ import (
 
 // Server represents the HTTP server for scheduler
 type Server struct {
-	router        *gin.Engine
-	cfg           *config.Config
-	repo          *db.Repository
-	authValidator *internalauth.Validator
-	reconciler    Reconciler
-	logger        *zap.Logger
+	router          *gin.Engine
+	cfg             *config.Config
+	repo            *db.Repository
+	authValidator   *internalauth.Validator
+	internalAuthGen *internalauth.Generator
+	reconciler      Reconciler
+	logger          *zap.Logger
+
+	internalGatewayProxies   map[string]*proxy.Router
+	internalGatewayProxiesMu sync.RWMutex
 }
 
 // Reconciler interface for triggering reconciliation
@@ -36,6 +42,7 @@ func NewServer(
 	cfg *config.Config,
 	repo *db.Repository,
 	authValidator *internalauth.Validator,
+	internalAuthGen *internalauth.Generator,
 	reconciler Reconciler,
 	logger *zap.Logger,
 ) *Server {
@@ -48,12 +55,13 @@ func NewServer(
 	router.Use(requestLogger(logger))
 
 	server := &Server{
-		router:        router,
-		cfg:           cfg,
-		repo:          repo,
-		authValidator: authValidator,
-		reconciler:    reconciler,
-		logger:        logger,
+		router:          router,
+		cfg:             cfg,
+		repo:            repo,
+		authValidator:   authValidator,
+		internalAuthGen: internalAuthGen,
+		reconciler:      reconciler,
+		logger:          logger,
 	}
 
 	server.setupRoutes()
@@ -100,7 +108,7 @@ func (s *Server) setupRoutes() {
 		// Sandbox routing (edge-gateway)
 		sandboxes := v1.Group("/sandboxes")
 		{
-			sandboxes.POST("/route", s.routeSandbox)
+			sandboxes.POST("/claim", s.claimSandbox)
 		}
 	}
 }
@@ -244,4 +252,27 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func (s *Server) getInternalGatewayProxy(targetURL string) (*proxy.Router, error) {
+	s.internalGatewayProxiesMu.RLock()
+	p := s.internalGatewayProxies[targetURL]
+	s.internalGatewayProxiesMu.RUnlock()
+	if p != nil {
+		return p, nil
+	}
+
+	s.internalGatewayProxiesMu.Lock()
+	defer s.internalGatewayProxiesMu.Unlock()
+	p = s.internalGatewayProxies[targetURL]
+	if p != nil {
+		return p, nil
+	}
+
+	p, err := proxy.NewRouter(targetURL, s.logger, time.Second*10)
+	if err != nil {
+		return nil, err
+	}
+	s.internalGatewayProxies[targetURL] = p
+	return p, nil
 }
