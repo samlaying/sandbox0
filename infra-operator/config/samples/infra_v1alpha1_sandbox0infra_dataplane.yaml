@@ -1,0 +1,58 @@
+# Example: Cloud data plane mode
+apiVersion: infra.sandbox0.ai/v1alpha1
+kind: Sandbox0Infra
+metadata:
+  name: sandbox0-data-plane
+  namespace: sandbox0-system
+spec:
+  mode: data-plane
+  region: aws/us-east-1
+  version: "v0.0.0"
+  database:
+    type: postgres
+    external:
+      host: sandbox0-db.xxxx.us-east-1.rds.amazonaws.com
+      port: 5432
+      database: sandbox0
+      username: sandbox0
+      passwordSecret:
+        name: db-credentials
+        key: password
+      sslMode: require
+  storage:
+    type: s3
+    s3:
+      bucket: sandbox0-prod-us-east-1
+      region: us-east-1
+      credentialsSecret:
+        name: aws-credentials
+        accessKeyKey: accessKeyId
+        secretKeyKey: secretAccessKey
+  controlPlane:
+    url: https://api.sandbox0.io
+    internalAuthPublicKeySecret:
+      name: control-plane-public-key
+      key: public.key
+  cluster:
+    id: cluster-001
+    name: Production US East 1
+    capacity:
+      maxSandboxes: 1000
+      cpu:
+        total: "100"
+        available: "80"
+      memory:
+        total: "400Gi"
+        available: "320Gi"
+  services:
+    internalGateway:
+      enabled: true
+      replicas: 2
+    manager:
+      enabled: true
+      replicas: 2
+    storageProxy:
+      enabled: true
+      replicas: 2
+    netd:
+      enabled: true

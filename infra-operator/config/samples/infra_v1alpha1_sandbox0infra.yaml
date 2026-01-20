@@ -1,0 +1,47 @@
+# Example: Local development mode (all components with builtin database/storage)
+apiVersion: infra.sandbox0.ai/v1alpha1
+kind: Sandbox0Infra
+metadata:
+  name: sandbox0-dev
+  namespace: default
+spec:
+  mode: all
+  version: "v0.0.0"
+  database:
+    type: builtin
+    builtin:
+      enabled: true
+      persistence:
+        enabled: true
+        size: "20Gi"
+  storage:
+    type: builtin
+    builtin:
+      enabled: true
+      persistence:
+        enabled: true
+        size: "50Gi"
+  services:
+    edgeGateway:
+      enabled: true
+      replicas: 1
+      service:
+        type: ClusterIP
+        port: 80
+    internalGateway:
+      enabled: true
+      replicas: 1
+    manager:
+      enabled: true
+      replicas: 1
+    storageProxy:
+      enabled: true
+      replicas: 1
+    netd:
+      enabled: true
+  initUser:
+    enabled: true
+    email: "admin@localhost"
+    passwordSecret:
+      name: admin-password
+      key: password

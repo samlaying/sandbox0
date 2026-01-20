@@ -1,0 +1,1239 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.3
+  creationTimestamp: null
+  name: sandbox0infras.infra.sandbox0.ai
+spec:
+  group: infra.sandbox0.ai
+  names:
+    kind: Sandbox0Infra
+    listKind: Sandbox0InfraList
+    plural: sandbox0infras
+    shortNames:
+    - s0i
+    singular: sandbox0infra
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.version
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Sandbox0Infra is the Schema for the sandbox0infras API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Sandbox0InfraSpec defines the desired state of Sandbox0Infra
+            properties:
+              cluster:
+                description: Cluster configures cluster identification and capacity
+                properties:
+                  capacity:
+                    description: Capacity specifies cluster resource capacity
+                    properties:
+                      cpu:
+                        description: CPU specifies CPU capacity
+                        properties:
+                          available:
+                            description: Available is the available capacity
+                            type: string
+                          total:
+                            description: Total is the total capacity
+                            type: string
+                        type: object
+                      maxSandboxes:
+                        description: MaxSandboxes is the maximum number of sandboxes
+                        format: int32
+                        type: integer
+                      memory:
+                        description: Memory specifies memory capacity
+                        properties:
+                          available:
+                            description: Available is the available capacity
+                            type: string
+                          total:
+                            description: Total is the total capacity
+                            type: string
+                        type: object
+                    type: object
+                  id:
+                    description: ID is the unique cluster identifier
+                    type: string
+                  name:
+                    description: Name is the human-readable cluster name
+                    type: string
+                required:
+                - id
+                type: object
+              controlPlane:
+                description: ControlPlane configures external control plane connection
+                  (only for data-plane mode)
+                properties:
+                  internalAuthPublicKeySecret:
+                    description: InternalAuthPublicKeySecret references the secret
+                      containing control plane's public key
+                    properties:
+                      key:
+                        default: password
+                        description: Key is the key in the secret
+                        type: string
+                      name:
+                        description: Name is the name of the secret
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  url:
+                    description: URL is the control plane edge-gateway URL
+                    type: string
+                required:
+                - internalAuthPublicKeySecret
+                - url
+                type: object
+              database:
+                description: Database configures the main database for sandbox0
+                properties:
+                  builtin:
+                    description: Builtin configures the built-in single-node PostgreSQL
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled enables the built-in database
+                        type: boolean
+                      persistence:
+                        description: Persistence configures database storage
+                        properties:
+                          enabled:
+                            default: true
+                            description: Enabled enables persistence
+                            type: boolean
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 20Gi
+                            description: Size specifies the storage size
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          storageClass:
+                            description: StorageClass specifies the storage class
+                              (empty for default)
+                            type: string
+                        type: object
+                    type: object
+                  external:
+                    description: External configures connection to external database
+                    properties:
+                      database:
+                        description: Database specifies the database name
+                        type: string
+                      host:
+                        description: Host specifies the database host
+                        type: string
+                      passwordSecret:
+                        description: PasswordSecret references the secret containing
+                          the password
+                        properties:
+                          key:
+                            default: password
+                            description: Key is the key in the secret
+                            type: string
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      port:
+                        default: 5432
+                        description: Port specifies the database port
+                        format: int32
+                        type: integer
+                      sslMode:
+                        default: require
+                        description: SSLMode specifies the SSL mode for connection
+                        type: string
+                      username:
+                        description: Username specifies the database username
+                        type: string
+                    required:
+                    - database
+                    - host
+                    - passwordSecret
+                    - username
+                    type: object
+                  type:
+                    default: builtin
+                    description: 'Type specifies the database type: builtin, postgres,
+                      or mysql'
+                    enum:
+                    - builtin
+                    - postgres
+                    - mysql
+                    type: string
+                type: object
+              initUser:
+                description: InitUser configures the initial admin user
+                properties:
+                  email:
+                    description: Email is the admin user's email
+                    type: string
+                  enabled:
+                    default: true
+                    description: Enabled enables initial user creation
+                    type: boolean
+                  name:
+                    description: Name is the admin user's display name
+                    type: string
+                  passwordSecret:
+                    description: PasswordSecret references the secret containing the
+                      password
+                    properties:
+                      key:
+                        default: password
+                        description: Key is the key in the secret
+                        type: string
+                      name:
+                        description: Name is the name of the secret
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - email
+                - passwordSecret
+                type: object
+              internalAuth:
+                description: InternalAuth configures internal authentication keys
+                properties:
+                  controlPlane:
+                    description: ControlPlane configures control plane key pair
+                    properties:
+                      generate:
+                        default: true
+                        description: Generate enables automatic key generation
+                        type: boolean
+                      secretRef:
+                        description: SecretRef references an existing secret containing
+                          the key pair
+                        properties:
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                          privateKeyKey:
+                            default: private.key
+                            description: PrivateKeyKey is the key for private key
+                            type: string
+                          publicKeyKey:
+                            default: public.key
+                            description: PublicKeyKey is the key for public key
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                  dataPlane:
+                    description: DataPlane configures data plane key pair
+                    properties:
+                      generate:
+                        default: true
+                        description: Generate enables automatic key generation
+                        type: boolean
+                      secretRef:
+                        description: SecretRef references an existing secret containing
+                          the key pair
+                        properties:
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                          privateKeyKey:
+                            default: private.key
+                            description: PrivateKeyKey is the key for private key
+                            type: string
+                          publicKeyKey:
+                            default: public.key
+                            description: PublicKeyKey is the key for public key
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                type: object
+              juicefsDatabase:
+                description: JuicefsDatabase configures the JuiceFS metadata database
+                properties:
+                  external:
+                    description: External configures an independent database for JuiceFS
+                    properties:
+                      database:
+                        description: Database specifies the database name
+                        type: string
+                      host:
+                        description: Host specifies the database host
+                        type: string
+                      passwordSecret:
+                        description: PasswordSecret references the secret containing
+                          the password
+                        properties:
+                          key:
+                            default: password
+                            description: Key is the key in the secret
+                            type: string
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      port:
+                        default: 5432
+                        description: Port specifies the database port
+                        format: int32
+                        type: integer
+                      sslMode:
+                        default: require
+                        description: SSLMode specifies the SSL mode for connection
+                        type: string
+                      username:
+                        description: Username specifies the database username
+                        type: string
+                    required:
+                    - database
+                    - host
+                    - passwordSecret
+                    - username
+                    type: object
+                  shareWithMain:
+                    default: true
+                    description: ShareWithMain uses the main database for JuiceFS
+                      metadata
+                    type: boolean
+                type: object
+              mode:
+                default: all
+                description: 'Mode specifies the deployment mode: all, control-plane,
+                  or data-plane'
+                enum:
+                - all
+                - control-plane
+                - data-plane
+                type: string
+              region:
+                description: Region identifies the region for multi-cluster deployments
+                type: string
+              services:
+                description: Services configures individual services
+                properties:
+                  edgeGateway:
+                    description: EdgeGateway configures the edge-gateway service (control
+                      plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                  internalGateway:
+                    description: InternalGateway configures the internal-gateway service
+                      (data plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                  manager:
+                    description: Manager configures the manager service (data plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                  netd:
+                    description: Netd configures the netd service (data plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                  scheduler:
+                    description: Scheduler configures the scheduler service (control
+                      plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                  storageProxy:
+                    description: StorageProxy configures the storage-proxy service
+                      (data plane)
+                    properties:
+                      config:
+                        description: Config contains service-specific configuration
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      enabled:
+                        default: true
+                        description: Enabled enables or disables the service
+                        type: boolean
+                      ingress:
+                        description: Ingress configures ingress settings
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
+                      replicas:
+                        default: 1
+                        description: Replicas specifies the number of replicas
+                        format: int32
+                        type: integer
+                      resources:
+                        description: Resources specifies resource requirements
+                        properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                            type: object
+                        type: object
+                      service:
+                        description: Service configures the Kubernetes service
+                        properties:
+                          port:
+                            default: 80
+                            description: Port specifies the service port
+                            format: int32
+                            type: integer
+                          type:
+                            default: ClusterIP
+                            description: Type specifies the service type
+                            type: string
+                        type: object
+                    type: object
+                type: object
+              storage:
+                description: Storage configures the storage backend (JuiceFS S3 backend)
+                properties:
+                  builtin:
+                    description: Builtin configures the built-in RustFS storage
+                    properties:
+                      credentials:
+                        description: Credentials configures access credentials (auto-generated
+                          if not specified)
+                        properties:
+                          accessKey:
+                            description: AccessKey is the access key
+                            type: string
+                          secretKey:
+                            description: SecretKey is the secret key
+                            type: string
+                        type: object
+                      enabled:
+                        default: true
+                        description: Enabled enables the built-in storage
+                        type: boolean
+                      persistence:
+                        description: Persistence configures storage persistence
+                        properties:
+                          enabled:
+                            default: true
+                            description: Enabled enables persistence
+                            type: boolean
+                          size:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            default: 20Gi
+                            description: Size specifies the storage size
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          storageClass:
+                            description: StorageClass specifies the storage class
+                              (empty for default)
+                            type: string
+                        type: object
+                    type: object
+                  oss:
+                    description: OSS configures Aliyun OSS storage
+                    properties:
+                      bucket:
+                        description: Bucket specifies the OSS bucket name
+                        type: string
+                      credentialsSecret:
+                        description: CredentialsSecret references the secret containing
+                          Aliyun credentials
+                        properties:
+                          accessKeyKey:
+                            default: accessKeyId
+                            description: AccessKeyKey is the key for access key ID
+                            type: string
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                          secretKeyKey:
+                            default: accessKeySecret
+                            description: SecretKeyKey is the key for access key secret
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      endpoint:
+                        description: Endpoint specifies the OSS endpoint
+                        type: string
+                      region:
+                        description: Region specifies the Aliyun region
+                        type: string
+                    required:
+                    - bucket
+                    - credentialsSecret
+                    - endpoint
+                    - region
+                    type: object
+                  s3:
+                    description: S3 configures S3 or S3-compatible storage
+                    properties:
+                      bucket:
+                        description: Bucket specifies the S3 bucket name
+                        type: string
+                      credentialsSecret:
+                        description: CredentialsSecret references the secret containing
+                          AWS credentials
+                        properties:
+                          accessKeyKey:
+                            default: accessKeyId
+                            description: AccessKeyKey is the key for access key ID
+                            type: string
+                          name:
+                            description: Name is the name of the secret
+                            type: string
+                          secretKeyKey:
+                            default: secretAccessKey
+                            description: SecretKeyKey is the key for secret access
+                              key
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      endpoint:
+                        description: Endpoint specifies the S3 endpoint (optional
+                          for AWS)
+                        type: string
+                      region:
+                        description: Region specifies the AWS region
+                        type: string
+                      sessionTokenKey:
+                        description: SessionTokenKey is the key for session token
+                          in the secret (optional)
+                        type: string
+                    required:
+                    - bucket
+                    - credentialsSecret
+                    - region
+                    type: object
+                  type:
+                    default: builtin
+                    description: 'Type specifies the storage type: builtin, s3, or
+                      oss'
+                    enum:
+                    - builtin
+                    - s3
+                    - oss
+                    type: string
+                type: object
+              version:
+                default: v0.1.0
+                description: Version specifies the version of sandbox0 components
+                  to deploy
+                type: string
+            type: object
+          status:
+            description: Sandbox0InfraStatus defines the observed state of Sandbox0Infra
+            properties:
+              cluster:
+                description: Cluster contains cluster registration status
+                properties:
+                  id:
+                    description: ID is the cluster identifier
+                    type: string
+                  registered:
+                    description: Registered indicates if the cluster is registered
+                    type: boolean
+                  registeredAt:
+                    description: RegisteredAt is the registration timestamp
+                    format: date-time
+                    type: string
+                type: object
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the infrastructure's state
+                items:
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource. --- This struct is intended for direct
+                    use as an array at the field path .status.conditions.  For example,
+                    \n type FooStatus struct{ // Represents the observations of a
+                    foo's current state. // Known .status.conditions.type are: \"Available\",
+                    \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
+                    // +listType=map // +listMapKey=type Conditions []metav1.Condition
+                    `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
+                    protobuf:\"bytes,1,rep,name=conditions\"` \n // other fields }"
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition
+                        transitioned from one status to another. This should be when
+                        the underlying condition changed.  If that is not known, then
+                        using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating
+                        details about the transition. This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation
+                        that the condition was set based upon. For instance, if .metadata.generation
+                        is currently 12, but the .status.conditions[x].observedGeneration
+                        is 9, the condition is out of date with respect to the current
+                        state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating
+                        the reason for the condition's last transition. Producers
+                        of specific condition types may define expected values and
+                        meanings for this field, and whether the values are considered
+                        a guaranteed API. The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                        --- Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpoints:
+                description: Endpoints contains the service endpoints
+                properties:
+                  edgeGateway:
+                    description: EdgeGateway is the external edge-gateway URL
+                    type: string
+                  edgeGatewayInternal:
+                    description: EdgeGatewayInternal is the internal edge-gateway
+                      URL
+                    type: string
+                  internalGateway:
+                    description: InternalGateway is the internal-gateway URL
+                    type: string
+                type: object
+              internalAuth:
+                description: InternalAuth contains internal authentication status
+                properties:
+                  controlPlanePublicKey:
+                    description: ControlPlanePublicKey references the control plane
+                      public key
+                    properties:
+                      secretKey:
+                        description: SecretKey is the key in the secret
+                        type: string
+                      secretName:
+                        description: SecretName is the name of the secret
+                        type: string
+                    required:
+                    - secretKey
+                    - secretName
+                    type: object
+                  dataPlanePublicKey:
+                    description: DataPlanePublicKey references the data plane public
+                      key
+                    properties:
+                      secretKey:
+                        description: SecretKey is the key in the secret
+                        type: string
+                      secretName:
+                        description: SecretName is the name of the secret
+                        type: string
+                    required:
+                    - secretKey
+                    - secretName
+                    type: object
+                type: object
+              lastOperation:
+                description: LastOperation contains the last operation information
+                properties:
+                  completedAt:
+                    description: CompletedAt is when the operation completed
+                    format: date-time
+                    type: string
+                  error:
+                    description: Error contains error message if failed
+                    type: string
+                  startedAt:
+                    description: StartedAt is when the operation started
+                    format: date-time
+                    type: string
+                  status:
+                    description: Status is the operation status
+                    type: string
+                  type:
+                    description: Type is the operation type
+                    type: string
+                type: object
+              observedVersion:
+                description: ObservedVersion is the last observed version
+                type: string
+              phase:
+                description: Phase represents the current phase of the infrastructure
+                enum:
+                - Installing
+                - Ready
+                - Degraded
+                - Failed
+                - Upgrading
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
