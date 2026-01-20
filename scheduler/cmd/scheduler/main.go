@@ -10,7 +10,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sandbox0-ai/infra/pkg/clock"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"github.com/sandbox0-ai/infra/pkg/pubsub"
+	schedmigrations "github.com/sandbox0-ai/infra/scheduler/migrations"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/config"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
@@ -44,6 +46,11 @@ func main() {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer pool.Close()
+
+	// Run database migrations
+	if err := runMigrations(ctx, pool, logger); err != nil {
+		logger.Fatal("Failed to run database migrations", zap.Error(err))
+	}
 
 	// Initialize clock for cross-cluster time synchronization
 	clk, err := clock.New(ctx, &pgxPoolAdapter{pool: pool},
@@ -130,6 +137,23 @@ func main() {
 	logger.Info("Scheduler shutdown complete")
 }
 
+// runMigrations runs database migrations on startup.
+func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) error {
+	logger.Info("Running database migrations")
+
+	migrateLogger := &zapLogger{logger: logger}
+	if err := migrate.Up(ctx, pool, "migrations",
+		migrate.WithBaseFS(schedmigrations.FS),
+		migrate.WithLogger(migrateLogger),
+		migrate.WithSchema("sched"),
+	); err != nil {
+		return fmt.Errorf("migrate up: %w", err)
+	}
+
+	logger.Info("Database migrations completed successfully")
+	return nil
+}
+
 func initLogger(level string) *zap.Logger {
 	var zapLevel zapcore.Level
 	switch level {
@@ -172,6 +196,19 @@ func initLogger(level string) *zap.Logger {
 	}
 
 	return logger
+}
+
+// zapLogger adapts zap.Logger to migrate.Logger interface.
+type zapLogger struct {
+	logger *zap.Logger
+}
+
+func (z *zapLogger) Printf(format string, args ...any) {
+	z.logger.Info(fmt.Sprintf(format, args...))
+}
+
+func (z *zapLogger) Fatalf(format string, args ...any) {
+	z.logger.Fatal(fmt.Sprintf(format, args...))
 }
 
 func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (*pgxpool.Pool, error) {

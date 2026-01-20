@@ -11,7 +11,7 @@
 //	import "github.com/sandbox0-ai/infra/pkg/migrate"
 //
 //	// Simple auto-migration on startup
-//	if err := migrate.Up(ctx, db); err != nil {
+//	if err := migrate.Up(ctx, db, "migrations"); err != nil {
 //	    log.Fatal(err)
 //	}
 package migrate
@@ -29,17 +29,14 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-const (
-	dialect              = "pgx"
-	defaultMigrationsDir = "migrations"
-)
+const dialect = "pgx"
 
 // Options configures the migrator behavior.
 type Options struct {
 	// Logger is an optional logger for migration output.
 	Logger Logger
 	// BaseFS is an optional filesystem for embedded migrations.
-	// When set, migrations are resolved within this filesystem.
+	// When set, migrationsDir is resolved within this filesystem.
 	BaseFS fs.FS
 	// TableName is the name of the migration tracking table.
 	// Defaults to "goose_db_version".
@@ -58,6 +55,7 @@ func WithLogger(l Logger) Option {
 }
 
 // WithBaseFS sets the filesystem that holds embedded migrations.
+// Use migrationsDir as the path within this filesystem.
 func WithBaseFS(baseFS fs.FS) Option {
 	return func(o *Options) { o.BaseFS = baseFS }
 }
@@ -84,11 +82,16 @@ type defaultLogger struct{}
 func (defaultLogger) Printf(string, ...any) {}
 func (defaultLogger) Fatalf(string, ...any) {}
 
-// Up runs all pending migrations.
+// Up runs all pending migrations in the specified directory.
+//
+// The migrations directory can be:
+//   - An absolute path
+//   - A relative path from the working directory
+//   - A path relative to the service's binary location
 //
 // This function is idempotent - it tracks which migrations have been applied
 // and only runs new ones.
-func Up(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
+func Up(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
@@ -98,7 +101,7 @@ func Up(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 	}
 
 	// Resolve the migrations directory
-	resolvedDir, err := resolveDirWithBaseFS(options.BaseFS)
+	resolvedDir, err := resolveDirWithBaseFS(migrationsDir, options.BaseFS)
 	if err != nil {
 		return fmt.Errorf("resolve migrations directory: %w", err)
 	}
@@ -145,13 +148,13 @@ func Up(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 }
 
 // Status prints the current migration status to stdout.
-func Status(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
+func Status(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	resolvedDir, err := resolveDirWithBaseFS(options.BaseFS)
+	resolvedDir, err := resolveDirWithBaseFS(migrationsDir, options.BaseFS)
 	if err != nil {
 		return err
 	}
@@ -186,7 +189,7 @@ func Status(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 }
 
 // Down rolls back the most recently applied migration.
-func Down(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
+func Down(ctx context.Context, pool *pgxpool.Pool, migrationsDir string, opts ...Option) error {
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
@@ -195,7 +198,7 @@ func Down(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 		options.Logger = defaultLogger{}
 	}
 
-	resolvedDir, err := resolveDirWithBaseFS(options.BaseFS)
+	resolvedDir, err := resolveDirWithBaseFS(migrationsDir, options.BaseFS)
 	if err != nil {
 		return fmt.Errorf("resolve migrations directory: %w", err)
 	}
@@ -236,12 +239,12 @@ func Down(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 	return nil
 }
 
-// Create creates a new migration file in the default directory.
+// Create creates a new migration file in the specified directory.
 //
 // name: The name of the migration (e.g., "add_users_table")
 // migrationType: The type of migration ("sql" or "go")
-func Create(name, migrationType string) error {
-	resolvedDir, err := resolveDir(defaultMigrationsDir)
+func Create(migrationsDir, name, migrationType string) error {
+	resolvedDir, err := resolveDir(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("resolve migrations directory: %w", err)
 	}
@@ -256,20 +259,23 @@ func Create(name, migrationType string) error {
 }
 
 // resolveDirWithBaseFS resolves the migrations directory path with an optional base FS.
-func resolveDirWithBaseFS(baseFS fs.FS) (string, error) {
+func resolveDirWithBaseFS(migrationsDir string, baseFS fs.FS) (string, error) {
 	if baseFS == nil {
-		return resolveDir(defaultMigrationsDir)
+		return resolveDir(migrationsDir)
 	}
-	if filepath.IsAbs(defaultMigrationsDir) {
-		return "", fmt.Errorf("embedded migrations path must be relative: %s", defaultMigrationsDir)
+	if migrationsDir == "" {
+		return "", fmt.Errorf("migrations directory is required")
 	}
-	if !fs.ValidPath(defaultMigrationsDir) {
-		return "", fmt.Errorf("invalid embedded migrations path: %s", defaultMigrationsDir)
+	if filepath.IsAbs(migrationsDir) {
+		return "", fmt.Errorf("embedded migrations path must be relative: %s", migrationsDir)
 	}
-	if _, err := fs.Stat(baseFS, defaultMigrationsDir); err != nil {
-		return "", fmt.Errorf("migrations directory not found in embedded filesystem: %s", defaultMigrationsDir)
+	if !fs.ValidPath(migrationsDir) {
+		return "", fmt.Errorf("invalid embedded migrations path: %s", migrationsDir)
 	}
-	return defaultMigrationsDir, nil
+	if _, err := fs.Stat(baseFS, migrationsDir); err != nil {
+		return "", fmt.Errorf("migrations directory not found in embedded filesystem: %s", migrationsDir)
+	}
+	return migrationsDir, nil
 }
 
 // resolveDir resolves the migrations directory to an absolute path.
