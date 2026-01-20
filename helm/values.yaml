@@ -46,7 +46,7 @@ edge-gateway:
   replicaCount: 1
   
   image:
-    repository: sandbox0ai/edge-gateway
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:
@@ -99,7 +99,7 @@ internal-gateway:
   replicaCount: 1
   
   image:
-    repository: sandbox0ai/internal-gateway
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:
@@ -126,7 +126,7 @@ manager:
   replicaCount: 1
   
   image:
-    repository: sandbox0ai/manager
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:
@@ -153,7 +153,7 @@ storage-proxy:
   replicaCount: 1
   
   image:
-    repository: sandbox0ai/storage-proxy
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:
@@ -173,7 +173,7 @@ storage-proxy:
 # ------------------------------------------------------------------------------
 netd:
   image:
-    repository: sandbox0ai/netd
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:
@@ -204,7 +204,7 @@ scheduler:
   replicaCount: 1
   
   image:
-    repository: sandbox0ai/scheduler
+    repository: sandbox0ai/infra
     tag: *globalTag
   
   resources:

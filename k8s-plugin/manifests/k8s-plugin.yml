@@ -14,8 +14,11 @@ spec:
     spec:
       hostNetwork: true
       containers:
-      - image: sandbox0ai/k8s-plugin:latest
+      - image: sandbox0ai/infra:latest
         name: fuse-device-plugin-ctr
+        env:
+        - name: SERVICE
+          value: "k8s-plugin"
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

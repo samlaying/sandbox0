@@ -52,7 +52,7 @@ type Config struct {
 func defaultConfig() *Config {
 	return &Config{
 		HTTPPort:                 8080,
-		ManagerImage:             "sandbox0ai/manager:latest",
+		ManagerImage:             "sandbox0ai/infra:latest",
 		DefaultTemplateName:      "default",
 		DefaultTemplateNamespace: "sandbox0",
 		DefaultTemplateImage:     "sandbox0ai/otemplates:default-v0.1.0",

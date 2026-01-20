@@ -29,9 +29,6 @@ vendor/
 *~
 .DS_Store
 
-# Generated protobuf files (should be regenerated)
-proto/fs/*.pb.go
-
 # Logs
 *.log
 logs/
@@ -54,3 +51,4 @@ helm/charts/internal-gateway
 helm/charts/manager
 helm/charts/netd
 helm/charts/storage-proxy
+helm/charts/scheduler

@@ -40,6 +40,8 @@ spec:
               containerPort: {{ .Values.config.http_port | default 8080 }}
               protocol: TCP
           env:
+            - name: SERVICE
+              value: "scheduler"
             - name: CONFIG_PATH
               value: "/config/config.yaml"
           livenessProbe:

@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: sandbox0ai/internal-gateway
+  repository: sandbox0ai/infra
   pullPolicy: IfNotPresent
   tag: ""
 
