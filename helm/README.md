@@ -31,19 +31,24 @@ openssl pkey -in control-plane.private.key -pubout -out control-plane.public.key
 kubectl -n sandbox0-system create secret generic sandbox0-internal-jwt-control-plane \
   --from-file=private.key=control-plane.private.key \
   --from-file=public.key=control-plane.public.key
+```
 
+
+```bash
 # Data-plane key pair (internal-gateway + manager + storage-proxy)
 openssl genpkey -algorithm Ed25519 -out data-plane.private.key
 openssl pkey -in data-plane.private.key -pubout -out data-plane.public.key
 kubectl -n sandbox0-system create secret generic sandbox0-internal-jwt-data-plane \
   --from-file=private.key=data-plane.private.key \
   --from-file=public.key=data-plane.public.key
+```
 
 For data-plane clusters, also copy the control-plane public key:
 
 ```bash
 kubectl -n sandbox0-system create secret generic sandbox0-internal-jwt-control-plane \
   --from-file=public.key=control-plane.public.key
+```
 ```
 ```
 
