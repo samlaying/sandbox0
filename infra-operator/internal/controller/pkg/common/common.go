@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	yamlv3 "gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -33,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
 )
@@ -352,7 +352,7 @@ func (r *ResourceManager) ReconcileServiceConfigMap(ctx context.Context, infra *
 		config = map[string]any{}
 	}
 
-	payload, err := yaml.Marshal(config)
+	payload, err := yamlv3.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("marshal config for %s: %w", name, err)
 	}

@@ -26,7 +26,7 @@ spec:
       enabled: true
       replicas: 1
       service:
-        type: ClusterIP
+        type: NodePort
         port: 80
     internalGateway:
       enabled: true
