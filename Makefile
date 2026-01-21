@@ -1,4 +1,4 @@
-.PHONY: all build build-all test test-all lint tidy vendor clean helm-update helm-configs release docker-build docker-push proto manifest
+.PHONY: all build build-all test test-all lint tidy vendor clean helm-update helm-configs release docker-build docker-push proto manifests
 
 # Tool Binaries
 LOCALBIN ?= $(shell pwd)/bin
@@ -23,7 +23,7 @@ RESET  := \033[0m
 all: build-all
 
 # Build all services
-build-all: manifest
+build-all: manifests
 	@$(MAKE) proto
 	@printf "$(GREEN)Building edge-gateway...$(RESET)\n"
 	@mkdir -p edge-gateway/bin
@@ -51,7 +51,7 @@ build-all: manifest
 	@go build -v -o k8s-plugin/bin/k8s-plugin ./k8s-plugin
 
 # Build specific service: make build <service>
-build: manifest
+build: manifests
 	@service="$(filter-out build build-all test test-all lint tidy vendor clean helm-update docker-build docker-push,$(MAKECMDGOALS))"; \
 	if [ -z "$$service" ]; then \
 		echo "Error: Please specify a service or use 'make build-all'"; \
@@ -181,6 +181,6 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	@test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
-manifest: controller-gen
+manifests: controller-gen
 	@printf "$(CYAN)Generating manager CRDs...$(RESET)\n"
-	@$(CONTROLLER_GEN) crd paths="./manager/pkg/apis/..." output:crd:artifacts:config=infra-operator/config/crd/apps/
+	@$(CONTROLLER_GEN) crd paths="./manager/pkg/apis/..." output:crd:artifacts:config=infra-operator/chart/crds/

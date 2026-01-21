@@ -1,7 +1,0 @@
-## Append samples to kustomization file
-resources:
-- infra_v1alpha1_sandbox0infra.yaml
-# Uncomment for control-plane mode
-# - infra_v1alpha1_sandbox0infra_controlplane.yaml
-# Uncomment for data-plane mode
-# - infra_v1alpha1_sandbox0infra_dataplane.yaml
