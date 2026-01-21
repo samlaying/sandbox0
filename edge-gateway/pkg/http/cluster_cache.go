@@ -16,8 +16,6 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/proxy"
 )
 
-const clusterCacheTTL = 30 * time.Second
-
 type schedulerCluster struct {
 	ClusterID          string `json:"cluster_id"`
 	InternalGatewayURL string `json:"internal_gateway_url"`
@@ -78,7 +76,7 @@ func (s *Server) refreshClusterCache(ctx context.Context, authCtx *auth.AuthCont
 	s.clusterCacheMu.RLock()
 	cacheAge := time.Since(s.clusterCacheAt)
 	s.clusterCacheMu.RUnlock()
-	if cacheAge <= clusterCacheTTL {
+	if cacheAge <= s.cfg.ClusterCacheTTL.Duration {
 		return nil
 	}
 

@@ -23,6 +23,7 @@ type Reconciler struct {
 	logger            *zap.Logger
 	interval          time.Duration
 	clock             *clock.Clock
+	podsPerNode       int
 	clusterCache      map[string]*client.ClusterSummary
 	cacheMu           sync.RWMutex
 	templateStats     map[string]map[string]client.TemplateStat
@@ -53,14 +54,19 @@ func NewReconciler(
 	igClient *client.InternalGatewayClient,
 	interval time.Duration,
 	clk *clock.Clock,
+	podsPerNode int,
 	logger *zap.Logger,
 ) *Reconciler {
+	if podsPerNode <= 0 {
+		podsPerNode = 10 // default
+	}
 	return &Reconciler{
 		repo:            repo,
 		igClient:        igClient,
 		logger:          logger,
 		interval:        interval,
 		clock:           clk,
+		podsPerNode:     podsPerNode,
 		clusterCache:    make(map[string]*client.ClusterSummary),
 		templateStats:   make(map[string]map[string]client.TemplateStat),
 		templateStatsAt: make(map[string]time.Time),
@@ -438,8 +444,7 @@ func (r *Reconciler) computeAllocations(template *db.Template, clusters []*db.Cl
 
 		if hasSummary {
 			// Estimate cluster capacity: nodes * pods_per_node - currently_used
-			// Use a conservative estimate of ~10 sandbox pods per node
-			estimatedCapacity := int32(summary.NodeCount * 10)
+			estimatedCapacity := int32(summary.NodeCount * r.podsPerNode)
 			availableCapacity := estimatedCapacity - summary.TotalPodCount
 
 			if availableCapacity < 0 {

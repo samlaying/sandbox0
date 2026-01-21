@@ -80,14 +80,14 @@ func main() {
 	var pool *pgxpool.Pool
 	if cfg.DatabaseURL != "" {
 		var err error
-		pool, err = initDatabase(context.Background(), cfg.DatabaseURL, zapLogger)
+		pool, err = initDatabase(context.Background(), cfg.DatabaseURL, cfg, zapLogger)
 		if err != nil {
 			zapLogger.Fatal("Failed to connect to database", zap.Error(err))
 		}
 		defer pool.Close()
 
 		// Run database migrations
-		if err := runMigrations(context.Background(), pool, zapLogger); err != nil {
+		if err := runMigrations(context.Background(), pool, cfg.DatabaseSchema, zapLogger); err != nil {
 			zapLogger.Fatal("Failed to run database migrations", zap.Error(err))
 		}
 
@@ -231,12 +231,26 @@ func main() {
 	// Create HTTP server
 	httpSrv := httpserver.NewServer(logrusLogger, repo, httpAuthenticator, snapshotMgr)
 	httpAddr := fmt.Sprintf("%s:%d", cfg.HTTPAddr, cfg.HTTPPort)
+
+	readTimeout, _ := time.ParseDuration(cfg.HTTPReadTimeout)
+	if readTimeout == 0 {
+		readTimeout = 15 * time.Second
+	}
+	writeTimeout, _ := time.ParseDuration(cfg.HTTPWriteTimeout)
+	if writeTimeout == 0 {
+		writeTimeout = 15 * time.Second
+	}
+	idleTimeout, _ := time.ParseDuration(cfg.HTTPIdleTimeout)
+	if idleTimeout == 0 {
+		idleTimeout = 60 * time.Second
+	}
+
 	httpServer := &http.Server{
 		Addr:         httpAddr,
 		Handler:      httpSrv,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		IdleTimeout:  idleTimeout,
 	}
 
 	go func() {
@@ -279,7 +293,7 @@ func main() {
 }
 
 // initDatabase initializes the database connection pool
-func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (*pgxpool.Pool, error) {
+func initDatabase(ctx context.Context, databaseURL string, cfg *config.StorageProxyConfig, logger *zap.Logger) (*pgxpool.Pool, error) {
 	if databaseURL == "" {
 		return nil, fmt.Errorf("database URL is empty")
 	}
@@ -290,8 +304,14 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 	}
 
 	// Configure pool
-	poolConfig.MaxConns = 30
-	poolConfig.MinConns = 5
+	poolConfig.MaxConns = int32(cfg.DatabaseMaxConns)
+	poolConfig.MinConns = int32(cfg.DatabaseMinConns)
+	if poolConfig.MaxConns == 0 {
+		poolConfig.MaxConns = 30
+	}
+	if poolConfig.MinConns == 0 {
+		poolConfig.MinConns = 5
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
@@ -313,8 +333,12 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 }
 
 // runMigrations runs database migrations on startup
-func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) error {
+func runMigrations(ctx context.Context, pool *pgxpool.Pool, schema string, logger *zap.Logger) error {
 	logger.Info("Running database migrations")
+
+	if schema == "" {
+		schema = "sp"
+	}
 
 	// Create a migration logger that writes to zap
 	migrateLogger := &zapLogger{logger: logger}
@@ -322,7 +346,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) 
 	if err := migrate.Up(ctx, pool, ".",
 		migrate.WithBaseFS(spmigrations.FS),
 		migrate.WithLogger(migrateLogger),
-		migrate.WithSchema("sp"),
+		migrate.WithSchema(schema),
 	); err != nil {
 		return fmt.Errorf("migrate up: %w", err)
 	}
@@ -383,6 +407,7 @@ func initializeJuiceFS(cfg *config.StorageProxyConfig, logger *zap.Logger) error
 	}
 
 	initConfig := &juicefs.InitConfig{
+		Name:           cfg.JuiceFSName,
 		MetaURL:        cfg.MetaURL,
 		S3Bucket:       cfg.S3Bucket,
 		S3Region:       cfg.S3Region,
@@ -390,6 +415,10 @@ func initializeJuiceFS(cfg *config.StorageProxyConfig, logger *zap.Logger) error
 		S3AccessKey:    cfg.S3AccessKey,
 		S3SecretKey:    cfg.S3SecretKey,
 		S3SessionToken: cfg.S3SessionToken,
+		BlockSize:      cfg.JuiceFSBlockSize,
+		Compression:    cfg.JuiceFSCompression,
+		TrashDays:      cfg.JuiceFSTrashDays,
+		MetaRetries:    cfg.JuiceFSMetaRetries,
 	}
 
 	initializer := juicefs.NewInitializer(initConfig, logger)

@@ -18,13 +18,13 @@ var (
 // Claims represents JWT claims
 type Claims struct {
 	jwt.RegisteredClaims
-	UserID    string   `json:"user_id"`
-	TeamID    string   `json:"team_id"`
-	Email     string   `json:"email"`
-	Name      string   `json:"name"`
-	TeamRole  string   `json:"team_role"`
-	IsAdmin   bool     `json:"is_admin"`
-	TokenType string   `json:"token_type"` // "access" or "refresh"
+	UserID    string `json:"user_id"`
+	TeamID    string `json:"team_id"`
+	Email     string `json:"email"`
+	Name      string `json:"name"`
+	TeamRole  string `json:"team_role"`
+	IsAdmin   bool   `json:"is_admin"`
+	TokenType string `json:"token_type"` // "access" or "refresh"
 }
 
 // Issuer handles JWT token creation and validation
@@ -36,12 +36,12 @@ type Issuer struct {
 }
 
 // NewIssuer creates a new JWT issuer
-func NewIssuer(secret string, accessTTL, refreshTTL time.Duration) *Issuer {
+func NewIssuer(issuerName, secret string, accessTTL, refreshTTL time.Duration) *Issuer {
 	return &Issuer{
 		secret:          []byte(secret),
 		accessTokenTTL:  accessTTL,
 		refreshTokenTTL: refreshTTL,
-		issuer:          "edge-gateway",
+		issuer:          issuerName,
 	}
 }
 

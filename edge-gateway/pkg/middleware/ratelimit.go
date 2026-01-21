@@ -12,18 +12,20 @@ import (
 
 // RateLimiter provides rate limiting functionality
 type RateLimiter struct {
-	logger        *zap.Logger
-	rps           int
-	burst         int
-	localLimiters sync.Map // map[teamID]*rate.Limiter
+	logger          *zap.Logger
+	rps             int
+	burst           int
+	cleanupInterval time.Duration
+	localLimiters   sync.Map // map[teamID]*rate.Limiter
 }
 
 // NewRateLimiter creates a new rate limiter
-func NewRateLimiter(rps, burst int, logger *zap.Logger) *RateLimiter {
+func NewRateLimiter(rps, burst int, cleanupInterval time.Duration, logger *zap.Logger) *RateLimiter {
 	rl := &RateLimiter{
-		logger: logger,
-		rps:    rps,
-		burst:  burst,
+		logger:          logger,
+		rps:             rps,
+		burst:           burst,
+		cleanupInterval: cleanupInterval,
 	}
 
 	// Start cleanup goroutine for local limiters
@@ -85,7 +87,7 @@ func (rl *RateLimiter) getLimiter(teamID string) *rate.Limiter {
 
 // cleanupLoop periodically cleans up unused limiters
 func (rl *RateLimiter) cleanupLoop() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(rl.cleanupInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {

@@ -132,9 +132,20 @@ func (s *Server) Start(ctx context.Context) error {
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      s.router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  s.cfg.ReadTimeout.Duration,
+		WriteTimeout: s.cfg.WriteTimeout.Duration,
+		IdleTimeout:  s.cfg.IdleTimeout.Duration,
+	}
+
+	// Apply defaults if not set
+	if server.ReadTimeout == 0 {
+		server.ReadTimeout = 30 * time.Second
+	}
+	if server.WriteTimeout == 0 {
+		server.WriteTimeout = 60 * time.Second
+	}
+	if server.IdleTimeout == 0 {
+		server.IdleTimeout = 120 * time.Second
 	}
 
 	// Start server in a goroutine
@@ -191,8 +202,13 @@ func (s *Server) readinessCheck(c *gin.Context) {
 				response["last_reconcile_error"] = lastErr.Error()
 			}
 
-			// Warn if reconcile hasn't run in a long time (e.g., 5 minutes)
-			if time.Since(lastReconcile) > 5*time.Minute && !lastReconcile.IsZero() {
+			// Warn if reconcile hasn't run in a long time (e.g., 10x interval)
+			reconcileInterval := s.cfg.ReconcileInterval.Duration
+			if reconcileInterval == 0 {
+				reconcileInterval = 30 * time.Second
+			}
+			warningThreshold := reconcileInterval * 10
+			if time.Since(lastReconcile) > warningThreshold && !lastReconcile.IsZero() {
 				response["warning"] = "reconcile hasn't run recently"
 			}
 		}
@@ -277,7 +293,12 @@ func (s *Server) getInternalGatewayProxy(targetURL string) (*proxy.Router, error
 		return p, nil
 	}
 
-	p, err := proxy.NewRouter(targetURL, s.logger, time.Second*10)
+	proxyTimeout := s.cfg.ProxyTimeout.Duration
+	if proxyTimeout == 0 {
+		proxyTimeout = 10 * time.Second
+	}
+
+	p, err := proxy.NewRouter(targetURL, s.logger, proxyTimeout)
 	if err != nil {
 		return nil, err
 	}

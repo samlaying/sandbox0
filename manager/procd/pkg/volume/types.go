@@ -84,8 +84,19 @@ type MountContext struct {
 // Config holds SandboxVolume manager configuration.
 type Config struct {
 	ProxyBaseURL  string
+	ProxyPort     int
 	ProxyReplicas int
 	NodeName      string
 	CacheMaxBytes int64
 	CacheTTL      time.Duration
+
+	// JuiceFS defaults
+	JuiceFSCacheSize  string
+	JuiceFSPrefetch   int
+	JuiceFSBufferSize string
+	JuiceFSWriteback  bool
+
+	// gRPC settings
+	GRPCMaxMsgSize int
+	SOMark         int
 }

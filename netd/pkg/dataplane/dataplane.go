@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/netd/pkg/ebpf"
@@ -23,15 +24,20 @@ type DataPlane struct {
 	proxyHTTPPort       int
 	proxyHTTPSPort      int
 	procdPort           int
+	dnsPort             int
 	failClosed          bool
 	storageProxyCIDR    string
 	clusterDNSCIDR      string
 	internalGatewayCIDR string
+	vethPrefix          string
+	burstRatio          float64
 
 	// eBPF manager for bandwidth control
-	ebpfMgr   *ebpf.Manager
-	useEBPF   bool
-	bpfFSPath string
+	ebpfMgr    *ebpf.Manager
+	useEBPF    bool
+	bpfFSPath  string
+	bpfPinPath string
+	edtHorizon time.Duration
 
 	// Track applied rules per sandbox
 	mu           sync.RWMutex
@@ -54,13 +60,18 @@ type Config struct {
 	ProxyHTTPPort       int
 	ProxyHTTPSPort      int
 	ProcdPort           int
+	DNSPort             int
 	FailClosed          bool
 	StorageProxyCIDR    string
 	ClusterDNSCIDR      string
 	InternalGatewayCIDR string
 	UseEBPF             bool
 	BPFFSPath           string
+	BPFPinPath          string
 	UseEDT              bool // Use Earliest Departure Time for eBPF pacing
+	EDTHorizon          time.Duration
+	VethPrefix          string
+	BurstRatio          float64
 }
 
 // NewDataPlane creates a new DataPlane
@@ -69,20 +80,26 @@ func NewDataPlane(
 	proxyHTTPPort int,
 	proxyHTTPSPort int,
 	procdPort int,
+	dnsPort int,
 	failClosed bool,
 	storageProxyCIDR string,
 	clusterDNSCIDR string,
 	internalGatewayCIDR string,
+	vethPrefix string,
+	burstRatio float64,
 ) *DataPlane {
 	return &DataPlane{
 		logger:              logger,
 		proxyHTTPPort:       proxyHTTPPort,
 		proxyHTTPSPort:      proxyHTTPSPort,
 		procdPort:           procdPort,
+		dnsPort:             dnsPort,
 		failClosed:          failClosed,
 		storageProxyCIDR:    storageProxyCIDR,
 		clusterDNSCIDR:      clusterDNSCIDR,
 		internalGatewayCIDR: internalGatewayCIDR,
+		vethPrefix:          vethPrefix,
+		burstRatio:          burstRatio,
 		useEBPF:             false,
 		sandboxRules:        make(map[string]*SandboxRules),
 	}
@@ -95,17 +112,22 @@ func NewDataPlaneWithEBPF(logger *zap.Logger, cfg *Config) (*DataPlane, error) {
 		proxyHTTPPort:       cfg.ProxyHTTPPort,
 		proxyHTTPSPort:      cfg.ProxyHTTPSPort,
 		procdPort:           cfg.ProcdPort,
+		dnsPort:             cfg.DNSPort,
 		failClosed:          cfg.FailClosed,
 		storageProxyCIDR:    cfg.StorageProxyCIDR,
 		clusterDNSCIDR:      cfg.ClusterDNSCIDR,
 		internalGatewayCIDR: cfg.InternalGatewayCIDR,
+		vethPrefix:          cfg.VethPrefix,
+		burstRatio:          cfg.BurstRatio,
 		useEBPF:             cfg.UseEBPF,
 		bpfFSPath:           cfg.BPFFSPath,
+		bpfPinPath:          cfg.BPFPinPath,
+		edtHorizon:          cfg.EDTHorizon,
 		sandboxRules:        make(map[string]*SandboxRules),
 	}
 
 	if cfg.UseEBPF {
-		ebpfMgr, err := ebpf.NewManager(logger, cfg.BPFFSPath, cfg.UseEDT)
+		ebpfMgr, err := ebpf.NewManager(logger, cfg.BPFFSPath, cfg.BPFPinPath, cfg.UseEDT, cfg.EDTHorizon)
 		if err != nil {
 			logger.Warn("Failed to create eBPF manager, falling back to iptables/tc",
 				zap.Error(err),
@@ -293,7 +315,7 @@ func (dp *DataPlane) applyEgressRules(
 		if err := dp.runIPTables(
 			"-t", "filter", "-A", "NETD-EGRESS",
 			"-s", podIP, "-d", dp.clusterDNSCIDR,
-			"-p", "udp", "--dport", "53",
+			"-p", "udp", "--dport", fmt.Sprintf("%d", dp.dnsPort),
 			"-m", "comment", "--comment", comment+":dns",
 			"-j", "ACCEPT",
 		); err != nil {
@@ -474,7 +496,7 @@ func (dp *DataPlane) applyBandwidthRules(
 	// Find the veth interface for this pod
 	// This is a simplified implementation - in production, you'd need to
 	// find the actual veth pair for the pod network namespace
-	vethName := fmt.Sprintf("veth%s", info.SandboxID[:8])
+	vethName := fmt.Sprintf("%s%s", dp.vethPrefix, info.SandboxID[:8])
 	rules.VethName = vethName
 
 	// Get rate limits
@@ -490,7 +512,7 @@ func (dp *DataPlane) applyBandwidthRules(
 		}
 	}
 	if burstBytes == 0 && egressRateBps > 0 {
-		burstBytes = egressRateBps / 8 // Default burst to 1 second of data
+		burstBytes = int64(float64(egressRateBps) * dp.burstRatio) // Default burst based on burstRatio
 	}
 
 	// Use eBPF manager if available for more efficient rate limiting
@@ -704,17 +726,7 @@ func (dp *DataPlane) runTC(args ...string) error {
 
 // IsPrivateIP checks if an IP is in private/reserved ranges
 func IsPrivateIP(ip net.IP) bool {
-	privateRanges := []string{
-		"10.0.0.0/8",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"fc00::/7",
-		"fe80::/10",
-	}
-
-	for _, cidr := range privateRanges {
+	for _, cidr := range v1alpha1.PlatformDeniedCIDRs {
 		_, network, _ := net.ParseCIDR(cidr)
 		if network.Contains(ip) {
 			return true

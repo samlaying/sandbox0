@@ -34,10 +34,28 @@ type ProcdConfig struct {
 
 	// Storage Proxy configuration
 	// +optional
+	// +kubebuilder:default="storage-proxy"
 	StorageProxyBaseURL string `yaml:"storage_proxy_base_url" json:"storageProxyBaseURL"`
+	// +optional
+	// +kubebuilder:default=8080
+	StorageProxyPort int `yaml:"storage_proxy_port" json:"storageProxyPort"`
 	// +optional
 	// +kubebuilder:default=3
 	StorageProxyReplicas int `yaml:"storage_proxy_replicas" json:"storageProxyReplicas"`
+
+	// JuiceFS Mount Defaults
+	// +optional
+	// +kubebuilder:default="100"
+	JuiceFSCacheSize string `yaml:"juicefs_cache_size" json:"juicefsCacheSize"`
+	// +optional
+	// +kubebuilder:default=3
+	JuiceFSPrefetch int `yaml:"juicefs_prefetch" json:"juicefsPrefetch"`
+	// +optional
+	// +kubebuilder:default="300"
+	JuiceFSBufferSize string `yaml:"juicefs_buffer_size" json:"juicefsBufferSize"`
+	// +optional
+	// +kubebuilder:default=true
+	JuiceFSWriteback bool `yaml:"juicefs_writeback" json:"juicefsWriteback"`
 
 	// File manager configuration
 	// +optional

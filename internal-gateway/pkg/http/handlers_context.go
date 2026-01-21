@@ -229,8 +229,12 @@ func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
 
 	// Generate a special token for procd to communicate with storage-proxy
 	// This token allows procd to access storage-proxy on behalf of this team
+	perms := s.cfg.ProcdStoragePermissions
+	if len(perms) == 0 {
+		perms = []string{"sandboxvolume:read", "sandboxvolume:write"}
+	}
 	procdStorageToken, err := s.procdAuthGen.Generate("storage-proxy", authCtx.TeamID, authCtx.UserID, internalauth.GenerateOptions{
-		Permissions: []string{"sandboxvolume:read", "sandboxvolume:write"},
+		Permissions: perms,
 	})
 	if err != nil {
 		s.logger.Error("Failed to generate procd-storage token",
@@ -242,12 +246,16 @@ func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
 	}
 
 	// Set headers
-	c.Request.Header.Set("X-Team-ID", authCtx.TeamID)
-	c.Request.Header.Set("X-Internal-Token", internalToken)
-	c.Request.Header.Set("X-Token-For-Procd", procdStorageToken)
+	c.Request.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
+	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
+	c.Request.Header.Set(internalauth.TokenForProcdHeader, procdStorageToken)
 
 	// Create and execute reverse proxy
-	router, err := proxy.NewRouter(procdURL.String(), s.logger, 10*time.Second)
+	proxyTimeout := s.cfg.ProxyTimeout.Duration
+	if proxyTimeout == 0 {
+		proxyTimeout = 10 * time.Second
+	}
+	router, err := proxy.NewRouter(procdURL.String(), s.logger, proxyTimeout)
 	if err != nil {
 		s.logger.Error("Failed to create procd proxy router",
 			zap.String("procd_url", procdURL.String()),

@@ -77,6 +77,47 @@ type ManagerConfig struct {
 	// +kubebuilder:default="5m"
 	DefaultSandboxTTL metav1.Duration `yaml:"default_sandbox_ttl" json:"defaultSandboxTTL"`
 
+	// Network
+	// +optional
+	// +kubebuilder:default=100000000
+	DefaultBandwidthRateBps int64 `yaml:"default_bandwidth_rate_bps" json:"defaultBandwidthRateBps"`
+	// +optional
+	// +kubebuilder:default=12500000
+	DefaultBandwidthBurstBytes int64 `yaml:"default_bandwidth_burst_bytes" json:"defaultBandwidthBurstBytes"`
+	// +optional
+	// +kubebuilder:default=10
+	BandwidthAccountingInterval int `yaml:"bandwidth_accounting_interval" json:"bandwidthAccountingInterval"`
+
+	// Pause/Resume
+	// +optional
+	// +kubebuilder:default="10Mi"
+	PauseMinMemoryRequest string `yaml:"pause_min_memory_request" json:"pauseMinMemoryRequest"`
+	// +optional
+	// +kubebuilder:default="32Mi"
+	PauseMinMemoryLimit string `yaml:"pause_min_memory_limit" json:"pauseMinMemoryLimit"`
+	// +optional
+	// +kubebuilder:default=1.1
+	PauseMemoryBufferRatio float64 `yaml:"pause_memory_buffer_ratio" json:"pauseMemoryBufferRatio"`
+	// +optional
+	// +kubebuilder:default="10m"
+	PauseMinCPU string `yaml:"pause_min_cpu" json:"pauseMinCPU"`
+
+	// Timeouts
+	// +optional
+	// +kubebuilder:default="30s"
+	ProcdClientTimeout metav1.Duration `yaml:"procd_client_timeout" json:"procdClientTimeout"`
+	// +optional
+	// +kubebuilder:default="30s"
+	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
+
+	// Database
+	// +optional
+	// +kubebuilder:default=10
+	DatabaseMaxConns int32 `yaml:"database_max_conns" json:"databaseMaxConns"`
+	// +optional
+	// +kubebuilder:default=2
+	DatabaseMinConns int32 `yaml:"database_min_conns" json:"databaseMinConns"`
+
 	// Procd config injected into sandbox pods
 	// +optional
 	// +kubebuilder:default={}

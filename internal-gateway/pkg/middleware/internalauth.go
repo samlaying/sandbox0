@@ -30,7 +30,7 @@ func (m *InternalAuthMiddleware) Authenticate() gin.HandlerFunc {
 		token := c.GetHeader(internalauth.DefaultTokenHeader)
 		if token == "" {
 			// Try Authorization header as fallback
-			authHeader := c.GetHeader("Authorization")
+			authHeader := c.GetHeader(internalauth.AuthorizationHeader)
 			if authHeader != "" && len(authHeader) > 7 && authHeader[:7] == "Bearer " {
 				token = authHeader[7:]
 			}

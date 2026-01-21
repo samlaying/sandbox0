@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/db"
+	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -21,15 +21,17 @@ var (
 
 // Provider handles built-in email/password authentication
 type Provider struct {
-	repo   *db.Repository
-	config *config.BuiltInAuthConfig
+	repo            *db.Repository
+	config          *config.BuiltInAuthConfig
+	defaultTeamName string
 }
 
 // NewProvider creates a new built-in auth provider
-func NewProvider(repo *db.Repository, cfg *config.BuiltInAuthConfig) *Provider {
+func NewProvider(repo *db.Repository, cfg *config.BuiltInAuthConfig, defaultTeamName string) *Provider {
 	return &Provider{
-		repo:   repo,
-		config: cfg,
+		repo:            repo,
+		config:          cfg,
+		defaultTeamName: defaultTeamName,
 	}
 }
 
@@ -92,7 +94,7 @@ func (p *Provider) Register(ctx context.Context, email, password, name string) (
 		IsAdmin:       false,
 	}
 
-	teamName := "Personal Team"
+	teamName := p.defaultTeamName
 	if user.Name != "" {
 		teamName = fmt.Sprintf("%s Team", user.Name)
 	}

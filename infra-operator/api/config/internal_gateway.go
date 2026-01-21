@@ -40,6 +40,19 @@ type InternalGatewayConfig struct {
 	// +optional
 	// +kubebuilder:default="10s"
 	HealthCheckPeriod metav1.Duration `yaml:"health_check_period" json:"healthCheckPeriod"`
+
+	// Proxy configuration
+	// +optional
+	// +kubebuilder:default="10s"
+	ProxyTimeout metav1.Duration `yaml:"proxy_timeout" json:"proxyTimeout"`
+
+	// Permissions
+	// +optional
+	// +kubebuilder:default={"*:*"}
+	SchedulerPermissions []string `yaml:"scheduler_permissions" json:"schedulerPermissions"`
+	// +optional
+	// +kubebuilder:default={"sandboxvolume:read","sandboxvolume:write"}
+	ProcdStoragePermissions []string `yaml:"procd_storage_permissions" json:"procdStoragePermissions"`
 }
 
 // LoadInternalGatewayConfig returns the internal-gateway configuration.

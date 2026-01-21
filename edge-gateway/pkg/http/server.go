@@ -100,7 +100,7 @@ func NewServer(
 
 	// Create middleware
 	authMiddleware := middleware.NewAuthMiddleware(repo, cfg.JWTSecret, logger)
-	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst, logger)
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst, cfg.RateLimitCleanupInterval.Duration, logger)
 	requestLogger := middleware.NewRequestLogger(logger)
 
 	// Initialize internal auth generator
@@ -109,16 +109,16 @@ func NewServer(
 		return nil, fmt.Errorf("load internal JWT private key: %w", err)
 	}
 	internalAuthGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
-		Caller:     "edge-gateway",
+		Caller:     cfg.InternalAuthCaller,
 		PrivateKey: privateKey,
-		TTL:        30 * time.Second,
+		TTL:        cfg.InternalAuthTTL.Duration,
 	})
 
 	// Initialize JWT issuer
-	jwtIssuer := jwt.NewIssuer(cfg.JWTSecret, cfg.JWTAccessTokenTTL.Duration, cfg.JWTRefreshTokenTTL.Duration)
+	jwtIssuer := jwt.NewIssuer(cfg.JWTIssuer, cfg.JWTSecret, cfg.JWTAccessTokenTTL.Duration, cfg.JWTRefreshTokenTTL.Duration)
 
 	// Initialize built-in auth provider
-	builtinProvider := builtin.NewProvider(repo, &cfg.BuiltInAuth)
+	builtinProvider := builtin.NewProvider(repo, &cfg.BuiltInAuth, cfg.DefaultTeamName)
 
 	// Initialize OIDC manager
 	oidcManager, err := oidc.NewManager(ctx, cfg, repo, logger)
@@ -337,9 +337,9 @@ func (s *Server) Start(ctx context.Context) error {
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      s.router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  s.cfg.ServerReadTimeout.Duration,
+		WriteTimeout: s.cfg.ServerWriteTimeout.Duration,
+		IdleTimeout:  s.cfg.ServerIdleTimeout.Duration,
 	}
 
 	// Start server in a goroutine

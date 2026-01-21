@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/netd/pkg/watcher"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,9 @@ type Proxy struct {
 	httpsPort     int
 	listenAddr    string
 	dnsResolvers  []string
+	dialTimeout   time.Duration
+	dnsTimeout    time.Duration
+	headerLimit   int64
 
 	// Stats
 	mu              sync.RWMutex
@@ -74,6 +78,9 @@ func NewProxy(
 	httpPort int,
 	httpsPort int,
 	dnsResolvers []string,
+	dialTimeout time.Duration,
+	dnsTimeout time.Duration,
+	headerLimit int64,
 ) *Proxy {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Proxy{
@@ -83,6 +90,9 @@ func NewProxy(
 		httpPort:        httpPort,
 		httpsPort:       httpsPort,
 		dnsResolvers:    dnsResolvers,
+		dialTimeout:     dialTimeout,
+		dnsTimeout:      dnsTimeout,
+		headerLimit:     headerLimit,
 		connectionStats: make(map[string]*ConnectionStats),
 		ctx:             ctx,
 		cancel:          cancel,
@@ -226,7 +236,7 @@ func (p *Proxy) handleTLSConnection(
 
 	// Connect to upstream
 	upstreamAddr := net.JoinHostPort(destIP, strconv.Itoa(destPort))
-	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 10*time.Second)
+	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, p.dialTimeout)
 	if err != nil {
 		return destHost, destPort, 0, 0, "deny", "upstream connection failed", err
 	}
@@ -246,7 +256,7 @@ func (p *Proxy) handleHTTPConnection(
 	destPort = 80
 
 	// Read HTTP request to get Host header
-	req, err := http.ReadRequest(bufio.NewReader(clientConn))
+	req, err := http.ReadRequest(bufio.NewReader(newLimitedReader(clientConn, p.headerLimit)))
 	if err != nil {
 		return "", destPort, 0, 0, "deny", "failed to read HTTP request", err
 	}
@@ -287,7 +297,7 @@ func (p *Proxy) handleHTTPConnection(
 
 	// Connect to upstream
 	upstreamAddr := net.JoinHostPort(destIP, strconv.Itoa(destPort))
-	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, 10*time.Second)
+	upstreamConn, err := net.DialTimeout("tcp", upstreamAddr, p.dialTimeout)
 	if err != nil {
 		return destHost, destPort, 0, 0, "deny", "upstream connection failed", err
 	}
@@ -349,7 +359,7 @@ func (p *Proxy) resolveWithProtection(hostname string) (string, error) {
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				d := net.Dialer{Timeout: 5 * time.Second}
+				d := net.Dialer{Timeout: p.dnsTimeout}
 				return d.DialContext(ctx, "udp", p.dnsResolvers[0])
 			},
 		}
@@ -357,7 +367,7 @@ func (p *Proxy) resolveWithProtection(hostname string) (string, error) {
 		resolver = net.DefaultResolver
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), p.dnsTimeout)
 	defer cancel()
 
 	ips, err := resolver.LookupIPAddr(ctx, hostname)
@@ -381,18 +391,7 @@ func (p *Proxy) resolveWithProtection(hostname string) (string, error) {
 
 // isInternalIP checks if an IP is internal/private
 func isInternalIP(ip net.IP) bool {
-	privateRanges := []string{
-		"10.0.0.0/8",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"169.254.169.254/32", // Cloud metadata
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"fc00::/7",
-		"fe80::/10",
-	}
-
-	for _, cidr := range privateRanges {
+	for _, cidr := range v1alpha1.PlatformDeniedCIDRs {
 		_, network, _ := net.ParseCIDR(cidr)
 		if network.Contains(ip) {
 			return true
@@ -585,8 +584,8 @@ type limitedReader struct {
 	n int64
 }
 
-func newLimitedReader(r io.Reader) *limitedReader {
-	return &limitedReader{r: r, n: 64 * 1024} // 64KB limit for HTTP headers
+func newLimitedReader(r io.Reader, limit int64) *limitedReader {
+	return &limitedReader{r: r, n: limit}
 }
 
 func (l *limitedReader) Read(p []byte) (n int, err error) {

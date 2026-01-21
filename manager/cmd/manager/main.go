@@ -77,7 +77,7 @@ func main() {
 	var pool *pgxpool.Pool
 	var clk *clock.Clock
 	if cfg.DatabaseURL != "" {
-		pool, err = initDatabase(ctx, cfg.DatabaseURL, logger)
+		pool, err = initDatabase(ctx, cfg.DatabaseURL, cfg.DatabaseMaxConns, cfg.DatabaseMinConns, logger)
 		if err != nil {
 			logger.Fatal("Failed to connect to database", zap.Error(err))
 		}
@@ -142,7 +142,11 @@ func main() {
 	nodeLister := informerFactory.Core().V1().Nodes().Lister()
 
 	// Create network policy service for building policy annotations
-	networkPolicyService := service.NewNetworkPolicyService(logger)
+	networkPolicyService := service.NewNetworkPolicyService(service.NetworkPolicyServiceConfig{
+		DefaultBandwidthRateBps:     cfg.DefaultBandwidthRateBps,
+		DefaultBandwidthBurstBytes:  cfg.DefaultBandwidthBurstBytes,
+		BandwidthAccountingInterval: cfg.BandwidthAccountingInterval,
+	}, logger)
 
 	// Initialize internal auth generator for procd communication
 	var internalTokenGenerator service.TokenGenerator
@@ -165,6 +169,19 @@ func main() {
 	}
 
 	// Create services
+	cfgForSandbox := service.SandboxServiceConfig{
+		DefaultTTL:                  cfg.DefaultSandboxTTL.Duration,
+		DefaultBandwidthRateBps:     cfg.DefaultBandwidthRateBps,
+		DefaultBandwidthBurstBytes:  cfg.DefaultBandwidthBurstBytes,
+		BandwidthAccountingInterval: cfg.BandwidthAccountingInterval,
+		PauseMinMemoryRequest:       cfg.PauseMinMemoryRequest,
+		PauseMinMemoryLimit:         cfg.PauseMinMemoryLimit,
+		PauseMemoryBufferRatio:      cfg.PauseMemoryBufferRatio,
+		PauseMinCPU:                 cfg.PauseMinCPU,
+		ProcdPort:                   cfg.ProcdConfig.HTTPPort,
+		ProcdClientTimeout:          cfg.ProcdClientTimeout.Duration,
+	}
+
 	sandboxService := service.NewSandboxService(
 		k8sClient,
 		podLister,
@@ -173,7 +190,7 @@ func main() {
 		internalTokenGenerator,
 		procdTokenGenerator,
 		clk,
-		cfg.DefaultSandboxTTL.Duration,
+		cfgForSandbox,
 		logger,
 	)
 
@@ -350,15 +367,15 @@ func startMetricsServer(port int, logger *zap.Logger) {
 }
 
 // initDatabase initializes the database connection pool
-func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (*pgxpool.Pool, error) {
+func initDatabase(ctx context.Context, databaseURL string, maxConns, minConns int32, logger *zap.Logger) (*pgxpool.Pool, error) {
 	poolConfig, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database URL: %w", err)
 	}
 
 	// Configure pool
-	poolConfig.MaxConns = 10
-	poolConfig.MinConns = 2
+	poolConfig.MaxConns = maxConns
+	poolConfig.MinConns = minConns
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

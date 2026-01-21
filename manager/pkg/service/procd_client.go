@@ -10,16 +10,25 @@ import (
 	"time"
 )
 
+// ProcdClientConfig holds configuration for ProcdClient
+type ProcdClientConfig struct {
+	Timeout time.Duration
+}
+
 // ProcdClient is an HTTP client for calling procd APIs.
 type ProcdClient struct {
 	httpClient *http.Client
 }
 
 // NewProcdClient creates a new procd client.
-func NewProcdClient() *ProcdClient {
+func NewProcdClient(config ProcdClientConfig) *ProcdClient {
+	timeout := config.Timeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
 	return &ProcdClient{
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }

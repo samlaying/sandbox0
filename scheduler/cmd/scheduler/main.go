@@ -41,7 +41,7 @@ func main() {
 	defer cancel()
 
 	// Initialize database pool
-	pool, err := initDatabase(ctx, cfg.DatabaseURL, logger)
+	pool, err := initDatabase(ctx, cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
@@ -108,7 +108,7 @@ func main() {
 	igClient := client.NewInternalGatewayClient(internalAuthGen, logger)
 
 	// Create reconciler
-	rec := reconciler.NewReconciler(repo, igClient, cfg.ReconcileInterval.Duration, clk, logger)
+	rec := reconciler.NewReconciler(repo, igClient, cfg.ReconcileInterval.Duration, clk, cfg.PodsPerNode, logger)
 
 	// Create HTTP server
 	httpServer := httpserver.NewServer(cfg, repo, authValidator, internalAuthGen, rec, logger)
@@ -211,18 +211,30 @@ func (z *zapLogger) Fatalf(format string, args ...any) {
 	z.logger.Fatal(fmt.Sprintf(format, args...))
 }
 
-func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (*pgxpool.Pool, error) {
-	config, err := pgxpool.ParseConfig(databaseURL)
+func initDatabase(ctx context.Context, cfg *config.SchedulerConfig, logger *zap.Logger) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database URL: %w", err)
 	}
 
-	config.MaxConns = 10
-	config.MinConns = 2
-	config.MaxConnLifetime = 30 * time.Minute
-	config.MaxConnIdleTime = 5 * time.Minute
+	poolConfig.MaxConns = cfg.DatabasePool.MaxConns
+	if poolConfig.MaxConns == 0 {
+		poolConfig.MaxConns = 10
+	}
+	poolConfig.MinConns = cfg.DatabasePool.MinConns
+	if poolConfig.MinConns == 0 {
+		poolConfig.MinConns = 2
+	}
+	poolConfig.MaxConnLifetime = cfg.DatabasePool.MaxConnLifetime.Duration
+	if poolConfig.MaxConnLifetime == 0 {
+		poolConfig.MaxConnLifetime = 30 * time.Minute
+	}
+	poolConfig.MaxConnIdleTime = cfg.DatabasePool.MaxConnIdleTime.Duration
+	if poolConfig.MaxConnIdleTime == 0 {
+		poolConfig.MaxConnIdleTime = 5 * time.Minute
+	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create connection pool: %w", err)
 	}
@@ -234,8 +246,8 @@ func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (
 	}
 
 	logger.Info("Connected to database",
-		zap.Int32("max_conns", config.MaxConns),
-		zap.Int32("min_conns", config.MinConns),
+		zap.Int32("max_conns", poolConfig.MaxConns),
+		zap.Int32("min_conns", poolConfig.MinConns),
 	)
 
 	return pool, nil

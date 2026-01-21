@@ -28,10 +28,49 @@ type SchedulerConfig struct {
 	// +kubebuilder:default="30s"
 	ReconcileInterval metav1.Duration `yaml:"reconcile_interval" json:"reconcileInterval"`
 
+	// +optional
+	// +kubebuilder:default=50
+	PodsPerNode int `yaml:"pods_per_node" json:"podsPerNode"`
+
 	// Timeouts
 	// +optional
 	// +kubebuilder:default="30s"
 	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
+
+	// +optional
+	// +kubebuilder:default="30s"
+	ReadTimeout metav1.Duration `yaml:"read_timeout" json:"readTimeout"`
+
+	// +optional
+	// +kubebuilder:default="60s"
+	WriteTimeout metav1.Duration `yaml:"write_timeout" json:"writeTimeout"`
+
+	// +optional
+	// +kubebuilder:default="120s"
+	IdleTimeout metav1.Duration `yaml:"idle_timeout" json:"idleTimeout"`
+
+	// +optional
+	// +kubebuilder:default="10s"
+	ProxyTimeout metav1.Duration `yaml:"proxy_timeout" json:"proxyTimeout"`
+
+	// Database Pool configuration
+	// +optional
+	DatabasePool DatabasePoolConfig `yaml:"database_pool" json:"databasePool"`
+}
+
+type DatabasePoolConfig struct {
+	// +optional
+	// +kubebuilder:default=10
+	MaxConns int32 `yaml:"max_conns" json:"maxConns"`
+	// +optional
+	// +kubebuilder:default=2
+	MinConns int32 `yaml:"min_conns" json:"minConns"`
+	// +optional
+	// +kubebuilder:default="30m"
+	MaxConnLifetime metav1.Duration `yaml:"max_conn_lifetime" json:"maxConnLifetime"`
+	// +optional
+	// +kubebuilder:default="5m"
+	MaxConnIdleTime metav1.Duration `yaml:"max_conn_idle_time" json:"maxConnIdleTime"`
 }
 
 // LoadSchedulerConfig returns the scheduler configuration.

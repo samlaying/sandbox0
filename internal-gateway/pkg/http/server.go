@@ -43,10 +43,15 @@ func NewServer(
 	router := gin.New()
 
 	// Create proxy router
+	proxyTimeout := cfg.ProxyTimeout.Duration
+	if proxyTimeout == 0 {
+		proxyTimeout = 10 * time.Second
+	}
+
 	proxy2Mgr, err := proxy.NewRouter(
 		cfg.ManagerURL,
 		logger,
-		time.Second*10,
+		proxyTimeout,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create manager proxy router: %w", err)
@@ -55,7 +60,7 @@ func NewServer(
 	proxy2sp, err := proxy.NewRouter(
 		cfg.StorageProxyURL,
 		logger,
-		time.Second*10,
+		proxyTimeout,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create storage-proxy proxy router: %w", err)
@@ -75,7 +80,7 @@ func NewServer(
 	// Create internal auth validator (for validating tokens from edge-gateway and optionally scheduler)
 	allowedCallers := cfg.AllowedCallers
 	if len(allowedCallers) == 0 {
-		allowedCallers = []string{"edge-gateway"}
+		allowedCallers = []string{"edge-gateway", "scheduler"}
 	}
 	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
 		Target:             "internal-gateway",
@@ -101,7 +106,7 @@ func NewServer(
 	})
 
 	// Create manager client
-	managerClient := client.NewManagerClient(cfg.ManagerURL, internalAuthGen, logger)
+	managerClient := client.NewManagerClient(cfg.ManagerURL, internalAuthGen, logger, proxyTimeout)
 
 	server := &Server{
 		router:          router,

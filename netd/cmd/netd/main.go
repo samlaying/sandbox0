@@ -31,7 +31,6 @@ func main() {
 	defer logger.Sync()
 
 	logger.Info("Starting netd",
-		zap.String("version", "v0.1.0"),
 		zap.String("nodeName", cfg.NodeName),
 		zap.Int("metricsPort", cfg.MetricsPort),
 		zap.Int("healthPort", cfg.HealthPort),
@@ -72,13 +71,18 @@ func main() {
 		ProxyHTTPPort:       cfg.ProxyHTTPPort,
 		ProxyHTTPSPort:      cfg.ProxyHTTPSPort,
 		ProcdPort:           cfg.ProcdPort,
+		DNSPort:             cfg.DNSPort,
 		FailClosed:          cfg.FailClosed,
 		StorageProxyCIDR:    cfg.StorageProxyCIDR,
 		ClusterDNSCIDR:      cfg.ClusterDNSCIDR,
 		InternalGatewayCIDR: cfg.InternalGatewayCIDR,
 		UseEBPF:             cfg.UseEBPF,
 		BPFFSPath:           cfg.BPFFSPath,
+		BPFPinPath:          cfg.BPFPinPath,
 		UseEDT:              cfg.UseEDT,
+		EDTHorizon:          cfg.EDTHorizon.Duration,
+		VethPrefix:          cfg.VethPrefix,
+		BurstRatio:          cfg.BurstRatio,
 	}
 
 	dp, err := dataplane.NewDataPlaneWithEBPF(logger, dpConfig)
@@ -98,6 +102,9 @@ func main() {
 		cfg.ProxyHTTPPort,
 		cfg.ProxyHTTPSPort,
 		cfg.DNSResolvers,
+		cfg.ProxyUpstreamTimeout.Duration,
+		cfg.ProxyDNSTimeout.Duration,
+		cfg.ProxyHeaderLimit,
 	)
 
 	// Set up event handlers
@@ -277,7 +284,7 @@ func main() {
 	cancel()
 
 	// Give components time to shut down
-	time.Sleep(2 * time.Second)
+	time.Sleep(cfg.ShutdownDelay.Duration)
 
 	logger.Info("netd stopped")
 }

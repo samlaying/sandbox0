@@ -300,8 +300,18 @@ func (c *Coordinator) CoordinateFlush(ctx context.Context, volumeID string) erro
 	metrics.CoordinatorActiveCoordinations.Inc()
 	defer metrics.CoordinatorActiveCoordinations.Dec()
 
+	heartbeatTimeout := c.config.HeartbeatTimeout
+	if heartbeatTimeout == 0 {
+		heartbeatTimeout = HeartbeatTimeout
+	}
+
+	flushTimeout, _ := time.ParseDuration(c.config.FlushTimeout)
+	if flushTimeout == 0 {
+		flushTimeout = FlushTimeout
+	}
+
 	// 1. Get all active mounts for this volume
-	mounts, err := c.repo.GetActiveMounts(ctx, volumeID, HeartbeatTimeout)
+	mounts, err := c.repo.GetActiveMounts(ctx, volumeID, heartbeatTimeout)
 	if err != nil {
 		return fmt.Errorf("get active mounts: %w", err)
 	}
@@ -327,7 +337,7 @@ func (c *Coordinator) CoordinateFlush(ctx context.Context, volumeID string) erro
 		ExpectedNodes: len(mounts),
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
-		ExpiresAt:     time.Now().Add(FlushTimeout),
+		ExpiresAt:     time.Now().Add(flushTimeout),
 	}
 
 	if err := c.repo.CreateCoordination(ctx, coord); err != nil {
@@ -376,7 +386,12 @@ func (c *Coordinator) waitForFlushCompletion(ctx context.Context, coord *db.Snap
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	deadline := time.After(FlushTimeout)
+	flushTimeout, _ := time.ParseDuration(c.config.FlushTimeout)
+	if flushTimeout == 0 {
+		flushTimeout = FlushTimeout
+	}
+
+	deadline := time.After(flushTimeout)
 
 	for {
 		select {
@@ -572,7 +587,11 @@ func (c *Coordinator) handleFlushRequest(ctx context.Context, req *FlushRequest)
 
 // runHeartbeat updates heartbeats for all mounted volumes
 func (c *Coordinator) runHeartbeat(ctx context.Context) {
-	ticker := time.NewTicker(HeartbeatInterval)
+	interval, _ := time.ParseDuration(c.config.HeartbeatInterval)
+	if interval == 0 {
+		interval = HeartbeatInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -619,8 +638,17 @@ func (c *Coordinator) updateHeartbeats(ctx context.Context) {
 
 // runCleanup periodically cleans up stale mounts
 func (c *Coordinator) runCleanup(ctx context.Context) {
-	ticker := time.NewTicker(CleanupInterval)
+	cleanupInterval, _ := time.ParseDuration(c.config.CleanupInterval)
+	if cleanupInterval == 0 {
+		cleanupInterval = CleanupInterval
+	}
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
+
+	heartbeatTimeout := c.config.HeartbeatTimeout
+	if heartbeatTimeout == 0 {
+		heartbeatTimeout = HeartbeatTimeout
+	}
 
 	for {
 		select {
@@ -628,7 +656,7 @@ func (c *Coordinator) runCleanup(ctx context.Context) {
 			close(c.doneCh)
 			return
 		case <-ticker.C:
-			deleted, err := c.repo.DeleteStaleMounts(ctx, HeartbeatTimeout)
+			deleted, err := c.repo.DeleteStaleMounts(ctx, heartbeatTimeout)
 			if err != nil {
 				c.logger.WithError(err).Warn("Failed to cleanup stale mounts")
 			} else if deleted > 0 {

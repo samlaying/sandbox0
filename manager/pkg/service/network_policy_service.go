@@ -5,18 +5,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// NetworkPolicyServiceConfig holds configuration for NetworkPolicyService
+type NetworkPolicyServiceConfig struct {
+	DefaultBandwidthRateBps     int64
+	DefaultBandwidthBurstBytes  int64
+	BandwidthAccountingInterval int
+}
+
 // NetworkPolicyService builds network and bandwidth policy specs for pod annotations
 type NetworkPolicyService struct {
+	config NetworkPolicyServiceConfig
 	logger *zap.Logger
 }
 
 // NewNetworkPolicyService creates a new NetworkPolicyService
-func NewNetworkPolicyService(logger *zap.Logger) *NetworkPolicyService {
+func NewNetworkPolicyService(config NetworkPolicyServiceConfig, logger *zap.Logger) *NetworkPolicyService {
 	return &NetworkPolicyService{
+		config: config,
 		logger: logger,
 	}
 }
-
 
 // BuildNetworkPolicyRequest contains the request to build a network policy
 type BuildNetworkPolicyRequest struct {
@@ -38,7 +46,7 @@ func (s *NetworkPolicyService) BuildNetworkPolicyAnnotation(req *BuildNetworkPol
 		Egress:    v1alpha1.BuildEgressSpec(mergedSpec),
 		Ingress:   v1alpha1.BuildIngressSpec(mergedSpec),
 		Audit: &v1alpha1.AuditSpec{
-			Level:      "basic",
+			Level:      "basic", // default, can be overridden by template
 			SampleRate: "1.0",
 		},
 	}
@@ -61,15 +69,18 @@ func (s *NetworkPolicyService) BuildBandwidthPolicyAnnotation(req *BuildBandwidt
 	// Default values
 	egressRateBps := req.EgressRateBps
 	if egressRateBps == 0 {
-		egressRateBps = 100 * 1000 * 1000 // 100 Mbps default
+		egressRateBps = s.config.DefaultBandwidthRateBps
 	}
 	ingressRateBps := req.IngressRateBps
 	if ingressRateBps == 0 {
-		ingressRateBps = 100 * 1000 * 1000 // 100 Mbps default
+		ingressRateBps = s.config.DefaultBandwidthRateBps
 	}
 	burstBytes := req.BurstBytes
 	if burstBytes == 0 {
-		burstBytes = egressRateBps / 8 // 1 second burst
+		burstBytes = s.config.DefaultBandwidthBurstBytes
+	}
+	if burstBytes == 0 {
+		burstBytes = egressRateBps / 8 // fallback if still 0
 	}
 
 	spec := &v1alpha1.BandwidthPolicySpec{
@@ -85,7 +96,7 @@ func (s *NetworkPolicyService) BuildBandwidthPolicyAnnotation(req *BuildBandwidt
 		},
 		Accounting: &v1alpha1.AccountingSpec{
 			Enabled:               true,
-			ReportIntervalSeconds: 10, // Fixed per platform policy
+			ReportIntervalSeconds: int32(s.config.BandwidthAccountingInterval),
 		},
 	}
 

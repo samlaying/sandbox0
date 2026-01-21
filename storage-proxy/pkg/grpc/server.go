@@ -468,8 +468,11 @@ func (s *FileSystemServer) StatFs(ctx context.Context, req *pb.StatFsRequest) (*
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	// Convert to filesystem blocks (4KB blocks)
-	const blockSize = 4096
+	// Use configured block size if available, otherwise default to 4096
+	blockSize := uint64(volCtx.VFS.Conf.Format.BlockSize) * 1024
+	if blockSize == 0 {
+		blockSize = 4096
+	}
 	blocks := totalSpace / blockSize
 	bavail := availSpace / blockSize
 
@@ -479,9 +482,9 @@ func (s *FileSystemServer) StatFs(ctx context.Context, req *pb.StatFsRequest) (*
 		Bavail:  bavail,
 		Files:   iused + iavail,
 		Ffree:   iavail,
-		Bsize:   blockSize,
+		Bsize:   uint32(blockSize),
 		Namelen: 255,
-		Frsize:  blockSize,
+		Frsize:  uint32(blockSize),
 	}, nil
 }
 

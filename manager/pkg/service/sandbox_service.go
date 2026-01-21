@@ -46,6 +46,20 @@ const (
 	SandboxStatusCompleted = "completed"
 )
 
+// SandboxServiceConfig handles configuration for SandboxService
+type SandboxServiceConfig struct {
+	DefaultTTL                  time.Duration
+	DefaultBandwidthRateBps     int64
+	DefaultBandwidthBurstBytes  int64
+	BandwidthAccountingInterval int
+	PauseMinMemoryRequest       string
+	PauseMinMemoryLimit         string
+	PauseMemoryBufferRatio      float64
+	PauseMinCPU                 string
+	ProcdPort                   int
+	ProcdClientTimeout          time.Duration
+}
+
 // SandboxService handles sandbox operations
 type SandboxService struct {
 	k8sClient              kubernetes.Interface
@@ -56,7 +70,7 @@ type SandboxService struct {
 	internalTokenGenerator TokenGenerator
 	procdTokenGenerator    TokenGenerator
 	clock                  TimeProvider
-	defaultTTL             time.Duration
+	config                 SandboxServiceConfig
 	logger                 *zap.Logger
 }
 
@@ -88,7 +102,7 @@ func NewSandboxService(
 	internalTokenGenerator TokenGenerator,
 	procdTokenGenerator TokenGenerator,
 	clock TimeProvider,
-	defaultTTL time.Duration,
+	config SandboxServiceConfig,
 	logger *zap.Logger,
 ) *SandboxService {
 	// Use system time as fallback if clock is nil
@@ -101,11 +115,11 @@ func NewSandboxService(
 		podLister:              podLister,
 		templateLister:         templateLister,
 		NetworkPolicyService:   networkPolicyService,
-		procdClient:            NewProcdClient(),
+		procdClient:            NewProcdClient(ProcdClientConfig{Timeout: config.ProcdClientTimeout}),
 		internalTokenGenerator: internalTokenGenerator,
 		procdTokenGenerator:    procdTokenGenerator,
 		clock:                  clock,
-		defaultTTL:             defaultTTL,
+		config:                 config,
 		logger:                 logger,
 	}
 }
@@ -288,7 +302,7 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 	pod.Annotations[controller.AnnotationClaimType] = "hot"
 
 	// Set expiration time
-	ttl := int32(s.defaultTTL.Seconds())
+	ttl := int32(s.config.DefaultTTL.Seconds())
 	if req.Config != nil && req.Config.TTL > 0 {
 		ttl = req.Config.TTL
 	}
@@ -330,8 +344,9 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 		bandwidthPolicyJSON, err := s.NetworkPolicyService.BuildBandwidthPolicyAnnotation(&BuildBandwidthPolicyRequest{
 			SandboxID:         pod.Name,
 			TeamID:            req.TeamID,
-			EgressRateBps:     100 * 1000 * 1000, // 100 Mbps
-			IngressRateBps:    100 * 1000 * 1000, // 100 Mbps
+			EgressRateBps:     s.config.DefaultBandwidthRateBps,
+			IngressRateBps:    s.config.DefaultBandwidthRateBps,
+			BurstBytes:        s.config.DefaultBandwidthBurstBytes,
 			AccountingEnabled: true,
 		})
 		if err != nil {
@@ -388,7 +403,7 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 	}
 
 	// Set expiration time
-	ttl := int32(s.defaultTTL.Seconds())
+	ttl := int32(s.config.DefaultTTL.Seconds())
 	if req.Config != nil && req.Config.TTL > 0 {
 		ttl = req.Config.TTL
 	}
@@ -430,8 +445,9 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 		bandwidthPolicyJSON, err := s.NetworkPolicyService.BuildBandwidthPolicyAnnotation(&BuildBandwidthPolicyRequest{
 			SandboxID:         podName,
 			TeamID:            req.TeamID,
-			EgressRateBps:     100 * 1000 * 1000, // 100 Mbps
-			IngressRateBps:    100 * 1000 * 1000, // 100 Mbps
+			EgressRateBps:     s.config.DefaultBandwidthRateBps,
+			IngressRateBps:    s.config.DefaultBandwidthRateBps,
+			BurstBytes:        s.config.DefaultBandwidthBurstBytes,
 			AccountingEnabled: true,
 		})
 		if err != nil {
@@ -528,7 +544,7 @@ func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbo
 }
 
 func (s *SandboxService) prodAddress(name, namespace string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:49983", name, namespace)
+	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, s.config.ProcdPort)
 }
 
 // podPhaseToSandboxStatus converts pod phase to sandbox status
@@ -677,16 +693,18 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 		// Ensure a minimum safety baseline (e.g. 10Mi) to prevent container crash/instability
 		// slightly lower than the buffer minimum
 		reqBytes := int64(workingSet)
-		if reqBytes < 10*1024*1024 {
-			reqBytes = 10 * 1024 * 1024
+		minReq, err := resource.ParseQuantity(s.config.PauseMinMemoryRequest)
+		if err == nil && reqBytes < minReq.Value() {
+			reqBytes = minReq.Value()
 		}
 		newRequestMemory = *resource.NewQuantity(reqBytes, resource.BinarySI)
 
-		// Limit = Usage * 1.1 (Buffer)
-		// Minimum 32Mi to avoid too aggressive scaling
-		limitBytes := int64(float64(workingSet) * 1.1)
-		if limitBytes < 32*1024*1024 {
-			limitBytes = 32 * 1024 * 1024
+		// Limit = Usage * bufferRatio
+		// Minimum limit to avoid too aggressive scaling
+		limitBytes := int64(float64(workingSet) * s.config.PauseMemoryBufferRatio)
+		minLimit, err := resource.ParseQuantity(s.config.PauseMinMemoryLimit)
+		if err == nil && limitBytes < minLimit.Value() {
+			limitBytes = minLimit.Value()
 		}
 		newLimitMemory = *resource.NewQuantity(limitBytes, resource.BinarySI)
 	}
@@ -695,7 +713,7 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 	// Since processes are SIGSTOP'ed, they consume negligible CPU.
 	// We reduce requests to release node capacity for other workloads.
 	// K8s doesn't allow 0 CPU, so we use a minimal value (e.g., 10m).
-	minCPU := resource.MustParse("10m")
+	minCPU := resource.MustParse(s.config.PauseMinCPU)
 
 	// Update pod with reduced resources (in-place update)
 	podCopy := pod.DeepCopy()
@@ -816,7 +834,7 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 				podCopy.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
 			} else {
 				// Fallback to default TTL if no original TTL was saved
-				newExpiresAt := s.clock.Now().Add(s.defaultTTL)
+				newExpiresAt := s.clock.Now().Add(s.config.DefaultTTL)
 				podCopy.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
 			}
 
@@ -946,7 +964,7 @@ func (s *SandboxService) RefreshSandbox(ctx context.Context, sandboxID string, r
 		ttlDuration = time.Duration(req.Duration) * time.Second
 	} else {
 		// Try to get original TTL from config annotation
-		ttlDuration = s.defaultTTL
+		ttlDuration = s.config.DefaultTTL
 		if configJSON := pod.Annotations[controller.AnnotationConfig]; configJSON != "" {
 			var config SandboxConfig
 			if err := json.Unmarshal([]byte(configJSON), &config); err == nil && config.TTL > 0 {

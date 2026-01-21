@@ -12,6 +12,7 @@ import (
 
 // InitConfig holds configuration for JuiceFS initialization
 type InitConfig struct {
+	Name           string
 	MetaURL        string
 	S3Bucket       string
 	S3Region       string
@@ -19,6 +20,10 @@ type InitConfig struct {
 	S3AccessKey    string
 	S3SecretKey    string
 	S3SessionToken string
+	BlockSize      int
+	Compression    string
+	TrashDays      int
+	MetaRetries    int
 }
 
 // Initializer handles JuiceFS filesystem initialization
@@ -109,7 +114,10 @@ func (i *Initializer) ensureBucketExists() error {
 // isFormatted checks if JuiceFS is already formatted
 func (i *Initializer) isFormatted() (bool, error) {
 	metaConf := meta.DefaultConf()
-	metaConf.Retries = 3
+	metaConf.Retries = i.config.MetaRetries
+	if metaConf.Retries == 0 {
+		metaConf.Retries = 3
+	}
 
 	metaClient := meta.NewClient(i.config.MetaURL, metaConf)
 
@@ -137,7 +145,10 @@ func (i *Initializer) format() error {
 
 	// Create metadata client
 	metaConf := meta.DefaultConf()
-	metaConf.Retries = 10
+	metaConf.Retries = i.config.MetaRetries
+	if metaConf.Retries == 0 {
+		metaConf.Retries = 10
+	}
 
 	metaClient := meta.NewClient(i.config.MetaURL, metaConf)
 
@@ -149,17 +160,27 @@ func (i *Initializer) format() error {
 
 	// Create format configuration
 	format := &meta.Format{
-		Name:         "sandbox0",
+		Name:         i.config.Name,
 		UUID:         "", // Will be auto-generated
 		Storage:      "s3",
 		Bucket:       i.buildBucketURL(),
 		AccessKey:    i.config.S3AccessKey,
 		SecretKey:    i.config.S3SecretKey,
 		SessionToken: i.config.S3SessionToken,
-		BlockSize:    4096,  // 4MB blocks
-		Compression:  "lz4", // Use LZ4 compression
-		TrashDays:    1,     // Keep deleted files for 1 day
+		BlockSize:    i.config.BlockSize,
+		Compression:  i.config.Compression,
+		TrashDays:    i.config.TrashDays,
 		MetaVersion:  1,
+	}
+
+	if format.Name == "" {
+		format.Name = "sandbox0"
+	}
+	if format.BlockSize == 0 {
+		format.BlockSize = 4096
+	}
+	if format.Compression == "" {
+		format.Compression = "lz4"
 	}
 
 	// Initialize the format in metadata engine

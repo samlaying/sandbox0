@@ -22,13 +22,16 @@ type ManagerClient struct {
 }
 
 // NewManagerClient creates a new manager client
-func NewManagerClient(baseURL string, internalAuthGen *internalauth.Generator, logger *zap.Logger) *ManagerClient {
+func NewManagerClient(baseURL string, internalAuthGen *internalauth.Generator, logger *zap.Logger, timeout time.Duration) *ManagerClient {
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
 	return &ManagerClient{
 		baseURL:         baseURL,
 		internalAuthGen: internalAuthGen,
 		logger:          logger,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: timeout,
 		},
 	}
 }
@@ -51,7 +54,7 @@ func (c *ManagerClient) GetSandbox(ctx context.Context, sandboxID, userID, teamI
 	}
 
 	// Set headers
-	req.Header.Set("X-Internal-Token", token)
+	req.Header.Set(internalauth.DefaultTokenHeader, token)
 	req.Header.Set("Content-Type", "application/json")
 
 	// Execute request

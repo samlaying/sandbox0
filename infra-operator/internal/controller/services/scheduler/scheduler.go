@@ -29,6 +29,7 @@ import (
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalauth"
+	pkginternalauth "github.com/sandbox0-ai/infra/pkg/internalauth"
 )
 
 type Reconciler struct {
@@ -94,13 +95,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 			},
 			{
 				Name:      "internal-jwt-private-key",
-				MountPath: "/secrets/internal_jwt_private.key",
+				MountPath: pkginternalauth.DefaultInternalJWTPrivateKeyPath,
 				SubPath:   "internal_jwt_private.key",
 				ReadOnly:  true,
 			},
 			{
 				Name:      "internal-jwt-public-key",
-				MountPath: "/config/internal_jwt_public.key",
+				MountPath: pkginternalauth.DefaultInternalJWTPublicKeyPath,
 				SubPath:   "internal_jwt_public.key",
 				ReadOnly:  true,
 			},

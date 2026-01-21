@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	egmigrations "github.com/sandbox0-ai/infra/edge-gateway/migrations"
-	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/edge-gateway/pkg/http"
+	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -38,7 +38,7 @@ func main() {
 	defer cancel()
 
 	// Initialize database connection pool
-	pool, err := initDatabase(ctx, cfg.DatabaseURL, logger)
+	pool, err := initDatabase(ctx, cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
@@ -121,15 +121,15 @@ func initLogger(level string) (*zap.Logger, error) {
 }
 
 // initDatabase initializes the database connection pool
-func initDatabase(ctx context.Context, databaseURL string, logger *zap.Logger) (*pgxpool.Pool, error) {
-	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+func initDatabase(ctx context.Context, cfg *config.EdgeGatewayConfig, logger *zap.Logger) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database URL: %w", err)
 	}
 
 	// Configure pool
-	poolConfig.MaxConns = 30
-	poolConfig.MinConns = 8
+	poolConfig.MaxConns = int32(cfg.DatabaseMaxConns)
+	poolConfig.MinConns = int32(cfg.DatabaseMinConns)
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {

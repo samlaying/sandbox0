@@ -84,7 +84,10 @@ func NewManager(
 	// Initialize independent JuiceFS meta client for snapshot operations.
 	// This allows snapshots to be created/restored/deleted without requiring the volume to be mounted.
 	metaConf := meta.DefaultConf()
-	metaConf.Retries = 5
+	metaConf.Retries = cfg.JuiceFSMetaRetries
+	if metaConf.Retries == 0 {
+		metaConf.Retries = 5
+	}
 	// Snapshot operations are read-only from the cache perspective
 	metaConf.ReadOnly = false
 	metaClient := meta.NewClient(cfg.MetaURL, metaConf)
@@ -360,7 +363,7 @@ func (m *Manager) RestoreSnapshot(ctx context.Context, req *RestoreSnapshotReque
 	}
 
 	// 2. Acquire volume lock
-	if !m.acquireVolumeLock(req.VolumeID, 30*time.Second) {
+	if !m.acquireVolumeLock(req.VolumeID, 60*time.Second) { // Increased timeout for restore
 		return ErrVolumeLocked
 	}
 	defer m.releaseVolumeLock(req.VolumeID)

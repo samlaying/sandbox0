@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -20,6 +21,7 @@ type Manager struct {
 	bpfFSPath  string
 	pinPath    string
 	useEDT     bool // Use Earliest Departure Time for pacing
+	edtHorizon time.Duration
 	mu         sync.RWMutex
 	programs   map[string]*Program
 	queueDiscs map[string]*QDisc
@@ -71,15 +73,20 @@ type RateLimitConfig struct {
 	IngressRateBps int64
 	BurstBytes     int64
 	UseBPF         bool
+	EDTHorizon     time.Duration
 }
 
 // NewManager creates a new eBPF Manager
-func NewManager(logger *zap.Logger, bpfFSPath string, useEDT bool) (*Manager, error) {
+func NewManager(logger *zap.Logger, bpfFSPath string, pinPathName string, useEDT bool, edtHorizon time.Duration) (*Manager, error) {
 	if bpfFSPath == "" {
 		bpfFSPath = "/sys/fs/bpf"
 	}
 
-	pinPath := filepath.Join(bpfFSPath, "netd")
+	if pinPathName == "" {
+		pinPathName = "netd"
+	}
+
+	pinPath := filepath.Join(bpfFSPath, pinPathName)
 
 	// Check if bpffs is mounted
 	if err := checkBPFFS(bpfFSPath); err != nil {
@@ -102,6 +109,7 @@ func NewManager(logger *zap.Logger, bpfFSPath string, useEDT bool) (*Manager, er
 		bpfFSPath:  bpfFSPath,
 		pinPath:    pinPath,
 		useEDT:     useEDT,
+		edtHorizon: edtHorizon,
 		programs:   make(map[string]*Program),
 		queueDiscs: make(map[string]*QDisc),
 	}, nil
@@ -219,7 +227,7 @@ func (m *Manager) applyFQQdisc(ctx context.Context, iface string, rateBps int64,
 	}
 
 	if m.useEDT {
-		args = append(args, "horizon", "10ms") // 10ms horizon for EDT
+		args = append(args, "horizon", m.edtHorizon.String())
 	}
 
 	cmd := exec.CommandContext(ctx, "tc", args...)

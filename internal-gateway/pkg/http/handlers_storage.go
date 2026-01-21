@@ -27,8 +27,8 @@ func (s *Server) proxyToStorageProxy(c *gin.Context) {
 	}
 
 	// Set headers
-	c.Request.Header.Set("X-Team-ID", authCtx.TeamID)
-	c.Request.Header.Set("X-Internal-Token", internalToken)
+	c.Request.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
+	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
 
 	// Forward to storage-proxy
 	s.proxy2sp.ProxyToTarget(c)

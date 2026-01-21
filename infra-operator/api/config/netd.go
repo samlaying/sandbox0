@@ -101,10 +101,55 @@ type NetdConfig struct {
 	// +kubebuilder:default="/sys/fs/bpf"
 	BPFFSPath string `yaml:"bpf_fs_path" json:"bpfFSPath"`
 
+	// BPFPinPath is the sub-path within BPFFS to pin BPF maps/programs
+	// +optional
+	// +kubebuilder:default="netd"
+	BPFPinPath string `yaml:"bpf_pin_path" json:"bpfPinPath"`
+
 	// UseEDT enables Earliest Departure Time pacing for eBPF
 	// +optional
 	// +kubebuilder:default=true
 	UseEDT bool `yaml:"use_edt" json:"useEDT"`
+
+	// ProxyUpstreamTimeout is the timeout for connecting to upstream servers
+	// +optional
+	// +kubebuilder:default="10s"
+	ProxyUpstreamTimeout metav1.Duration `yaml:"proxy_upstream_timeout" json:"proxyUpstreamTimeout"`
+
+	// ProxyDNSTimeout is the timeout for DNS resolution in the proxy
+	// +optional
+	// +kubebuilder:default="10s"
+	ProxyDNSTimeout metav1.Duration `yaml:"proxy_dns_timeout" json:"proxyDNSTimeout"`
+
+	// ProxyHeaderLimit is the maximum size for HTTP headers
+	// +optional
+	// +kubebuilder:default=65536
+	ProxyHeaderLimit int64 `yaml:"proxy_header_limit" json:"proxyHeaderLimit"`
+
+	// DNSPort is the port used for DNS lookups
+	// +optional
+	// +kubebuilder:default=53
+	DNSPort int `yaml:"dns_port" json:"dnsPort"`
+
+	// VethPrefix is the prefix for veth interfaces
+	// +optional
+	// +kubebuilder:default="veth"
+	VethPrefix string `yaml:"veth_prefix" json:"vethPrefix"`
+
+	// BurstRatio is the default ratio of rate to burst (e.g. 0.125 for 1/8)
+	// +optional
+	// +kubebuilder:default="0.125"
+	BurstRatio float64 `yaml:"burst_ratio" json:"burstRatio"`
+
+	// EDTHorizon is the horizon for EDT-based pacing
+	// +optional
+	// +kubebuilder:default="10ms"
+	EDTHorizon metav1.Duration `yaml:"edt_horizon" json:"edtHorizon"`
+
+	// ShutdownDelay is the delay before final shutdown
+	// +optional
+	// +kubebuilder:default="2s"
+	ShutdownDelay metav1.Duration `yaml:"shutdown_delay" json:"shutdownDelay"`
 }
 
 // LoadNetdConfig returns the netd configuration.

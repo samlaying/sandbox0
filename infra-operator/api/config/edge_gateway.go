@@ -27,6 +27,12 @@ type EdgeGatewayConfig struct {
 	// Database configuration (for API key validation)
 	// +optional
 	DatabaseURL string `yaml:"database_url" json:"databaseUrl"`
+	// +optional
+	// +kubebuilder:default=30
+	DatabaseMaxConns int `yaml:"database_max_conns" json:"databaseMaxConns"`
+	// +optional
+	// +kubebuilder:default=8
+	DatabaseMinConns int `yaml:"database_min_conns" json:"databaseMinConns"`
 
 	// Upstream service
 	// +optional
@@ -38,9 +44,25 @@ type EdgeGatewayConfig struct {
 	// +optional
 	SchedulerURL string `yaml:"scheduler_url" json:"schedulerUrl"`
 
+	// Internal Authentication
+	// +optional
+	// +kubebuilder:default="30s"
+	InternalAuthTTL metav1.Duration `yaml:"internal_auth_ttl" json:"internalAuthTTL"`
+	// +optional
+	// +kubebuilder:default="edge-gateway"
+	InternalAuthCaller string `yaml:"internal_auth_caller" json:"internalAuthCaller"`
+
+	// Cache configuration
+	// +optional
+	// +kubebuilder:default="30s"
+	ClusterCacheTTL metav1.Duration `yaml:"cluster_cache_ttl" json:"clusterCacheTTL"`
+
 	// JWT Configuration
 	// +optional
 	JWTSecret string `yaml:"jwt_secret" json:"jwtSecret"`
+	// +optional
+	// +kubebuilder:default="edge-gateway"
+	JWTIssuer string `yaml:"jwt_issuer" json:"jwtIssuer"`
 	// +optional
 	// +kubebuilder:default="15m"
 	JWTAccessTokenTTL metav1.Duration `yaml:"jwt_access_token_ttl" json:"jwtAccessTokenTTL"`
@@ -55,6 +77,9 @@ type EdgeGatewayConfig struct {
 	// +optional
 	// +kubebuilder:default=200
 	RateLimitBurst int `yaml:"rate_limit_burst" json:"rateLimitBurst"`
+	// +optional
+	// +kubebuilder:default="10m"
+	RateLimitCleanupInterval metav1.Duration `yaml:"rate_limit_cleanup_interval" json:"rateLimitCleanupInterval"`
 
 	// Timeouts
 	// +optional
@@ -63,6 +88,20 @@ type EdgeGatewayConfig struct {
 	// +optional
 	// +kubebuilder:default="30s"
 	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
+	// +optional
+	// +kubebuilder:default="30s"
+	ServerReadTimeout metav1.Duration `yaml:"server_read_timeout" json:"serverReadTimeout"`
+	// +optional
+	// +kubebuilder:default="60s"
+	ServerWriteTimeout metav1.Duration `yaml:"server_write_timeout" json:"serverWriteTimeout"`
+	// +optional
+	// +kubebuilder:default="120s"
+	ServerIdleTimeout metav1.Duration `yaml:"server_idle_timeout" json:"serverIdleTimeout"`
+
+	// Identity and Teams
+	// +optional
+	// +kubebuilder:default="Personal Team"
+	DefaultTeamName string `yaml:"default_team_name" json:"defaultTeamName"`
 
 	// Built-in Authentication
 	// +optional
@@ -72,6 +111,12 @@ type EdgeGatewayConfig struct {
 	// OIDC Providers
 	// +optional
 	OIDCProviders []OIDCProviderConfig `yaml:"oidc_providers" json:"oidcProviders"`
+	// +optional
+	// +kubebuilder:default="10m"
+	OIDCStateTTL metav1.Duration `yaml:"oidc_state_ttl" json:"oidcStateTTL"`
+	// +optional
+	// +kubebuilder:default="5m"
+	OIDCStateCleanupInterval metav1.Duration `yaml:"oidc_state_cleanup_interval" json:"oidcStateCleanupInterval"`
 
 	// Base URL for OIDC callbacks
 	// +optional

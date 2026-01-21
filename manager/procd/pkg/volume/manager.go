@@ -86,12 +86,12 @@ func (m *Manager) Mount(ctx context.Context, req *MountRequest) (*MountResponse,
 	// This initializes the JuiceFS mount on the storage-proxy side
 	volumeConfig := req.VolumeConfig
 	if volumeConfig == nil {
-		// Use default config if not provided
+		// Use default config from manager if not provided
 		volumeConfig = &VolumeConfig{
-			CacheSize:  "100",
-			Prefetch:   3,
-			BufferSize: "300",
-			Writeback:  true,
+			CacheSize:  m.config.JuiceFSCacheSize,
+			Prefetch:   int32(m.config.JuiceFSPrefetch),
+			BufferSize: m.config.JuiceFSBufferSize,
+			Writeback:  m.config.JuiceFSWriteback,
 			ReadOnly:   false,
 		}
 	}
@@ -260,7 +260,7 @@ func (m *Manager) getStorageProxyAddress() string {
 	hash.Write([]byte(m.config.NodeName))
 	replicaIndex := hash.Sum32() % uint32(m.config.ProxyReplicas)
 
-	return fmt.Sprintf("storage-proxy-%d.%s:8080", replicaIndex, m.config.ProxyBaseURL)
+	return fmt.Sprintf("storage-proxy-%d.%s:%d", replicaIndex, m.config.ProxyBaseURL, m.config.ProxyPort)
 }
 
 // Cleanup unmounts all volumes.
@@ -300,19 +300,24 @@ func (m *Manager) Cleanup() {
 
 // createGRPCConnection creates a gRPC connection with packet marking and auth.
 // This allows the connection to bypass nftables rules for storage traffic.
-// SO_MARK=0x2 is used to mark packets for special routing that bypasses
+// SO_MARK is used to mark packets for special routing that bypasses
 // the sandbox's network policy restrictions.
 func (m *Manager) createGRPCConnection(ctx context.Context, proxyAddr string) (*grpc.ClientConn, error) {
+	soMark := m.config.SOMark
+	if soMark == 0 {
+		soMark = 0x2 // fallback to default if 0
+	}
+
 	// Custom dialer that sets SO_MARK socket option
 	dialer := &net.Dialer{
 		Control: func(network, address string, c syscall.RawConn) error {
 			var opErr error
 			err := c.Control(func(fd uintptr) {
-				// Set SO_MARK = 0x2 to bypass nftables rules
+				// Set SO_MARK to bypass nftables rules
 				// 0x24 is SO_MARK on Linux (syscall.SO_MARK)
 				// This packet mark allows storage traffic to bypass
 				// the sandbox's network isolation rules
-				opErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0x24, 0x2)
+				opErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, 0x24, soMark)
 			})
 			if err != nil {
 				return err
@@ -321,14 +326,19 @@ func (m *Manager) createGRPCConnection(ctx context.Context, proxyAddr string) (*
 		},
 	}
 
+	maxMsgSize := m.config.GRPCMaxMsgSize
+	if maxMsgSize == 0 {
+		maxMsgSize = 100 * 1024 * 1024 // 100MB default
+	}
+
 	conn, err := grpc.DialContext(ctx, proxyAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "tcp", addr)
 		}),
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(100*1024*1024), // 100MB max message size
-			grpc.MaxCallSendMsgSize(100*1024*1024), // 100MB max message size
+			grpc.MaxCallRecvMsgSize(maxMsgSize),
+			grpc.MaxCallSendMsgSize(maxMsgSize),
 		),
 		grpc.WithUnaryInterceptor(m.authInterceptor()),
 		grpc.WithStreamInterceptor(m.streamAuthInterceptor()),

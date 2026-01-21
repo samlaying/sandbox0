@@ -84,7 +84,10 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 
 	// 1. Initialize JuiceFS metadata client
 	metaConf := meta.DefaultConf()
-	metaConf.Retries = 10
+	metaConf.Retries = m.config.JuiceFSMetaRetries
+	if metaConf.Retries == 0 {
+		metaConf.Retries = 10
+	}
 	metaConf.ReadOnly = config.ReadOnly
 
 	metaClient := meta.NewClient(m.config.MetaURL, metaConf)
@@ -105,10 +108,15 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	cacheDir := filepath.Join(m.config.CacheDir, volumeID)
 	defaultCacheSize := parseSizeString(m.config.DefaultCacheSize, 1<<30)
 
+	maxUpload := m.config.JuiceFSMaxUpload
+	if maxUpload == 0 {
+		maxUpload = 20
+	}
+
 	chunkConf := chunk.Config{
 		BlockSize:     int(format.BlockSize) * 1024,
 		Compress:      format.Compression,
-		MaxUpload:     20,
+		MaxUpload:     maxUpload,
 		MaxRetries:    10,
 		UploadLimit:   0,
 		DownloadLimit: 0,
@@ -125,14 +133,27 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	store := chunk.NewCachedStore(blob, chunkConf, prometheus.DefaultRegisterer)
 
 	// 4. Create JuiceFS VFS (in-memory, NO FUSE)
+	attrTimeout, _ := time.ParseDuration(m.config.JuiceFSAttrTimeout)
+	if attrTimeout == 0 {
+		attrTimeout = time.Second
+	}
+	entryTimeout, _ := time.ParseDuration(m.config.JuiceFSEntryTimeout)
+	if entryTimeout == 0 {
+		entryTimeout = time.Second
+	}
+	dirEntryTimeout, _ := time.ParseDuration(m.config.JuiceFSDirEntryTimeout)
+	if dirEntryTimeout == 0 {
+		dirEntryTimeout = time.Second
+	}
+
 	vfsConf := &vfs.Config{
 		Meta:            metaConf,
 		Format:          *format,
 		Chunk:           &chunkConf,
 		Version:         "1.0.0",
-		AttrTimeout:     time.Second,
-		EntryTimeout:    time.Second,
-		DirEntryTimeout: time.Second,
+		AttrTimeout:     attrTimeout,
+		EntryTimeout:    entryTimeout,
+		DirEntryTimeout: dirEntryTimeout,
 	}
 	registry, ok := prometheus.DefaultGatherer.(*prometheus.Registry)
 	if !ok {

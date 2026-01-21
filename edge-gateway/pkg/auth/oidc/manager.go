@@ -24,10 +24,13 @@ type StateData struct {
 
 // Manager manages multiple OIDC providers
 type Manager struct {
-	providers map[string]*Provider
-	repo      *db.Repository
-	baseURL   string
-	logger    *zap.Logger
+	providers       map[string]*Provider
+	repo            *db.Repository
+	baseURL         string
+	defaultTeamName string
+	stateTTL        time.Duration
+	cleanupInterval time.Duration
+	logger          *zap.Logger
 
 	// State management (in-memory for simplicity, use Redis in production)
 	states   map[string]*StateData
@@ -37,11 +40,14 @@ type Manager struct {
 // NewManager creates a new OIDC manager
 func NewManager(ctx context.Context, cfg *config.EdgeGatewayConfig, repo *db.Repository, logger *zap.Logger) (*Manager, error) {
 	m := &Manager{
-		providers: make(map[string]*Provider),
-		repo:      repo,
-		baseURL:   cfg.BaseURL,
-		logger:    logger,
-		states:    make(map[string]*StateData),
+		providers:       make(map[string]*Provider),
+		repo:            repo,
+		baseURL:         cfg.BaseURL,
+		defaultTeamName: cfg.DefaultTeamName,
+		stateTTL:        cfg.OIDCStateTTL.Duration,
+		cleanupInterval: cfg.OIDCStateCleanupInterval.Duration,
+		logger:          logger,
+		states:          make(map[string]*StateData),
 	}
 
 	// Initialize enabled providers
@@ -127,8 +133,8 @@ func (m *Manager) ValidateState(state string) (*StateData, error) {
 		return nil, ErrInvalidState
 	}
 
-	// Check expiration (10 minutes)
-	if time.Since(data.CreatedAt) > 10*time.Minute {
+	// Check expiration
+	if time.Since(data.CreatedAt) > m.stateTTL {
 		delete(m.states, state)
 		return nil, ErrInvalidState
 	}
@@ -236,7 +242,7 @@ func (m *Manager) findOrCreateUser(ctx context.Context, provider *Provider, user
 		IsAdmin:       false,
 	}
 
-	teamName := "Personal Team"
+	teamName := m.defaultTeamName
 	if user.Name != "" {
 		teamName = fmt.Sprintf("%s Team", user.Name)
 	}
@@ -260,7 +266,7 @@ func (m *Manager) findOrCreateUser(ctx context.Context, provider *Provider, user
 
 // cleanupStates periodically cleans up expired states
 func (m *Manager) cleanupStates(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(m.cleanupInterval)
 	defer ticker.Stop()
 
 	for {
@@ -271,7 +277,7 @@ func (m *Manager) cleanupStates(ctx context.Context) {
 			m.statesMu.Lock()
 			now := time.Now()
 			for state, data := range m.states {
-				if now.Sub(data.CreatedAt) > 10*time.Minute {
+				if now.Sub(data.CreatedAt) > m.stateTTL {
 					delete(m.states, state)
 				}
 			}

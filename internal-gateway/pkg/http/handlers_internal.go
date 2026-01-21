@@ -16,8 +16,12 @@ func (s *Server) getClusterSummary(c *gin.Context) {
 	authCtx := middleware.GetAuthContext(c)
 
 	// Generate internal token for manager
+	perms := s.cfg.SchedulerPermissions
+	if len(perms) == 0 {
+		perms = []string{"*:*"}
+	}
 	internalToken, err := s.internalAuthGen.Generate("manager", authCtx.TeamID, authCtx.UserID, internalauth.GenerateOptions{
-		Permissions: []string{"*:*"},
+		Permissions: perms,
 	})
 	if err != nil {
 		s.logger.Error("Failed to generate internal token for manager",
@@ -29,8 +33,8 @@ func (s *Server) getClusterSummary(c *gin.Context) {
 	}
 
 	// Set headers
-	c.Request.Header.Set("X-Team-ID", authCtx.TeamID)
-	c.Request.Header.Set("X-Internal-Token", internalToken)
+	c.Request.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
+	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
 
 	// Rewrite path for manager
 	c.Request.URL.Path = "/api/v1/cluster/summary"
@@ -44,8 +48,12 @@ func (s *Server) getTemplateStats(c *gin.Context) {
 	authCtx := middleware.GetAuthContext(c)
 
 	// Generate internal token for manager
+	perms := s.cfg.SchedulerPermissions
+	if len(perms) == 0 {
+		perms = []string{"*:*"}
+	}
 	internalToken, err := s.internalAuthGen.Generate("manager", authCtx.TeamID, authCtx.UserID, internalauth.GenerateOptions{
-		Permissions: []string{"*:*"},
+		Permissions: perms,
 	})
 	if err != nil {
 		s.logger.Error("Failed to generate internal token for manager",
@@ -57,8 +65,8 @@ func (s *Server) getTemplateStats(c *gin.Context) {
 	}
 
 	// Set headers
-	c.Request.Header.Set("X-Team-ID", authCtx.TeamID)
-	c.Request.Header.Set("X-Internal-Token", internalToken)
+	c.Request.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
+	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
 
 	// Rewrite path for manager
 	c.Request.URL.Path = "/api/v1/templates/stats"

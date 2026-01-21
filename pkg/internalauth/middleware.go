@@ -11,6 +11,12 @@ const (
 
 	// AuthorizationHeader is the Authorization header for Bearer tokens.
 	AuthorizationHeader = "Authorization"
+
+	// TeamIDHeader is the header name for passing the team ID to internal services.
+	TeamIDHeader = "X-Team-ID"
+
+	// TokenForProcdHeader is the header name used to pass a storage token to procd.
+	TokenForProcdHeader = "X-Token-For-Procd"
 )
 
 // TokenExtractor extracts the internal token from an HTTP request.
