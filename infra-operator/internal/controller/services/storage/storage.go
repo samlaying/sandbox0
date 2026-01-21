@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package storage
 
 import (
 	"context"
@@ -28,9 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 )
 
 const (
@@ -39,8 +41,16 @@ const (
 	rustfsConsole    = 9001
 )
 
-// reconcileStorage reconciles the storage component
-func (r *Sandbox0InfraReconciler) reconcileStorage(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+type Reconciler struct {
+	Resources *common.ResourceManager
+}
+
+func NewReconciler(resources *common.ResourceManager) *Reconciler {
+	return &Reconciler{Resources: resources}
+}
+
+// Reconcile reconciles the storage component.
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
 
 	switch infra.Spec.Storage.Type {
@@ -49,14 +59,45 @@ func (r *Sandbox0InfraReconciler) reconcileStorage(ctx context.Context, infra *i
 		return r.reconcileBuiltinStorage(ctx, infra)
 	case infrav1alpha1.StorageTypeS3, infrav1alpha1.StorageTypeOSS:
 		logger.Info("Using external storage")
-		return r.validateExternalStorage(ctx, infra)
+		return ValidateExternalStorage(ctx, r.Resources.Client, infra)
 	default:
 		return r.reconcileBuiltinStorage(ctx, infra)
 	}
 }
 
-// reconcileBuiltinStorage creates a single-node RustFS (MinIO-compatible) deployment
-func (r *Sandbox0InfraReconciler) reconcileBuiltinStorage(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// ValidateExternalStorage validates external storage configuration.
+func ValidateExternalStorage(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) error {
+	switch infra.Spec.Storage.Type {
+	case infrav1alpha1.StorageTypeS3:
+		if infra.Spec.Storage.S3 == nil {
+			return fmt.Errorf("S3 configuration is required")
+		}
+		secret := &corev1.Secret{}
+		if err := client.Get(ctx, types.NamespacedName{
+			Name:      infra.Spec.Storage.S3.CredentialsSecret.Name,
+			Namespace: infra.Namespace,
+		}, secret); err != nil {
+			return fmt.Errorf("S3 credentials secret not found: %w", err)
+		}
+
+	case infrav1alpha1.StorageTypeOSS:
+		if infra.Spec.Storage.OSS == nil {
+			return fmt.Errorf("OSS configuration is required")
+		}
+		secret := &corev1.Secret{}
+		if err := client.Get(ctx, types.NamespacedName{
+			Name:      infra.Spec.Storage.OSS.CredentialsSecret.Name,
+			Namespace: infra.Namespace,
+		}, secret); err != nil {
+			return fmt.Errorf("OSS credentials secret not found: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// reconcileBuiltinStorage creates a single-node RustFS (MinIO-compatible) deployment.
+func (r *Reconciler) reconcileBuiltinStorage(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
 
 	// Create storage credentials secret
@@ -83,19 +124,19 @@ func (r *Sandbox0InfraReconciler) reconcileBuiltinStorage(ctx context.Context, i
 	return nil
 }
 
-// reconcileStorageSecret creates or updates the storage credentials secret
-func (r *Sandbox0InfraReconciler) reconcileStorageSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileStorageSecret creates or updates the storage credentials secret.
+func (r *Reconciler) reconcileStorageSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	secretName := fmt.Sprintf("%s-%s", infra.Name, rustfsSecretName)
 
 	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
 		accessKey := "sandbox0admin"
-		secretKey := generateRandomString(32)
+		secretKey := common.GenerateRandomString(32)
 
 		// Use configured credentials if provided
 		if infra.Spec.Storage.Builtin != nil && infra.Spec.Storage.Builtin.Credentials != nil {
@@ -120,22 +161,22 @@ func (r *Sandbox0InfraReconciler) reconcileStorageSecret(ctx context.Context, in
 			},
 		}
 
-		if err := ctrl.SetControllerReference(infra, secret, r.Scheme); err != nil {
+		if err := ctrl.SetControllerReference(infra, secret, r.Resources.Scheme); err != nil {
 			return err
 		}
 
-		return r.Create(ctx, secret)
+		return r.Resources.Client.Create(ctx, secret)
 	}
 
 	return nil
 }
 
-// reconcileStoragePVC creates or updates the storage PVC
-func (r *Sandbox0InfraReconciler) reconcileStoragePVC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileStoragePVC creates or updates the storage PVC.
+func (r *Reconciler) reconcileStoragePVC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	pvcName := fmt.Sprintf("%s-rustfs-data", infra.Name)
 
 	pvc := &corev1.PersistentVolumeClaim{}
-	err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: infra.Namespace}, pvc)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: infra.Namespace}, pvc)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -170,24 +211,24 @@ func (r *Sandbox0InfraReconciler) reconcileStoragePVC(ctx context.Context, infra
 			pvc.Spec.StorageClassName = &infra.Spec.Storage.Builtin.Persistence.StorageClass
 		}
 
-		if err := ctrl.SetControllerReference(infra, pvc, r.Scheme); err != nil {
+		if err := ctrl.SetControllerReference(infra, pvc, r.Resources.Scheme); err != nil {
 			return err
 		}
 
-		return r.Create(ctx, pvc)
+		return r.Resources.Client.Create(ctx, pvc)
 	}
 
 	return nil
 }
 
-// reconcileStorageStatefulSet creates or updates the RustFS/MinIO StatefulSet
-func (r *Sandbox0InfraReconciler) reconcileStorageStatefulSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileStorageStatefulSet creates or updates the RustFS/MinIO StatefulSet.
+func (r *Reconciler) reconcileStorageStatefulSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	stsName := fmt.Sprintf("%s-rustfs", infra.Name)
 	secretName := fmt.Sprintf("%s-%s", infra.Name, rustfsSecretName)
 	pvcName := fmt.Sprintf("%s-rustfs-data", infra.Name)
 
 	sts := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: infra.Namespace}, sts)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: stsName, Namespace: infra.Namespace}, sts)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -341,25 +382,25 @@ func (r *Sandbox0InfraReconciler) reconcileStorageStatefulSet(ctx context.Contex
 		},
 	}
 
-	if err := ctrl.SetControllerReference(infra, desiredSts, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, desiredSts, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredSts)
+		return r.Resources.Client.Create(ctx, desiredSts)
 	}
 
 	// Update existing StatefulSet
 	sts.Spec = desiredSts.Spec
-	return r.Update(ctx, sts)
+	return r.Resources.Client.Update(ctx, sts)
 }
 
-// reconcileStorageService creates or updates the RustFS/MinIO Service
-func (r *Sandbox0InfraReconciler) reconcileStorageService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileStorageService creates or updates the RustFS/MinIO Service.
+func (r *Reconciler) reconcileStorageService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	svcName := fmt.Sprintf("%s-rustfs", infra.Name)
 
 	svc := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: svcName, Namespace: infra.Namespace}, svc)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: svcName, Namespace: infra.Namespace}, svc)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -394,20 +435,20 @@ func (r *Sandbox0InfraReconciler) reconcileStorageService(ctx context.Context, i
 		},
 	}
 
-	if err := ctrl.SetControllerReference(infra, desiredSvc, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, desiredSvc, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredSvc)
+		return r.Resources.Client.Create(ctx, desiredSvc)
 	}
 
 	// Update existing Service
 	svc.Spec = desiredSvc.Spec
-	return r.Update(ctx, svc)
+	return r.Resources.Client.Update(ctx, svc)
 }
 
-// StorageConfig contains storage configuration for services
+// StorageConfig contains storage configuration for services.
 type StorageConfig struct {
 	Type         infrav1alpha1.StorageType
 	Endpoint     string
@@ -419,8 +460,8 @@ type StorageConfig struct {
 	SecretName   string
 }
 
-// getStorageConfig returns the storage configuration for services to use
-func (r *Sandbox0InfraReconciler) getStorageConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*StorageConfig, error) {
+// GetStorageConfig returns the storage configuration for services to use.
+func GetStorageConfig(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) (*StorageConfig, error) {
 	config := &StorageConfig{
 		Type: infra.Spec.Storage.Type,
 	}
@@ -429,7 +470,7 @@ func (r *Sandbox0InfraReconciler) getStorageConfig(ctx context.Context, infra *i
 	case infrav1alpha1.StorageTypeBuiltin:
 		secretName := fmt.Sprintf("%s-%s", infra.Name, rustfsSecretName)
 		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret); err != nil {
 			return nil, err
 		}
 		config.Endpoint = string(secret.Data["endpoint"])
@@ -451,7 +492,7 @@ func (r *Sandbox0InfraReconciler) getStorageConfig(ctx context.Context, infra *i
 
 		// Get credentials from secret
 		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: s3.CredentialsSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Name: s3.CredentialsSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
 			return nil, err
 		}
 		accessKeyKey := s3.CredentialsSecret.AccessKeyKey
@@ -481,7 +522,7 @@ func (r *Sandbox0InfraReconciler) getStorageConfig(ctx context.Context, infra *i
 
 		// Get credentials from secret
 		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: oss.CredentialsSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Name: oss.CredentialsSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
 			return nil, err
 		}
 		accessKeyKey := oss.CredentialsSecret.AccessKeyKey

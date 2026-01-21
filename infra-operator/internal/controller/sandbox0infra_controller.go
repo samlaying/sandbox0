@@ -36,6 +36,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/rbac"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/database"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/edgegateway"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalgateway"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalauth"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/manager"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/netd"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/scheduler"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storage"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storageproxy"
 )
 
 const (
@@ -185,10 +196,23 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling all mode")
 
+	resources := common.NewResourceManager(r.Client, r.Scheme)
+	imageRepo := r.getImageRepo(ctx)
+	authReconciler := internalauth.NewReconciler(resources)
+	dbReconciler := database.NewReconciler(resources)
+	storageReconciler := storage.NewReconciler(resources)
+	edgeGatewayReconciler := edgegateway.NewReconciler(resources)
+	schedulerReconciler := scheduler.NewReconciler(resources)
+	internalGatewayReconciler := internalgateway.NewReconciler(resources)
+	managerReconciler := manager.NewReconciler(resources)
+	storageProxyReconciler := storageproxy.NewReconciler(resources)
+	netdReconciler := netd.NewReconciler(resources)
+	rbacReconciler := rbac.NewReconciler(resources)
+
 	steps := []reconcileStep{
 		{
 			Name:           "internal-auth",
-			Run:            func(ctx context.Context) error { return r.reconcileInternalAuth(ctx, infra) },
+			Run:            func(ctx context.Context) error { return authReconciler.Reconcile(ctx, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeInternalAuthReady,
 			SuccessReason:  "KeysReady",
 			SuccessMessage: "Internal auth keys are ready",
@@ -196,7 +220,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:           "database",
-			Run:            func(ctx context.Context) error { return r.reconcileDatabase(ctx, infra) },
+			Run:            func(ctx context.Context) error { return dbReconciler.Reconcile(ctx, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeDatabaseReady,
 			SuccessReason:  "DatabaseReady",
 			SuccessMessage: "Database is ready",
@@ -204,7 +228,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:           "storage",
-			Run:            func(ctx context.Context) error { return r.reconcileStorage(ctx, infra) },
+			Run:            func(ctx context.Context) error { return storageReconciler.Reconcile(ctx, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageReady,
 			SuccessReason:  "StorageReady",
 			SuccessMessage: "Storage is ready",
@@ -212,7 +236,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:           "edge-gateway",
-			Run:            func(ctx context.Context) error { return r.reconcileEdgeGateway(ctx, infra) },
+			Run:            func(ctx context.Context) error { return edgeGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeEdgeGatewayReady,
 			SuccessReason:  "EdgeGatewayReady",
 			SuccessMessage: "Edge gateway is ready",
@@ -220,14 +244,14 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:                 "scheduler-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileSchedulerRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileSchedulerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeSchedulerReady,
 			ErrorReason:          "SchedulerRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "scheduler",
-			Run:            func(ctx context.Context) error { return r.reconcileScheduler(ctx, infra) },
+			Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeSchedulerReady,
 			SuccessReason:  "SchedulerReady",
 			SuccessMessage: "Scheduler is ready",
@@ -235,7 +259,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:           "internal-gateway",
-			Run:            func(ctx context.Context) error { return r.reconcileInternalGateway(ctx, infra) },
+			Run:            func(ctx context.Context) error { return internalGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeInternalGatewayReady,
 			SuccessReason:  "InternalGatewayReady",
 			SuccessMessage: "Internal gateway is ready",
@@ -243,14 +267,14 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:                 "manager-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileManagerRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
 			ErrorReason:          "ManagerRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "manager",
-			Run:            func(ctx context.Context) error { return r.reconcileManager(ctx, infra) },
+			Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
 			SuccessReason:  "ManagerReady",
 			SuccessMessage: "Manager is ready",
@@ -258,14 +282,14 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:                 "storage-proxy-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileStorageProxyRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeStorageProxyReady,
 			ErrorReason:          "StorageProxyRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "storage-proxy",
-			Run:            func(ctx context.Context) error { return r.reconcileStorageProxy(ctx, infra) },
+			Run:            func(ctx context.Context) error { return storageProxyReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
 			SuccessReason:  "StorageProxyReady",
 			SuccessMessage: "Storage proxy is ready",
@@ -273,14 +297,14 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 		},
 		{
 			Name:                 "netd-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileNetdRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeNetdReady,
 			ErrorReason:          "NetdRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "netd",
-			Run:            func(ctx context.Context) error { return r.reconcileNetd(ctx, infra) },
+			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
 			SuccessReason:  "NetdReady",
 			SuccessMessage: "Netd is ready",
@@ -307,10 +331,17 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling control-plane mode")
 
+	resources := common.NewResourceManager(r.Client, r.Scheme)
+	imageRepo := r.getImageRepo(ctx)
+	authReconciler := internalauth.NewReconciler(resources)
+	edgeGatewayReconciler := edgegateway.NewReconciler(resources)
+	schedulerReconciler := scheduler.NewReconciler(resources)
+	rbacReconciler := rbac.NewReconciler(resources)
+
 	steps := []reconcileStep{
 		{
 			Name:           "internal-auth",
-			Run:            func(ctx context.Context) error { return r.reconcileInternalAuth(ctx, infra) },
+			Run:            func(ctx context.Context) error { return authReconciler.Reconcile(ctx, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeInternalAuthReady,
 			SuccessReason:  "KeysReady",
 			SuccessMessage: "Internal auth keys are ready",
@@ -318,7 +349,7 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 		},
 		{
 			Name:           "external-database",
-			Run:            func(ctx context.Context) error { return r.validateExternalDatabase(ctx, infra) },
+			Run:            func(ctx context.Context) error { return database.ValidateExternalDatabase(ctx, r.Client, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeDatabaseReady,
 			SuccessReason:  "DatabaseReady",
 			SuccessMessage: "External database connected",
@@ -326,7 +357,7 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 		},
 		{
 			Name:           "external-storage",
-			Run:            func(ctx context.Context) error { return r.validateExternalStorage(ctx, infra) },
+			Run:            func(ctx context.Context) error { return storage.ValidateExternalStorage(ctx, r.Client, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageReady,
 			SuccessReason:  "StorageReady",
 			SuccessMessage: "External storage accessible",
@@ -334,7 +365,7 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 		},
 		{
 			Name:           "edge-gateway",
-			Run:            func(ctx context.Context) error { return r.reconcileEdgeGateway(ctx, infra) },
+			Run:            func(ctx context.Context) error { return edgeGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeEdgeGatewayReady,
 			SuccessReason:  "EdgeGatewayReady",
 			SuccessMessage: "Edge gateway is ready",
@@ -342,14 +373,14 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 		},
 		{
 			Name:                 "scheduler-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileSchedulerRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileSchedulerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeSchedulerReady,
 			ErrorReason:          "SchedulerRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "scheduler",
-			Run:            func(ctx context.Context) error { return r.reconcileScheduler(ctx, infra) },
+			Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeSchedulerReady,
 			SuccessReason:  "SchedulerReady",
 			SuccessMessage: "Scheduler is ready",
@@ -364,6 +395,15 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneMode(ctx context.Context,
 func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling data-plane mode")
+
+	resources := common.NewResourceManager(r.Client, r.Scheme)
+	imageRepo := r.getImageRepo(ctx)
+	authReconciler := internalauth.NewReconciler(resources)
+	internalGatewayReconciler := internalgateway.NewReconciler(resources)
+	managerReconciler := manager.NewReconciler(resources)
+	storageProxyReconciler := storageproxy.NewReconciler(resources)
+	netdReconciler := netd.NewReconciler(resources)
+	rbacReconciler := rbac.NewReconciler(resources)
 
 	steps := []reconcileStep{
 		{
@@ -394,7 +434,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:           "internal-auth",
-			Run:            func(ctx context.Context) error { return r.reconcileInternalAuth(ctx, infra) },
+			Run:            func(ctx context.Context) error { return authReconciler.Reconcile(ctx, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeInternalAuthReady,
 			SuccessReason:  "KeysReady",
 			SuccessMessage: "Internal auth keys are ready",
@@ -402,7 +442,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:           "external-database",
-			Run:            func(ctx context.Context) error { return r.validateExternalDatabase(ctx, infra) },
+			Run:            func(ctx context.Context) error { return database.ValidateExternalDatabase(ctx, r.Client, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeDatabaseReady,
 			SuccessReason:  "DatabaseReady",
 			SuccessMessage: "External database connected",
@@ -410,7 +450,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:           "external-storage",
-			Run:            func(ctx context.Context) error { return r.validateExternalStorage(ctx, infra) },
+			Run:            func(ctx context.Context) error { return storage.ValidateExternalStorage(ctx, r.Client, infra) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageReady,
 			SuccessReason:  "StorageReady",
 			SuccessMessage: "External storage accessible",
@@ -418,7 +458,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:           "internal-gateway",
-			Run:            func(ctx context.Context) error { return r.reconcileInternalGateway(ctx, infra) },
+			Run:            func(ctx context.Context) error { return internalGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeInternalGatewayReady,
 			SuccessReason:  "InternalGatewayReady",
 			SuccessMessage: "Internal gateway is ready",
@@ -426,14 +466,14 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:                 "manager-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileManagerRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
 			ErrorReason:          "ManagerRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "manager",
-			Run:            func(ctx context.Context) error { return r.reconcileManager(ctx, infra) },
+			Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
 			SuccessReason:  "ManagerReady",
 			SuccessMessage: "Manager is ready",
@@ -441,14 +481,14 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:                 "storage-proxy-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileStorageProxyRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeStorageProxyReady,
 			ErrorReason:          "StorageProxyRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "storage-proxy",
-			Run:            func(ctx context.Context) error { return r.reconcileStorageProxy(ctx, infra) },
+			Run:            func(ctx context.Context) error { return storageProxyReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
 			SuccessReason:  "StorageProxyReady",
 			SuccessMessage: "Storage proxy is ready",
@@ -456,14 +496,14 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 		},
 		{
 			Name:                 "netd-rbac",
-			Run:                  func(ctx context.Context) error { return r.reconcileNetdRBAC(ctx, infra) },
+			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeNetdReady,
 			ErrorReason:          "NetdRBACFailed",
 			SkipSuccessCondition: true,
 		},
 		{
 			Name:           "netd",
-			Run:            func(ctx context.Context) error { return r.reconcileNetd(ctx, infra) },
+			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
 			SuccessReason:  "NetdReady",
 			SuccessMessage: "Netd is ready",
@@ -607,63 +647,6 @@ func (r *Sandbox0InfraReconciler) setCondition(ctx context.Context, infra *infra
 }
 
 // validateExternalDatabase validates connection to external database
-func (r *Sandbox0InfraReconciler) validateExternalDatabase(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
-	if infra.Spec.Database.External == nil {
-		return fmt.Errorf("external database configuration is required")
-	}
-
-	// Check if password secret exists
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      infra.Spec.Database.External.PasswordSecret.Name,
-		Namespace: infra.Namespace,
-	}, secret); err != nil {
-		return fmt.Errorf("database password secret not found: %w", err)
-	}
-
-	key := infra.Spec.Database.External.PasswordSecret.Key
-	if key == "" {
-		key = "password"
-	}
-	if _, ok := secret.Data[key]; !ok {
-		return fmt.Errorf("key %s not found in database password secret", key)
-	}
-
-	return nil
-}
-
-// validateExternalStorage validates external storage configuration
-func (r *Sandbox0InfraReconciler) validateExternalStorage(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
-	switch infra.Spec.Storage.Type {
-	case infrav1alpha1.StorageTypeS3:
-		if infra.Spec.Storage.S3 == nil {
-			return fmt.Errorf("S3 configuration is required")
-		}
-		// Check credentials secret
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      infra.Spec.Storage.S3.CredentialsSecret.Name,
-			Namespace: infra.Namespace,
-		}, secret); err != nil {
-			return fmt.Errorf("S3 credentials secret not found: %w", err)
-		}
-
-	case infrav1alpha1.StorageTypeOSS:
-		if infra.Spec.Storage.OSS == nil {
-			return fmt.Errorf("OSS configuration is required")
-		}
-		// Check credentials secret
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      infra.Spec.Storage.OSS.CredentialsSecret.Name,
-			Namespace: infra.Namespace,
-		}, secret); err != nil {
-			return fmt.Errorf("OSS credentials secret not found: %w", err)
-		}
-	}
-
-	return nil
-}
 
 // reconcileInitUser creates the initial admin user
 func (r *Sandbox0InfraReconciler) reconcileInitUser(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {

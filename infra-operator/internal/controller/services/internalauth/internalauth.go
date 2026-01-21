@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package internalauth
 
 import (
 	"context"
@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 )
 
 const (
@@ -39,8 +40,16 @@ const (
 	dataPlaneKeySecretName    = "sandbox0-internal-jwt-data-plane"
 )
 
-// reconcileInternalAuth reconciles internal authentication keys
-func (r *Sandbox0InfraReconciler) reconcileInternalAuth(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+type Reconciler struct {
+	Resources *common.ResourceManager
+}
+
+func NewReconciler(resources *common.ResourceManager) *Reconciler {
+	return &Reconciler{Resources: resources}
+}
+
+// Reconcile reconciles internal authentication keys.
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
 
 	switch infra.Spec.Mode {
@@ -67,14 +76,14 @@ func (r *Sandbox0InfraReconciler) reconcileInternalAuth(ctx context.Context, inf
 	}
 
 	// Update status with key locations
-	r.updateInternalAuthStatus(ctx, infra)
+	updateInternalAuthStatus(infra)
 
 	logger.Info("Internal auth keys reconciled successfully")
 	return nil
 }
 
-// reconcileControlPlaneKeys creates or updates control plane key pair
-func (r *Sandbox0InfraReconciler) reconcileControlPlaneKeys(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileControlPlaneKeys creates or updates control plane key pair.
+func (r *Reconciler) reconcileControlPlaneKeys(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	secretName := fmt.Sprintf("%s-%s", infra.Name, controlPlaneKeySecretName)
 
 	// Check if user provided existing secret
@@ -84,7 +93,7 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneKeys(ctx context.Context,
 		!infra.Spec.InternalAuth.ControlPlane.Generate {
 		// Use existing secret, just validate it exists
 		secret := &corev1.Secret{}
-		return r.Get(ctx, types.NamespacedName{
+		return r.Resources.Client.Get(ctx, types.NamespacedName{
 			Name:      infra.Spec.InternalAuth.ControlPlane.SecretRef.Name,
 			Namespace: infra.Namespace,
 		}, secret)
@@ -93,8 +102,8 @@ func (r *Sandbox0InfraReconciler) reconcileControlPlaneKeys(ctx context.Context,
 	return r.createKeyPairSecret(ctx, infra, secretName)
 }
 
-// reconcileDataPlaneKeys creates or updates data plane key pair
-func (r *Sandbox0InfraReconciler) reconcileDataPlaneKeys(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileDataPlaneKeys creates or updates data plane key pair.
+func (r *Reconciler) reconcileDataPlaneKeys(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	secretName := fmt.Sprintf("%s-%s", infra.Name, dataPlaneKeySecretName)
 
 	// Check if user provided existing secret
@@ -104,7 +113,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneKeys(ctx context.Context, in
 		!infra.Spec.InternalAuth.DataPlane.Generate {
 		// Use existing secret, just validate it exists
 		secret := &corev1.Secret{}
-		return r.Get(ctx, types.NamespacedName{
+		return r.Resources.Client.Get(ctx, types.NamespacedName{
 			Name:      infra.Spec.InternalAuth.DataPlane.SecretRef.Name,
 			Namespace: infra.Namespace,
 		}, secret)
@@ -113,13 +122,13 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneKeys(ctx context.Context, in
 	return r.createKeyPairSecret(ctx, infra, secretName)
 }
 
-// createKeyPairSecret creates an Ed25519 key pair and stores it in a secret
-func (r *Sandbox0InfraReconciler) createKeyPairSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, secretName string) error {
+// createKeyPairSecret creates an Ed25519 key pair and stores it in a secret.
+func (r *Reconciler) createKeyPairSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, secretName string) error {
 	logger := log.FromContext(ctx)
 
 	// Check if secret already exists
 	existingSecret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, existingSecret)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, existingSecret)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -164,15 +173,15 @@ func (r *Sandbox0InfraReconciler) createKeyPairSecret(ctx context.Context, infra
 		},
 	}
 
-	if err := ctrl.SetControllerReference(infra, secret, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, secret, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	logger.Info("Creating key pair secret", "secretName", secretName)
-	return r.Create(ctx, secret)
+	return r.Resources.Client.Create(ctx, secret)
 }
 
-// encodeEd25519PrivateKeyToPEM encodes an Ed25519 private key to PEM format
+// encodeEd25519PrivateKeyToPEM encodes an Ed25519 private key to PEM format.
 func encodeEd25519PrivateKeyToPEM(privateKey ed25519.PrivateKey) ([]byte, error) {
 	bytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
@@ -185,7 +194,7 @@ func encodeEd25519PrivateKeyToPEM(privateKey ed25519.PrivateKey) ([]byte, error)
 	return pem.EncodeToMemory(block), nil
 }
 
-// encodeEd25519PublicKeyToPEM encodes an Ed25519 public key to PEM format
+// encodeEd25519PublicKeyToPEM encodes an Ed25519 public key to PEM format.
 func encodeEd25519PublicKeyToPEM(publicKey ed25519.PublicKey) ([]byte, error) {
 	bytes, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
@@ -198,16 +207,16 @@ func encodeEd25519PublicKeyToPEM(publicKey ed25519.PublicKey) ([]byte, error) {
 	return pem.EncodeToMemory(block), nil
 }
 
-// updateInternalAuthStatus updates the internal auth status
-func (r *Sandbox0InfraReconciler) updateInternalAuthStatus(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) {
+// updateInternalAuthStatus updates the internal auth status.
+func updateInternalAuthStatus(infra *infrav1alpha1.Sandbox0Infra) {
 	if infra.Status.InternalAuth == nil {
 		infra.Status.InternalAuth = &infrav1alpha1.InternalAuthStatus{}
 	}
 
 	switch infra.Spec.Mode {
 	case infrav1alpha1.DeploymentModeAll:
-		controlPlaneSecret, _, controlPlanePublicKey := r.getControlPlaneKeyRefs(infra)
-		dataPlaneSecret, _, dataPlanePublicKey := r.getDataPlaneKeyRefs(infra)
+		controlPlaneSecret, _, controlPlanePublicKey := GetControlPlaneKeyRefs(infra)
+		dataPlaneSecret, _, dataPlanePublicKey := GetDataPlaneKeyRefs(infra)
 		infra.Status.InternalAuth.ControlPlanePublicKey = &infrav1alpha1.SecretKeyStatus{
 			SecretName: controlPlaneSecret,
 			SecretKey:  controlPlanePublicKey,
@@ -218,14 +227,14 @@ func (r *Sandbox0InfraReconciler) updateInternalAuthStatus(ctx context.Context, 
 		}
 
 	case infrav1alpha1.DeploymentModeControlPlane:
-		secretName, _, publicKey := r.getControlPlaneKeyRefs(infra)
+		secretName, _, publicKey := GetControlPlaneKeyRefs(infra)
 		infra.Status.InternalAuth.ControlPlanePublicKey = &infrav1alpha1.SecretKeyStatus{
 			SecretName: secretName,
 			SecretKey:  publicKey,
 		}
 
 	case infrav1alpha1.DeploymentModeDataPlane:
-		secretName, _, publicKey := r.getDataPlaneKeyRefs(infra)
+		secretName, _, publicKey := GetDataPlaneKeyRefs(infra)
 		infra.Status.InternalAuth.DataPlanePublicKey = &infrav1alpha1.SecretKeyStatus{
 			SecretName: secretName,
 			SecretKey:  publicKey,
@@ -233,7 +242,7 @@ func (r *Sandbox0InfraReconciler) updateInternalAuthStatus(ctx context.Context, 
 	}
 }
 
-func (r *Sandbox0InfraReconciler) getControlPlaneKeyRefs(infra *infrav1alpha1.Sandbox0Infra) (secretName, privateKeyKey, publicKeyKey string) {
+func GetControlPlaneKeyRefs(infra *infrav1alpha1.Sandbox0Infra) (secretName, privateKeyKey, publicKeyKey string) {
 	privateKeyKey = "private.key"
 	publicKeyKey = "public.key"
 	secretName = fmt.Sprintf("%s-%s", infra.Name, controlPlaneKeySecretName)
@@ -254,7 +263,7 @@ func (r *Sandbox0InfraReconciler) getControlPlaneKeyRefs(infra *infrav1alpha1.Sa
 	return secretName, privateKeyKey, publicKeyKey
 }
 
-func (r *Sandbox0InfraReconciler) getDataPlaneKeyRefs(infra *infrav1alpha1.Sandbox0Infra) (secretName, privateKeyKey, publicKeyKey string) {
+func GetDataPlaneKeyRefs(infra *infrav1alpha1.Sandbox0Infra) (secretName, privateKeyKey, publicKeyKey string) {
 	privateKeyKey = "private.key"
 	publicKeyKey = "public.key"
 	secretName = fmt.Sprintf("%s-%s", infra.Name, dataPlaneKeySecretName)
@@ -275,7 +284,7 @@ func (r *Sandbox0InfraReconciler) getDataPlaneKeyRefs(infra *infrav1alpha1.Sandb
 	return secretName, privateKeyKey, publicKeyKey
 }
 
-func (r *Sandbox0InfraReconciler) getControlPlanePublicKeyRef(infra *infrav1alpha1.Sandbox0Infra) (secretName, publicKeyKey string) {
+func GetControlPlanePublicKeyRef(infra *infrav1alpha1.Sandbox0Infra) (secretName, publicKeyKey string) {
 	if infra.Spec.ControlPlane == nil {
 		return "", ""
 	}
@@ -289,8 +298,8 @@ func (r *Sandbox0InfraReconciler) getControlPlanePublicKeyRef(infra *infrav1alph
 	return secretName, publicKeyKey
 }
 
-// getControlPlaneKeySecret returns the control plane key secret name
-func (r *Sandbox0InfraReconciler) getControlPlaneKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
+// GetControlPlaneKeySecret returns the control plane key secret name.
+func GetControlPlaneKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
 	if infra.Spec.InternalAuth != nil &&
 		infra.Spec.InternalAuth.ControlPlane != nil &&
 		infra.Spec.InternalAuth.ControlPlane.SecretRef != nil {
@@ -299,8 +308,8 @@ func (r *Sandbox0InfraReconciler) getControlPlaneKeySecret(infra *infrav1alpha1.
 	return fmt.Sprintf("%s-%s", infra.Name, controlPlaneKeySecretName)
 }
 
-// getDataPlaneKeySecret returns the data plane key secret name
-func (r *Sandbox0InfraReconciler) getDataPlaneKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
+// GetDataPlaneKeySecret returns the data plane key secret name.
+func GetDataPlaneKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
 	if infra.Spec.InternalAuth != nil &&
 		infra.Spec.InternalAuth.DataPlane != nil &&
 		infra.Spec.InternalAuth.DataPlane.SecretRef != nil {
@@ -309,8 +318,8 @@ func (r *Sandbox0InfraReconciler) getDataPlaneKeySecret(infra *infrav1alpha1.San
 	return fmt.Sprintf("%s-%s", infra.Name, dataPlaneKeySecretName)
 }
 
-// getControlPlanePublicKeySecret returns the control plane public key secret name for data plane mode
-func (r *Sandbox0InfraReconciler) getControlPlanePublicKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
+// GetControlPlanePublicKeySecret returns the control plane public key secret name for data plane mode.
+func GetControlPlanePublicKeySecret(infra *infrav1alpha1.Sandbox0Infra) string {
 	if infra.Spec.ControlPlane != nil {
 		return infra.Spec.ControlPlane.InternalAuthPublicKeySecret.Name
 	}

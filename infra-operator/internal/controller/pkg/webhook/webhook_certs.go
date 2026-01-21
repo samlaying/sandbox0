@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package webhook
 
 import (
 	"context"
@@ -34,11 +34,20 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 )
 
-func (r *Sandbox0InfraReconciler) reconcileWebhookCertSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, dnsNames []string) error {
+type Reconciler struct {
+	Resources *common.ResourceManager
+}
+
+func NewReconciler(resources *common.ResourceManager) *Reconciler {
+	return &Reconciler{Resources: resources}
+}
+
+func (r *Reconciler) ReconcileCertSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, dnsNames []string) error {
 	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, secret)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, secret)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -66,19 +75,19 @@ func (r *Sandbox0InfraReconciler) reconcileWebhookCertSecret(ctx context.Context
 			corev1.TLSPrivateKeyKey: keyPEM,
 		},
 	}
-	if err := ctrl.SetControllerReference(infra, desired, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, desired, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desired)
+		return r.Resources.Client.Create(ctx, desired)
 	}
 
 	secret.Type = desired.Type
 	secret.Data = desired.Data
 	secret.Labels = desired.Labels
 	secret.OwnerReferences = desired.OwnerReferences
-	return r.Update(ctx, secret)
+	return r.Resources.Client.Update(ctx, secret)
 }
 
 func validateTLSSecret(secret *corev1.Secret) error {

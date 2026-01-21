@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package database
 
 import (
 	"context"
@@ -28,9 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 )
 
 const (
@@ -39,8 +41,16 @@ const (
 	databasePort       = 5432
 )
 
-// reconcileDatabase reconciles the database component
-func (r *Sandbox0InfraReconciler) reconcileDatabase(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+type Reconciler struct {
+	Resources *common.ResourceManager
+}
+
+func NewReconciler(resources *common.ResourceManager) *Reconciler {
+	return &Reconciler{Resources: resources}
+}
+
+// Reconcile reconciles the database component.
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
 
 	switch infra.Spec.Database.Type {
@@ -49,14 +59,40 @@ func (r *Sandbox0InfraReconciler) reconcileDatabase(ctx context.Context, infra *
 		return r.reconcileBuiltinDatabase(ctx, infra)
 	case infrav1alpha1.DatabaseTypePostgres, infrav1alpha1.DatabaseTypeMySQL:
 		logger.Info("Using external database")
-		return r.validateExternalDatabase(ctx, infra)
+		return ValidateExternalDatabase(ctx, r.Resources.Client, infra)
 	default:
 		return r.reconcileBuiltinDatabase(ctx, infra)
 	}
 }
 
-// reconcileBuiltinDatabase creates a single-node PostgreSQL StatefulSet
-func (r *Sandbox0InfraReconciler) reconcileBuiltinDatabase(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// ValidateExternalDatabase validates connection to external database.
+func ValidateExternalDatabase(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) error {
+	if infra.Spec.Database.External == nil {
+		return fmt.Errorf("external database configuration is required")
+	}
+
+	// Check if password secret exists
+	secret := &corev1.Secret{}
+	if err := client.Get(ctx, types.NamespacedName{
+		Name:      infra.Spec.Database.External.PasswordSecret.Name,
+		Namespace: infra.Namespace,
+	}, secret); err != nil {
+		return fmt.Errorf("database password secret not found: %w", err)
+	}
+
+	key := infra.Spec.Database.External.PasswordSecret.Key
+	if key == "" {
+		key = "password"
+	}
+	if _, ok := secret.Data[key]; !ok {
+		return fmt.Errorf("key %s not found in database password secret", key)
+	}
+
+	return nil
+}
+
+// reconcileBuiltinDatabase creates a single-node PostgreSQL StatefulSet.
+func (r *Reconciler) reconcileBuiltinDatabase(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
 
 	// Create database credentials secret
@@ -83,19 +119,19 @@ func (r *Sandbox0InfraReconciler) reconcileBuiltinDatabase(ctx context.Context, 
 	return nil
 }
 
-// reconcileDatabaseSecret creates or updates the database credentials secret
-func (r *Sandbox0InfraReconciler) reconcileDatabaseSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileDatabaseSecret creates or updates the database credentials secret.
+func (r *Reconciler) reconcileDatabaseSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	secretName := fmt.Sprintf("%s-%s", infra.Name, databaseSecretName)
 
 	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
 		// Create new secret with generated password
-		password := generateRandomString(24)
+		password := common.GenerateRandomString(24)
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secretName,
@@ -112,22 +148,22 @@ func (r *Sandbox0InfraReconciler) reconcileDatabaseSecret(ctx context.Context, i
 			},
 		}
 
-		if err := ctrl.SetControllerReference(infra, secret, r.Scheme); err != nil {
+		if err := ctrl.SetControllerReference(infra, secret, r.Resources.Scheme); err != nil {
 			return err
 		}
 
-		return r.Create(ctx, secret)
+		return r.Resources.Client.Create(ctx, secret)
 	}
 
 	return nil
 }
 
-// reconcileDatabasePVC creates or updates the database PVC
-func (r *Sandbox0InfraReconciler) reconcileDatabasePVC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileDatabasePVC creates or updates the database PVC.
+func (r *Reconciler) reconcileDatabasePVC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	pvcName := fmt.Sprintf("%s-postgres-data", infra.Name)
 
 	pvc := &corev1.PersistentVolumeClaim{}
-	err := r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: infra.Namespace}, pvc)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: infra.Namespace}, pvc)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -162,31 +198,31 @@ func (r *Sandbox0InfraReconciler) reconcileDatabasePVC(ctx context.Context, infr
 			pvc.Spec.StorageClassName = &infra.Spec.Database.Builtin.Persistence.StorageClass
 		}
 
-		if err := ctrl.SetControllerReference(infra, pvc, r.Scheme); err != nil {
+		if err := ctrl.SetControllerReference(infra, pvc, r.Resources.Scheme); err != nil {
 			return err
 		}
 
-		return r.Create(ctx, pvc)
+		return r.Resources.Client.Create(ctx, pvc)
 	}
 
 	return nil
 }
 
-// reconcileDatabaseStatefulSet creates or updates the PostgreSQL StatefulSet
-func (r *Sandbox0InfraReconciler) reconcileDatabaseStatefulSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileDatabaseStatefulSet creates or updates the PostgreSQL StatefulSet.
+func (r *Reconciler) reconcileDatabaseStatefulSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	stsName := fmt.Sprintf("%s-postgres", infra.Name)
 	secretName := fmt.Sprintf("%s-%s", infra.Name, databaseSecretName)
 	pvcName := fmt.Sprintf("%s-postgres-data", infra.Name)
 
 	sts := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: infra.Namespace}, sts)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: stsName, Namespace: infra.Namespace}, sts)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
 	replicas := int32(1)
 	labels := map[string]string{
-		"app.kubernetes.io/name":       "postgres",
+		"app.kubernetes.io/name":       databaseName,
 		"app.kubernetes.io/instance":   infra.Name,
 		"app.kubernetes.io/component":  "database",
 		"app.kubernetes.io/managed-by": "sandbox0infra-operator",
@@ -210,7 +246,7 @@ func (r *Sandbox0InfraReconciler) reconcileDatabaseStatefulSet(ctx context.Conte
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "postgres",
+							Name:  databaseName,
 							Image: "postgres:16-alpine",
 							Ports: []corev1.ContainerPort{
 								{
@@ -308,31 +344,31 @@ func (r *Sandbox0InfraReconciler) reconcileDatabaseStatefulSet(ctx context.Conte
 		},
 	}
 
-	if err := ctrl.SetControllerReference(infra, desiredSts, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, desiredSts, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredSts)
+		return r.Resources.Client.Create(ctx, desiredSts)
 	}
 
 	// Update existing StatefulSet
 	sts.Spec = desiredSts.Spec
-	return r.Update(ctx, sts)
+	return r.Resources.Client.Update(ctx, sts)
 }
 
-// reconcileDatabaseService creates or updates the PostgreSQL Service
-func (r *Sandbox0InfraReconciler) reconcileDatabaseService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+// reconcileDatabaseService creates or updates the PostgreSQL Service.
+func (r *Reconciler) reconcileDatabaseService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	svcName := fmt.Sprintf("%s-postgres", infra.Name)
 
 	svc := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: svcName, Namespace: infra.Namespace}, svc)
+	err := r.Resources.Client.Get(ctx, types.NamespacedName{Name: svcName, Namespace: infra.Namespace}, svc)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
 	labels := map[string]string{
-		"app.kubernetes.io/name":       "postgres",
+		"app.kubernetes.io/name":       databaseName,
 		"app.kubernetes.io/instance":   infra.Name,
 		"app.kubernetes.io/component":  "database",
 		"app.kubernetes.io/managed-by": "sandbox0infra-operator",
@@ -356,26 +392,26 @@ func (r *Sandbox0InfraReconciler) reconcileDatabaseService(ctx context.Context, 
 		},
 	}
 
-	if err := ctrl.SetControllerReference(infra, desiredSvc, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(infra, desiredSvc, r.Resources.Scheme); err != nil {
 		return err
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredSvc)
+		return r.Resources.Client.Create(ctx, desiredSvc)
 	}
 
 	// Update existing Service
 	svc.Spec = desiredSvc.Spec
-	return r.Update(ctx, svc)
+	return r.Resources.Client.Update(ctx, svc)
 }
 
-// getDatabaseDSN returns the database DSN for services to use
-func (r *Sandbox0InfraReconciler) getDatabaseDSN(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (string, error) {
+// GetDatabaseDSN returns the database DSN for services to use.
+func GetDatabaseDSN(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) (string, error) {
 	switch infra.Spec.Database.Type {
 	case infrav1alpha1.DatabaseTypeBuiltin:
 		secretName := fmt.Sprintf("%s-%s", infra.Name, databaseSecretName)
 		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret); err != nil {
 			return "", err
 		}
 		return string(secret.Data["dsn"]), nil
@@ -388,7 +424,7 @@ func (r *Sandbox0InfraReconciler) getDatabaseDSN(ctx context.Context, infra *inf
 
 		// Get password from secret
 		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: ext.PasswordSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Name: ext.PasswordSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
 			return "", err
 		}
 
@@ -411,9 +447,10 @@ func (r *Sandbox0InfraReconciler) getDatabaseDSN(ctx context.Context, infra *inf
 	}
 }
 
-func (r *Sandbox0InfraReconciler) getJuicefsMetaURL(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (string, error) {
+// GetJuicefsMetaURL returns the JuiceFS metadata database URL.
+func GetJuicefsMetaURL(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) (string, error) {
 	if infra.Spec.JuicefsDatabase == nil || infra.Spec.JuicefsDatabase.ShareWithMain {
-		return r.getDatabaseDSN(ctx, infra)
+		return GetDatabaseDSN(ctx, client, infra)
 	}
 
 	ext := infra.Spec.JuicefsDatabase.External
@@ -422,7 +459,7 @@ func (r *Sandbox0InfraReconciler) getJuicefsMetaURL(ctx context.Context, infra *
 	}
 
 	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ext.PasswordSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: ext.PasswordSecret.Name, Namespace: infra.Namespace}, secret); err != nil {
 		return "", err
 	}
 
@@ -439,7 +476,7 @@ func (r *Sandbox0InfraReconciler) getJuicefsMetaURL(ctx context.Context, infra *
 
 	port := ext.Port
 	if port == 0 {
-		port = 5432
+		port = databasePort
 	}
 
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",

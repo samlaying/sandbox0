@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package common
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,12 +28,27 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
 )
+
+type ResourceManager struct {
+	Client client.Client
+	Scheme *runtime.Scheme
+}
+
+func NewResourceManager(client client.Client, scheme *runtime.Scheme) *ResourceManager {
+	return &ResourceManager{
+		Client: client,
+		Scheme: scheme,
+	}
+}
 
 // ServiceDefinition defines deployment/daemonset configuration for a service.
 type ServiceDefinition struct {
@@ -50,10 +67,10 @@ type ServiceDefinition struct {
 	ServiceAccountName string
 }
 
-// reconcileDeployment creates or updates a deployment
-func (r *Sandbox0InfraReconciler) reconcileDeployment(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, replicas int32, def ServiceDefinition) error {
+// ReconcileDeployment creates or updates a deployment.
+func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, replicas int32, def ServiceDefinition) error {
 	deploy := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, deploy)
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, deploy)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -82,7 +99,7 @@ func (r *Sandbox0InfraReconciler) reconcileDeployment(ctx context.Context, infra
 							Args:         def.Args,
 							Env:          def.EnvVars,
 							VolumeMounts: def.VolumeMounts,
-							Ports:        resolveContainerPorts(def),
+							Ports:        ResolveContainerPorts(def),
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -108,17 +125,17 @@ func (r *Sandbox0InfraReconciler) reconcileDeployment(ctx context.Context, infra
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredDeploy)
+		return r.Client.Create(ctx, desiredDeploy)
 	}
 
 	deploy.Spec = desiredDeploy.Spec
-	return r.Update(ctx, deploy)
+	return r.Client.Update(ctx, deploy)
 }
 
-// reconcileDaemonSet creates or updates a daemonset
-func (r *Sandbox0InfraReconciler) reconcileDaemonSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, def ServiceDefinition) error {
+// ReconcileDaemonSet creates or updates a daemonset.
+func (r *ResourceManager) ReconcileDaemonSet(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, def ServiceDefinition) error {
 	ds := &appsv1.DaemonSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, ds)
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, ds)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -147,9 +164,9 @@ func (r *Sandbox0InfraReconciler) reconcileDaemonSet(ctx context.Context, infra 
 							Image:        def.Image,
 							Env:          def.EnvVars,
 							VolumeMounts: def.VolumeMounts,
-							Ports:        resolveContainerPorts(def),
+							Ports:        ResolveContainerPorts(def),
 							SecurityContext: &corev1.SecurityContext{
-								Privileged: boolPtr(true),
+								Privileged: BoolPtr(true),
 								Capabilities: &corev1.Capabilities{
 									Add: []corev1.Capability{"NET_ADMIN", "SYS_ADMIN"},
 								},
@@ -179,14 +196,14 @@ func (r *Sandbox0InfraReconciler) reconcileDaemonSet(ctx context.Context, infra 
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredDs)
+		return r.Client.Create(ctx, desiredDs)
 	}
 
 	ds.Spec = desiredDs.Spec
-	return r.Update(ctx, ds)
+	return r.Client.Update(ctx, ds)
 }
 
-func resolveContainerPorts(def ServiceDefinition) []corev1.ContainerPort {
+func ResolveContainerPorts(def ServiceDefinition) []corev1.ContainerPort {
 	if len(def.Ports) > 0 {
 		return def.Ports
 	}
@@ -201,10 +218,10 @@ func resolveContainerPorts(def ServiceDefinition) []corev1.ContainerPort {
 	}
 }
 
-// reconcileService creates or updates a service
-func (r *Sandbox0InfraReconciler) reconcileService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, serviceType corev1.ServiceType, port, targetPort int32) error {
+// ReconcileService creates or updates a service.
+func (r *ResourceManager) ReconcileService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, serviceType corev1.ServiceType, port, targetPort int32) error {
 	svc := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, svc)
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, svc)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -232,19 +249,19 @@ func (r *Sandbox0InfraReconciler) reconcileService(ctx context.Context, infra *i
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredSvc)
+		return r.Client.Create(ctx, desiredSvc)
 	}
 
 	svc.Spec = desiredSvc.Spec
-	return r.Update(ctx, svc)
+	return r.Client.Update(ctx, svc)
 }
 
-// reconcileIngress creates or updates an ingress
-func (r *Sandbox0InfraReconciler) reconcileIngress(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, serviceName string, config *infrav1alpha1.IngressConfig) error {
+// ReconcileIngress creates or updates an ingress.
+func (r *ResourceManager) ReconcileIngress(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, serviceName string, config *infrav1alpha1.IngressConfig) error {
 	ingressName := serviceName
 
 	ingress := &networkingv1.Ingress{}
-	err := r.Get(ctx, types.NamespacedName{Name: ingressName, Namespace: infra.Namespace}, ingress)
+	err := r.Client.Get(ctx, types.NamespacedName{Name: ingressName, Namespace: infra.Namespace}, ingress)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
@@ -297,15 +314,126 @@ func (r *Sandbox0InfraReconciler) reconcileIngress(ctx context.Context, infra *i
 	}
 
 	if errors.IsNotFound(err) {
-		return r.Create(ctx, desiredIngress)
+		return r.Client.Create(ctx, desiredIngress)
 	}
 
 	ingress.Spec = desiredIngress.Spec
-	return r.Update(ctx, ingress)
+	return r.Client.Update(ctx, ingress)
 }
 
-// getServiceLabels returns standard labels for a service
-func (r *Sandbox0InfraReconciler) getServiceLabels(instanceName, componentName string) map[string]string {
+// ReconcileServiceConfigMap creates or updates a configmap for a service.
+func (r *ResourceManager) ReconcileServiceConfigMap(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, config map[string]any) error {
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	payload, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("marshal config for %s: %w", name, err)
+	}
+
+	desired := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: infra.Namespace,
+			Labels:    labels,
+		},
+		Data: map[string]string{
+			"config.yaml": string(payload),
+		},
+	}
+
+	if err := ctrl.SetControllerReference(infra, desired, r.Scheme); err != nil {
+		return err
+	}
+
+	existing := &corev1.ConfigMap{}
+	err = r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, existing)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	if errors.IsNotFound(err) {
+		return r.Client.Create(ctx, desired)
+	}
+
+	existing.Data = desired.Data
+	existing.Labels = desired.Labels
+	return r.Client.Update(ctx, existing)
+}
+
+func ParseServiceConfig(raw *runtime.RawExtension) (map[string]any, error) {
+	config := map[string]any{}
+	if raw == nil || len(raw.Raw) == 0 {
+		return config, nil
+	}
+
+	if err := yaml.Unmarshal(raw.Raw, &config); err != nil {
+		return nil, fmt.Errorf("parse service config: %w", err)
+	}
+
+	return config, nil
+}
+
+func SetIfMissing(config map[string]any, key string, value any) {
+	if _, ok := config[key]; ok {
+		return
+	}
+	config[key] = value
+}
+
+func GetOrInitMap(config map[string]any, key string) map[string]any {
+	if val, ok := config[key]; ok {
+		if typed, ok := val.(map[string]any); ok {
+			return typed
+		}
+	}
+
+	child := map[string]any{}
+	config[key] = child
+	return child
+}
+
+// GenerateRandomString generates a random string of specified length.
+func GenerateRandomString(length int) string {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "defaultsecret123456789012"
+	}
+
+	encoded := base64.URLEncoding.EncodeToString(bytes)
+	if len(encoded) > length {
+		return encoded[:length]
+	}
+	return encoded
+}
+
+// GetSecretValue returns the value from a secret key reference.
+func GetSecretValue(ctx context.Context, client client.Client, namespace string, ref infrav1alpha1.SecretKeyRef) (string, error) {
+	if ref.Name == "" {
+		return "", fmt.Errorf("secret name is required")
+	}
+
+	secret := &corev1.Secret{}
+	if err := client.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, secret); err != nil {
+		return "", err
+	}
+
+	key := ref.Key
+	if key == "" {
+		key = "password"
+	}
+
+	value, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %s not found in secret %s", key, ref.Name)
+	}
+
+	return string(value), nil
+}
+
+// GetServiceLabels returns standard labels for a service.
+func GetServiceLabels(instanceName, componentName string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       componentName,
 		"app.kubernetes.io/instance":   instanceName,
@@ -314,28 +442,7 @@ func (r *Sandbox0InfraReconciler) getServiceLabels(instanceName, componentName s
 	}
 }
 
-// updateEndpoints updates the status endpoints
-func (r *Sandbox0InfraReconciler) updateEndpoints(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, serviceName string, servicePort int32) {
-	if infra.Status.Endpoints == nil {
-		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
-	}
-
-	internalURL := fmt.Sprintf("http://%s:%d", serviceName, servicePort)
-	infra.Status.Endpoints.EdgeGatewayInternal = internalURL
-
-	// If ingress is configured, set external URL
-	if infra.Spec.Services != nil && infra.Spec.Services.EdgeGateway != nil &&
-		infra.Spec.Services.EdgeGateway.Ingress != nil && infra.Spec.Services.EdgeGateway.Ingress.Enabled {
-		ingress := infra.Spec.Services.EdgeGateway.Ingress
-		scheme := "http"
-		if ingress.TLSSecret != "" {
-			scheme = "https"
-		}
-		infra.Status.Endpoints.EdgeGateway = fmt.Sprintf("%s://%s", scheme, ingress.Host)
-	}
-}
-
-// boolPtr returns a pointer to a bool
-func boolPtr(b bool) *bool {
+// BoolPtr returns a pointer to a bool.
+func BoolPtr(b bool) *bool {
 	return &b
 }

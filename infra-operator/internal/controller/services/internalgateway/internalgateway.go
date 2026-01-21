@@ -1,0 +1,214 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package internalgateway
+
+import (
+	"context"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalauth"
+)
+
+type Reconciler struct {
+	Resources *common.ResourceManager
+}
+
+func NewReconciler(resources *common.ResourceManager) *Reconciler {
+	return &Reconciler{Resources: resources}
+}
+
+// Reconcile reconciles the internal-gateway deployment.
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) error {
+	logger := log.FromContext(ctx)
+
+	// Skip if not enabled
+	if infra.Spec.Services != nil && infra.Spec.Services.InternalGateway != nil && !infra.Spec.Services.InternalGateway.Enabled {
+		logger.Info("Internal gateway is disabled, skipping")
+		return nil
+	}
+
+	deploymentName := fmt.Sprintf("%s-internal-gateway", infra.Name)
+	serviceName := deploymentName
+
+	replicas := int32(1)
+	if infra.Spec.Services != nil && infra.Spec.Services.InternalGateway != nil {
+		replicas = infra.Spec.Services.InternalGateway.Replicas
+	}
+
+	labels := common.GetServiceLabels(infra.Name, "internal-gateway")
+	dataPlaneSecretName, dataPlanePrivateKey, _ := internalauth.GetDataPlaneKeyRefs(infra)
+	controlPlaneSecretName, _, controlPlanePublicKey := internalauth.GetControlPlaneKeyRefs(infra)
+
+	config, err := r.buildConfig(ctx, infra)
+	if err != nil {
+		return err
+	}
+	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, deploymentName, labels, config); err != nil {
+		return err
+	}
+
+	controlPlanePublicSecretName, controlPlanePublicKeyKey := internalauth.GetControlPlanePublicKeyRef(infra)
+	if controlPlanePublicSecretName == "" {
+		controlPlanePublicSecretName = controlPlaneSecretName
+		controlPlanePublicKeyKey = controlPlanePublicKey
+	}
+
+	// Create deployment
+	if err := r.Resources.ReconcileDeployment(ctx, infra, deploymentName, labels, replicas, common.ServiceDefinition{
+		Name:       "internal-gateway",
+		Port:       8443,
+		TargetPort: 8443,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "http",
+				ContainerPort: 8443,
+			},
+		},
+		Image: fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version),
+		EnvVars: []corev1.EnvVar{
+			{
+				Name:  "SERVICE",
+				Value: "internal-gateway",
+			},
+			{
+				Name:  "CONFIG_PATH",
+				Value: "/config/config.yaml",
+			},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "config",
+				MountPath: "/config/config.yaml",
+				SubPath:   "config.yaml",
+				ReadOnly:  true,
+			},
+			{
+				Name:      "internal-jwt-private-key",
+				MountPath: "/secrets/internal_jwt_private.key",
+				SubPath:   "internal_jwt_private.key",
+				ReadOnly:  true,
+			},
+			{
+				Name:      "internal-jwt-public-key",
+				MountPath: "/config/internal_jwt_public.key",
+				SubPath:   "internal_jwt_public.key",
+				ReadOnly:  true,
+			},
+		},
+		Volumes: []corev1.Volume{
+			{
+				Name: "config",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: deploymentName},
+					},
+				},
+			},
+			{
+				Name: "internal-jwt-private-key",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: dataPlaneSecretName,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  dataPlanePrivateKey,
+								Path: "internal_jwt_private.key",
+							},
+						},
+					},
+				},
+			},
+			{
+				Name: "internal-jwt-public-key",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: controlPlanePublicSecretName,
+						Items: []corev1.KeyToPath{
+							{
+								Key:  controlPlanePublicKeyKey,
+								Path: "internal_jwt_public.key",
+							},
+						},
+					},
+				},
+			},
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/healthz",
+					Port: intstr.FromString("http"),
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/readyz",
+					Port: intstr.FromString("http"),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+		},
+	}); err != nil {
+		return err
+	}
+
+	// Create service
+	if err := r.Resources.ReconcileService(ctx, infra, serviceName, labels, corev1.ServiceTypeClusterIP, 8443, 8443); err != nil {
+		return err
+	}
+
+	// Update endpoints in status
+	if infra.Status.Endpoints == nil {
+		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
+	}
+	infra.Status.Endpoints.InternalGateway = fmt.Sprintf("http://%s:8443", serviceName)
+
+	logger.Info("Internal gateway reconciled successfully")
+	return nil
+}
+
+func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (map[string]any, error) {
+	var raw *runtime.RawExtension
+	if infra.Spec.Services != nil && infra.Spec.Services.InternalGateway != nil {
+		raw = infra.Spec.Services.InternalGateway.Config
+	}
+
+	config, err := common.ParseServiceConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	managerURL := fmt.Sprintf("http://%s-manager:8080", infra.Name)
+	common.SetIfMissing(config, "manager_url", managerURL)
+
+	storageProxyURL := fmt.Sprintf("http://%s-storage-proxy-http:8081", infra.Name)
+	common.SetIfMissing(config, "storage_proxy_url", storageProxyURL)
+
+	return config, nil
+}
