@@ -521,6 +521,10 @@ type Sandbox0InfraStatus struct {
 	// LastOperation contains the last operation information
 	// +optional
 	LastOperation *LastOperation `json:"lastOperation,omitempty"`
+
+	// Progress shows readiness progress in "ready/total" format
+	// +optional
+	Progress string `json:"progress,omitempty"`
 }
 
 // EndpointsStatus contains service endpoints
@@ -610,6 +614,8 @@ const (
 	ConditionTypeInternalAuthReady    = "InternalAuthReady"
 	ConditionTypeCRDsInstalled        = "CRDsInstalled"
 	ConditionTypeSecretsGenerated     = "SecretsGenerated"
+	ConditionTypeInitUserReady        = "InitUserReady"
+	ConditionTypeClusterRegistered    = "ClusterRegistered"
 )
 
 //+kubebuilder:object:root=true
@@ -617,6 +623,7 @@ const (
 //+kubebuilder:resource:shortName=s0i
 //+kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+//+kubebuilder:printcolumn:name="Progress",type=string,JSONPath=`.status.progress`
 //+kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 //+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

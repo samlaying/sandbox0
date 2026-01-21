@@ -21,7 +21,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra-operator/api/v1alpha1"
 )
@@ -34,13 +33,10 @@ type reconcileStep struct {
 	SuccessMessage       string
 	ErrorReason          string
 	SkipSuccessCondition bool
-	IgnoreError          bool
 	ErrorResult          *ctrl.Result
 }
 
 func (r *Sandbox0InfraReconciler) runSteps(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, steps []reconcileStep) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
 	for _, step := range steps {
 		if step.Run == nil {
 			continue
@@ -50,11 +46,6 @@ func (r *Sandbox0InfraReconciler) runSteps(ctx context.Context, infra *infrav1al
 			if step.ConditionType != "" {
 				r.setCondition(ctx, infra, step.ConditionType, metav1.ConditionFalse, step.ErrorReason, err.Error())
 			}
-			if step.IgnoreError {
-				logger.Error(err, "Step failed but was ignored", "step", step.Name)
-				continue
-			}
-
 			result := ctrl.Result{RequeueAfter: requeueInterval}
 			if step.ErrorResult != nil {
 				result = *step.ErrorResult

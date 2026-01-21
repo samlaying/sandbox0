@@ -286,16 +286,17 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 			SuccessMessage: "Netd is ready",
 			ErrorReason:    "NetdFailed",
 		},
-		{
-			Name: "init-user",
-			Run: func(ctx context.Context) error {
-				if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
-					return r.reconcileInitUser(ctx, infra)
-				}
-				return nil
-			},
-			IgnoreError: true,
-		},
+	}
+
+	if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
+		steps = append(steps, reconcileStep{
+			Name:           "init-user",
+			Run:            func(ctx context.Context) error { return r.reconcileInitUser(ctx, infra) },
+			ConditionType:  infrav1alpha1.ConditionTypeInitUserReady,
+			SuccessReason:  "InitUserReady",
+			SuccessMessage: "Initial admin user created",
+			ErrorReason:    "InitUserFailed",
+		})
 	}
 
 	return r.runSteps(ctx, infra, steps)
@@ -468,16 +469,17 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 			SuccessMessage: "Netd is ready",
 			ErrorReason:    "NetdFailed",
 		},
-		{
-			Name: "register-cluster",
-			Run: func(ctx context.Context) error {
-				if infra.Spec.Cluster != nil {
-					return r.registerCluster(ctx, infra)
-				}
-				return nil
-			},
-			IgnoreError: true,
-		},
+	}
+
+	if infra.Spec.Cluster != nil {
+		steps = append(steps, reconcileStep{
+			Name:           "register-cluster",
+			Run:            func(ctx context.Context) error { return r.registerCluster(ctx, infra) },
+			ConditionType:  infrav1alpha1.ConditionTypeClusterRegistered,
+			SuccessReason:  "ClusterRegistered",
+			SuccessMessage: "Cluster registration completed",
+			ErrorReason:    "ClusterRegistrationFailed",
+		})
 	}
 
 	return r.runSteps(ctx, infra, steps)
@@ -488,17 +490,27 @@ func (r *Sandbox0InfraReconciler) updateOverallStatus(ctx context.Context, infra
 	logger := log.FromContext(ctx)
 	original := infra.Status.DeepCopy()
 
-	// Check if all required conditions are true
-	allReady := true
-	for _, cond := range infra.Status.Conditions {
-		if cond.Status != metav1.ConditionTrue {
+	expectedConditions := r.expectedConditionTypes(infra)
+	totalCount := len(expectedConditions)
+	readyCount := 0
+	allReady := totalCount > 0
+	for _, conditionType := range expectedConditions {
+		condition := meta.FindStatusCondition(infra.Status.Conditions, conditionType)
+		if condition == nil || condition.Status != metav1.ConditionTrue {
 			allReady = false
-			break
+			continue
 		}
+		readyCount++
+	}
+
+	if totalCount > 0 {
+		infra.Status.Progress = fmt.Sprintf("%d/%d", readyCount, totalCount)
+	} else {
+		infra.Status.Progress = ""
 	}
 
 	// Update phase
-	if allReady && len(infra.Status.Conditions) > 0 {
+	if allReady && totalCount > 0 {
 		infra.Status.Phase = infrav1alpha1.PhaseReady
 		if infra.Status.LastOperation != nil && infra.Status.LastOperation.Status == "InProgress" {
 			now := metav1.Now()
@@ -508,8 +520,9 @@ func (r *Sandbox0InfraReconciler) updateOverallStatus(ctx context.Context, infra
 	} else {
 		// Check if any condition failed
 		hasFailed := false
-		for _, cond := range infra.Status.Conditions {
-			if cond.Status == metav1.ConditionFalse && cond.Reason != "" {
+		for _, conditionType := range expectedConditions {
+			cond := meta.FindStatusCondition(infra.Status.Conditions, conditionType)
+			if cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason != "" {
 				hasFailed = true
 				break
 			}
@@ -536,6 +549,49 @@ func (r *Sandbox0InfraReconciler) updateOverallStatus(ctx context.Context, infra
 	}
 
 	return nil
+}
+
+func (r *Sandbox0InfraReconciler) expectedConditionTypes(infra *infrav1alpha1.Sandbox0Infra) []string {
+	switch infra.Spec.Mode {
+	case infrav1alpha1.DeploymentModeControlPlane:
+		return []string{
+			infrav1alpha1.ConditionTypeInternalAuthReady,
+			infrav1alpha1.ConditionTypeDatabaseReady,
+			infrav1alpha1.ConditionTypeStorageReady,
+			infrav1alpha1.ConditionTypeEdgeGatewayReady,
+			infrav1alpha1.ConditionTypeSchedulerReady,
+		}
+	case infrav1alpha1.DeploymentModeDataPlane:
+		conditions := []string{
+			infrav1alpha1.ConditionTypeInternalAuthReady,
+			infrav1alpha1.ConditionTypeDatabaseReady,
+			infrav1alpha1.ConditionTypeStorageReady,
+			infrav1alpha1.ConditionTypeInternalGatewayReady,
+			infrav1alpha1.ConditionTypeManagerReady,
+			infrav1alpha1.ConditionTypeStorageProxyReady,
+			infrav1alpha1.ConditionTypeNetdReady,
+		}
+		if infra.Spec.Cluster != nil {
+			conditions = append(conditions, infrav1alpha1.ConditionTypeClusterRegistered)
+		}
+		return conditions
+	default:
+		conditions := []string{
+			infrav1alpha1.ConditionTypeInternalAuthReady,
+			infrav1alpha1.ConditionTypeDatabaseReady,
+			infrav1alpha1.ConditionTypeStorageReady,
+			infrav1alpha1.ConditionTypeEdgeGatewayReady,
+			infrav1alpha1.ConditionTypeSchedulerReady,
+			infrav1alpha1.ConditionTypeInternalGatewayReady,
+			infrav1alpha1.ConditionTypeManagerReady,
+			infrav1alpha1.ConditionTypeStorageProxyReady,
+			infrav1alpha1.ConditionTypeNetdReady,
+		}
+		if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
+			conditions = append(conditions, infrav1alpha1.ConditionTypeInitUserReady)
+		}
+		return conditions
+	}
 }
 
 // setCondition sets or updates a condition

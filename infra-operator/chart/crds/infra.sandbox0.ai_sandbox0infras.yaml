@@ -23,6 +23,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.progress
+      name: Progress
+      type: string
     - jsonPath: .spec.version
       name: Version
       type: string
@@ -1282,6 +1285,9 @@ spec:
                 - Degraded
                 - Failed
                 - Upgrading
+                type: string
+              progress:
+                description: Progress shows readiness progress in "ready/total" format
                 type: string
             type: object
         type: object
