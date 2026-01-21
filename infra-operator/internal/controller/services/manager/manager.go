@@ -202,7 +202,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) (*apiconfig.ManagerConfig, error) {
-	cfg := apiconfig.DefaultManagerConfig()
+	cfg := &apiconfig.ManagerConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil && infra.Spec.Services.Manager.Config != nil {
 		cfg = infra.Spec.Services.Manager.Config
 	}

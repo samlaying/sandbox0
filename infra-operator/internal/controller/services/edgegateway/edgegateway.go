@@ -179,7 +179,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.EdgeGatewayConfig, error) {
-	cfg := apiconfig.DefaultEdgeGatewayConfig()
+	cfg := &apiconfig.EdgeGatewayConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.EdgeGateway != nil && infra.Spec.Services.EdgeGateway.Config != nil {
 		cfg = infra.Spec.Services.EdgeGateway.Config
 	}
@@ -207,12 +207,6 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 				Password: password,
 				Name:     infra.Spec.InitUser.Name,
 			}
-		}
-	}
-
-	for i := range cfg.OIDCProviders {
-		if len(cfg.OIDCProviders[i].Scopes) == 0 {
-			cfg.OIDCProviders[i].Scopes = []string{"openid", "email", "profile"}
 		}
 	}
 

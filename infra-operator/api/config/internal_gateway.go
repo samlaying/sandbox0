@@ -4,44 +4,42 @@ package config
 import (
 	"fmt"
 	"os"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // InternalGatewayConfig holds all configuration for internal-gateway.
 type InternalGatewayConfig struct {
 	// Server configuration
-	HTTPPort int    `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default=8443
+	HTTPPort int `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default="info"
 	LogLevel string `yaml:"log_level" json:"logLevel"`
 
 	// Upstream services
-	ManagerURL      string `yaml:"manager_url" json:"managerUrl"`
+	// +optional
+	ManagerURL string `yaml:"manager_url" json:"managerUrl"`
+	// +optional
 	StorageProxyURL string `yaml:"storage_proxy_url" json:"storageProxyUrl"`
 
 	// Internal authentication (for validating requests from edge-gateway and
 	// generating tokens for downstream services)
 	// AllowedCallers is the list of services allowed to call internal-gateway
 	// Default: ["edge-gateway"], can include "scheduler" for multi-cluster mode
+	// +optional
+	// +kubebuilder:default={"edge-gateway","scheduler"}
 	AllowedCallers []string `yaml:"allowed_callers" json:"allowedCallers"`
 
 	// Timeouts
-	ShutdownTimeout   metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
+	// +optional
+	// +kubebuilder:default="30s"
+	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
+	// +optional
+	// +kubebuilder:default="10s"
 	HealthCheckPeriod metav1.Duration `yaml:"health_check_period" json:"healthCheckPeriod"`
-}
-
-// DefaultInternalGatewayConfig returns the default configuration.
-func DefaultInternalGatewayConfig() *InternalGatewayConfig {
-	return &InternalGatewayConfig{
-		HTTPPort:          8443,
-		LogLevel:          "info",
-		ManagerURL:        "http://manager.sandbox0-system:8080",
-		StorageProxyURL:   "http://storage-proxy.sandbox0-system:8081",
-		AllowedCallers:    []string{"edge-gateway", "scheduler"},
-		ShutdownTimeout:   metav1.Duration{Duration: 30 * time.Second},
-		HealthCheckPeriod: metav1.Duration{Duration: 10 * time.Second},
-	}
 }
 
 // LoadInternalGatewayConfig returns the internal-gateway configuration.
@@ -53,14 +51,14 @@ func LoadInternalGatewayConfig() *InternalGatewayConfig {
 
 	cfg, err := loadInternalGatewayConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		cfg = DefaultInternalGatewayConfig()
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using empty config\n", path, err)
+		cfg = &InternalGatewayConfig{}
 	}
 	return cfg
 }
 
 func loadInternalGatewayConfig(path string) (*InternalGatewayConfig, error) {
-	cfg := DefaultInternalGatewayConfig()
+	cfg := &InternalGatewayConfig{}
 	if path == "" {
 		return cfg, nil
 	}

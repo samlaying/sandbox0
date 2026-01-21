@@ -4,77 +4,83 @@ package config
 import (
 	"fmt"
 	"os"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ManagerConfig holds the configuration for the manager.
 type ManagerConfig struct {
 	// HTTP Server
+	// +optional
+	// +kubebuilder:default=8080
 	HTTPPort int `yaml:"http_port" json:"httpPort"`
 
 	// manager docker image, used to copy the procd binary to sandbox pod
+	// +optional
 	ManagerImage string `yaml:"manager_image" json:"managerImage"`
 
 	// template
-	DefaultTemplateName      string `yaml:"default_template_name" json:"defaultTemplateName"`
+	// +optional
+	// +kubebuilder:default="default"
+	DefaultTemplateName string `yaml:"default_template_name" json:"defaultTemplateName"`
+	// +optional
 	DefaultTemplateNamespace string `yaml:"default_template_namespace" json:"defaultTemplateNamespace"`
-	DefaultTemplateImage     string `yaml:"default_template_image" json:"defaultTemplateImage"`
-	DefaultClusterId         string `yaml:"default_cluster_id" json:"defaultClusterId"`
+	// +optional
+	// +kubebuilder:default="sandbox0ai/otemplates:default-v0.1.0"
+	DefaultTemplateImage string `yaml:"default_template_image" json:"defaultTemplateImage"`
+	// +optional
+	DefaultClusterId string `yaml:"default_cluster_id" json:"defaultClusterId"`
 
 	// Kubernetes
-	KubeConfig     string          `yaml:"kube_config" json:"kubeConfig"`
-	LeaderElection bool            `yaml:"leader_election" json:"leaderElection"`
-	ResyncPeriod   metav1.Duration `yaml:"resync_period" json:"resyncPeriod"`
+	// +optional
+	KubeConfig string `yaml:"kube_config" json:"kubeConfig"`
+	// +optional
+	// +kubebuilder:default=true
+	LeaderElection bool `yaml:"leader_election" json:"leaderElection"`
+	// +optional
+	// +kubebuilder:default="30s"
+	ResyncPeriod metav1.Duration `yaml:"resync_period" json:"resyncPeriod"`
 
 	// Database
+	// +optional
 	DatabaseURL string `yaml:"database_url" json:"databaseUrl"`
 
 	// Cleanup Controller
+	// +optional
+	// +kubebuilder:default="60s"
 	CleanupInterval metav1.Duration `yaml:"cleanup_interval" json:"cleanupInterval"`
 
 	// Logging
+	// +optional
+	// +kubebuilder:default="info"
 	LogLevel string `yaml:"log_level" json:"logLevel"`
 
 	// Metrics
+	// +optional
+	// +kubebuilder:default=9090
 	MetricsPort int `yaml:"metrics_port" json:"metricsPort"`
 
 	// Webhook
-	WebhookPort     int    `yaml:"webhook_port" json:"webhookPort"`
+	// +optional
+	// +kubebuilder:default=9443
+	WebhookPort int `yaml:"webhook_port" json:"webhookPort"`
+	// +optional
+	// +kubebuilder:default="/tmp/k8s-webhook-server/serving-certs/tls.crt"
 	WebhookCertPath string `yaml:"webhook_cert_path" json:"webhookCertPath"`
-	WebhookKeyPath  string `yaml:"webhook_key_path" json:"webhookKeyPath"`
+	// +optional
+	// +kubebuilder:default="/tmp/k8s-webhook-server/serving-certs/tls.key"
+	WebhookKeyPath string `yaml:"webhook_key_path" json:"webhookKeyPath"`
 
 	// Sandbox
+	// +optional
+	// +kubebuilder:default="5m"
 	DefaultSandboxTTL metav1.Duration `yaml:"default_sandbox_ttl" json:"defaultSandboxTTL"`
 
 	// Procd config injected into sandbox pods
+	// +optional
+	// +kubebuilder:default={}
 	ProcdConfig ProcdConfig `yaml:"procd_config" json:"procdConfig"`
-}
-
-// DefaultManagerConfig returns the default configuration.
-func DefaultManagerConfig() *ManagerConfig {
-	return &ManagerConfig{
-		HTTPPort:                 8080,
-		ManagerImage:             "sandbox0ai/infra:latest",
-		DefaultTemplateName:      "default",
-		DefaultTemplateNamespace: "sandbox0",
-		DefaultTemplateImage:     "sandbox0ai/otemplates:default-v0.1.0",
-		DefaultClusterId:         "default",
-		KubeConfig:               "",
-		LeaderElection:           true,
-		ResyncPeriod:             metav1.Duration{Duration: 30 * time.Second},
-		DatabaseURL:              "",
-		CleanupInterval:          metav1.Duration{Duration: 60 * time.Second},
-		LogLevel:                 "info",
-		MetricsPort:              9090,
-		WebhookPort:              9443,
-		WebhookCertPath:          "/tmp/k8s-webhook-server/serving-certs/tls.crt",
-		WebhookKeyPath:           "/tmp/k8s-webhook-server/serving-certs/tls.key",
-		DefaultSandboxTTL:        metav1.Duration{Duration: 5 * time.Minute},
-		ProcdConfig:              DefaultProcdConfig(),
-	}
 }
 
 // LoadManagerConfig returns the manager configuration.
@@ -86,14 +92,14 @@ func LoadManagerConfig() *ManagerConfig {
 
 	cfg, err := loadManagerConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		cfg = DefaultManagerConfig()
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using empty config\n", path, err)
+		cfg = &ManagerConfig{}
 	}
 	return cfg
 }
 
 func loadManagerConfig(path string) (*ManagerConfig, error) {
-	cfg := DefaultManagerConfig()
+	cfg := &ManagerConfig{}
 	if path == "" {
 		return cfg, nil
 	}

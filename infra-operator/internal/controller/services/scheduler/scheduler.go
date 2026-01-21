@@ -183,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.SchedulerConfig, error) {
-	cfg := apiconfig.DefaultSchedulerConfig()
+	cfg := &apiconfig.SchedulerConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.Scheduler != nil && infra.Spec.Services.Scheduler.Config != nil {
 		cfg = infra.Spec.Services.Scheduler.Config
 	}

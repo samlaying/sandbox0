@@ -178,14 +178,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.NetdConfig, error) {
-	cfg := apiconfig.DefaultNetdConfig()
+	cfg := &apiconfig.NetdConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil && infra.Spec.Services.Netd.Config != nil {
 		cfg = infra.Spec.Services.Netd.Config
 	}
 
-	if cfg.NodeName == "" {
-		cfg.NodeName = "${NODE_NAME}"
-	}
 	if cfg.Namespace == "" {
 		cfg.Namespace = infra.Namespace
 	}

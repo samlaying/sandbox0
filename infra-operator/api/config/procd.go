@@ -10,46 +10,49 @@ import (
 	"sync"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ProcdConfig holds all configuration for procd.
 type ProcdConfig struct {
 	// Sandbox identity
-	SandboxID  string `yaml:"sandbox_id" json:"sandboxID"`
+	// +optional
+	SandboxID string `yaml:"sandbox_id" json:"sandboxID"`
+	// +optional
 	TemplateID string `yaml:"template_id" json:"templateID"`
-	NodeName   string `yaml:"node_name" json:"nodeName"`
+	// +optional
+	NodeName string `yaml:"node_name" json:"nodeName"`
 
 	// Server configuration
-	HTTPPort int    `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default=49983
+	HTTPPort int `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default="info"
 	LogLevel string `yaml:"log_level" json:"logLevel"`
 
 	// Storage Proxy configuration
-	StorageProxyBaseURL  string `yaml:"storage_proxy_base_url" json:"storageProxyBaseURL"`
-	StorageProxyReplicas int    `yaml:"storage_proxy_replicas" json:"storageProxyReplicas"`
+	// +optional
+	StorageProxyBaseURL string `yaml:"storage_proxy_base_url" json:"storageProxyBaseURL"`
+	// +optional
+	// +kubebuilder:default=3
+	StorageProxyReplicas int `yaml:"storage_proxy_replicas" json:"storageProxyReplicas"`
 
 	// File manager configuration
+	// +optional
+	// +kubebuilder:default="/workspace"
 	RootPath string `yaml:"root_path" json:"rootPath"`
 
 	// Cache configuration
-	CacheMaxBytes int64           `yaml:"cache_max_bytes" json:"cacheMaxBytes"`
-	CacheTTL      metav1.Duration `yaml:"cache_ttl" json:"cacheTTL"`
+	// +optional
+	// +kubebuilder:default=104857600
+	CacheMaxBytes int64 `yaml:"cache_max_bytes" json:"cacheMaxBytes"`
+	// +optional
+	// +kubebuilder:default="30s"
+	CacheTTL metav1.Duration `yaml:"cache_ttl" json:"cacheTTL"`
 
 	setKeys map[string]string `yaml:"-" json:"-"`
-}
-
-// DefaultProcdConfig returns the default configuration.
-func DefaultProcdConfig() ProcdConfig {
-	return ProcdConfig{
-		HTTPPort:             49983,
-		LogLevel:             "info",
-		StorageProxyBaseURL:  "storage-proxy.sandbox0-system.svc.cluster.local",
-		StorageProxyReplicas: 3,
-		RootPath:             "/workspace",
-		CacheMaxBytes:        100 * 1024 * 1024,
-		CacheTTL:             metav1.Duration{Duration: 30 * time.Second},
-	}
 }
 
 // UnmarshalYAML captures configured keys without hardcoding them.
@@ -104,7 +107,7 @@ func (c *ProcdConfig) Validate() error {
 }
 
 func loadProcdConfig() *ProcdConfig {
-	cfg := DefaultProcdConfig()
+	cfg := ProcdConfig{}
 	path := os.Getenv("CONFIG_PATH")
 	if path == "" {
 		path = "/config/config.yaml"
@@ -113,11 +116,11 @@ func loadProcdConfig() *ProcdConfig {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read procd config from %s: %v, using defaults\n", path, err)
+			fmt.Fprintf(os.Stderr, "Failed to read procd config from %s: %v, using empty config\n", path, err)
 		} else {
 			data = []byte(os.ExpandEnv(string(data)))
 			if err := yaml.Unmarshal(data, &cfg); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to unmarshal procd config from %s: %v, using defaults\n", path, err)
+				fmt.Fprintf(os.Stderr, "Failed to unmarshal procd config from %s: %v, using empty config\n", path, err)
 			}
 		}
 	}

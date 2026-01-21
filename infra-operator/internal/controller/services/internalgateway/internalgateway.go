@@ -194,13 +194,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.InternalGatewayConfig, error) {
-	cfg := apiconfig.DefaultInternalGatewayConfig()
+	cfg := &apiconfig.InternalGatewayConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.InternalGateway != nil && infra.Spec.Services.InternalGateway.Config != nil {
-		// Since Config is now strongly typed, we can just use it.
-		// However, to apply defaults to fields not specified in the CRD, 
-		// we might still want to merge or just use it as is if we assume 
-		// the user provided a full config or if we want defaults from the struct itself.
-		// For now, let's just use the one from CRD if provided.
 		cfg = infra.Spec.Services.InternalGateway.Config
 	}
 

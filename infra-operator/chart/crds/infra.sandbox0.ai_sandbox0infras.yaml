@@ -354,19 +354,24 @@ spec:
                 description: Region identifies the region for multi-cluster deployments
                 type: string
               services:
+                default: {}
                 description: Services configures individual services
                 properties:
                   edgeGateway:
+                    default: {}
                     description: EdgeGateway configures the edge-gateway service (control
                       plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains edge-gateway specific configuration
                         properties:
                           baseUrl:
+                            default: http://localhost:8080
                             description: Base URL for OIDC callbacks
                             type: string
                           builtInAuth:
+                            default: {}
                             description: Built-in Authentication
                             properties:
                               adminOnly:
@@ -382,6 +387,7 @@ spec:
                                   verification
                                 type: boolean
                               enabled:
+                                default: true
                                 description: Enabled enables built-in email/password
                                   authentication
                                 type: boolean
@@ -395,17 +401,7 @@ spec:
                                     type: string
                                   password:
                                     type: string
-                                required:
-                                - email
-                                - name
-                                - password
                                 type: object
-                            required:
-                            - adminOnly
-                            - allowRegistration
-                            - emailVerificationRequired
-                            - enabled
-                            - initUser
                             type: object
                           databaseUrl:
                             description: Database configuration (for API key validation)
@@ -414,19 +410,24 @@ spec:
                             description: Upstream service
                             type: string
                           edition:
+                            default: self-hosted
                             description: 'Edition: "saas" or "self-hosted"'
                             type: string
                           httpPort:
+                            default: 8080
                             description: Server configuration
                             type: integer
                           jwtAccessTokenTTL:
+                            default: 15m
                             type: string
                           jwtRefreshTokenTTL:
+                            default: 168h
                             type: string
                           jwtSecret:
                             description: JWT Configuration
                             type: string
                           logLevel:
+                            default: info
                             type: string
                           oidcProviders:
                             description: OIDC Providers
@@ -458,6 +459,10 @@ spec:
                                   description: Name is the display name
                                   type: string
                                 scopes:
+                                  default:
+                                  - openid
+                                  - email
+                                  - profile
                                   description: Scopes are the OAuth scopes to request
                                   items:
                                     type: string
@@ -477,29 +482,18 @@ spec:
                                     domain:
                                       description: Domain filters users by email domain
                                       type: string
-                                  required:
-                                  - defaultRole
-                                  - defaultTeamId
-                                  - domain
                                   type: object
-                              required:
-                              - autoProvision
-                              - clientId
-                              - clientSecret
-                              - discoveryUrl
-                              - enabled
-                              - id
-                              - name
-                              - scopes
-                              - teamMapping
                               type: object
                             type: array
                           proxyTimeout:
+                            default: 30s
                             description: Timeouts
                             type: string
                           rateLimitBurst:
+                            default: 200
                             type: integer
                           rateLimitRPS:
+                            default: 100
                             description: Rate limiting
                             type: integer
                           schedulerEnabled:
@@ -509,25 +503,8 @@ spec:
                           schedulerUrl:
                             type: string
                           shutdownTimeout:
+                            default: 30s
                             type: string
-                        required:
-                        - baseUrl
-                        - builtInAuth
-                        - databaseUrl
-                        - defaultInternalGatewayUrl
-                        - edition
-                        - httpPort
-                        - jwtAccessTokenTTL
-                        - jwtRefreshTokenTTL
-                        - jwtSecret
-                        - logLevel
-                        - oidcProviders
-                        - proxyTimeout
-                        - rateLimitBurst
-                        - rateLimitRPS
-                        - schedulerEnabled
-                        - schedulerUrl
-                        - shutdownTimeout
                         type: object
                       enabled:
                         default: true
@@ -629,13 +606,18 @@ spec:
                         type: object
                     type: object
                   internalGateway:
+                    default: {}
                     description: InternalGateway configures the internal-gateway service
                       (data plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains internal-gateway specific configuration
                         properties:
                           allowedCallers:
+                            default:
+                            - edge-gateway
+                            - scheduler
                             description: |-
                               Internal authentication (for validating requests from edge-gateway and
                               generating tokens for downstream services)
@@ -645,28 +627,24 @@ spec:
                               type: string
                             type: array
                           healthCheckPeriod:
+                            default: 10s
                             type: string
                           httpPort:
+                            default: 8443
                             description: Server configuration
                             type: integer
                           logLevel:
+                            default: info
                             type: string
                           managerUrl:
                             description: Upstream services
                             type: string
                           shutdownTimeout:
+                            default: 30s
                             description: Timeouts
                             type: string
                           storageProxyUrl:
                             type: string
-                        required:
-                        - allowedCallers
-                        - healthCheckPeriod
-                        - httpPort
-                        - logLevel
-                        - managerUrl
-                        - shutdownTimeout
-                        - storageProxyUrl
                         type: object
                       enabled:
                         default: true
@@ -768,12 +746,15 @@ spec:
                         type: object
                     type: object
                   manager:
+                    default: {}
                     description: Manager configures the manager service (data plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains manager specific configuration
                         properties:
                           cleanupInterval:
+                            default: 60s
                             description: Cleanup Controller
                             type: string
                           databaseUrl:
@@ -782,24 +763,30 @@ spec:
                           defaultClusterId:
                             type: string
                           defaultSandboxTTL:
+                            default: 5m
                             description: Sandbox
                             type: string
                           defaultTemplateImage:
+                            default: sandbox0ai/otemplates:default-v0.1.0
                             type: string
                           defaultTemplateName:
+                            default: default
                             description: template
                             type: string
                           defaultTemplateNamespace:
                             type: string
                           httpPort:
+                            default: 8080
                             description: HTTP Server
                             type: integer
                           kubeConfig:
                             description: Kubernetes
                             type: string
                           leaderElection:
+                            default: true
                             type: boolean
                           logLevel:
+                            default: info
                             description: Logging
                             type: string
                           managerImage:
@@ -807,25 +794,32 @@ spec:
                               binary to sandbox pod
                             type: string
                           metricsPort:
+                            default: 9090
                             description: Metrics
                             type: integer
                           procdConfig:
+                            default: {}
                             description: Procd config injected into sandbox pods
                             properties:
                               cacheMaxBytes:
+                                default: 104857600
                                 description: Cache configuration
                                 format: int64
                                 type: integer
                               cacheTTL:
+                                default: 30s
                                 type: string
                               httpPort:
+                                default: 49983
                                 description: Server configuration
                                 type: integer
                               logLevel:
+                                default: info
                                 type: string
                               nodeName:
                                 type: string
                               rootPath:
+                                default: /workspace
                                 description: File manager configuration
                                 type: string
                               sandboxID:
@@ -835,49 +829,24 @@ spec:
                                 description: Storage Proxy configuration
                                 type: string
                               storageProxyReplicas:
+                                default: 3
                                 type: integer
                               templateID:
                                 type: string
-                            required:
-                            - cacheMaxBytes
-                            - cacheTTL
-                            - httpPort
-                            - logLevel
-                            - nodeName
-                            - rootPath
-                            - sandboxID
-                            - storageProxyBaseURL
-                            - storageProxyReplicas
-                            - templateID
                             type: object
                           resyncPeriod:
+                            default: 30s
                             type: string
                           webhookCertPath:
+                            default: /tmp/k8s-webhook-server/serving-certs/tls.crt
                             type: string
                           webhookKeyPath:
+                            default: /tmp/k8s-webhook-server/serving-certs/tls.key
                             type: string
                           webhookPort:
+                            default: 9443
                             description: Webhook
                             type: integer
-                        required:
-                        - cleanupInterval
-                        - databaseUrl
-                        - defaultClusterId
-                        - defaultSandboxTTL
-                        - defaultTemplateImage
-                        - defaultTemplateName
-                        - defaultTemplateNamespace
-                        - httpPort
-                        - kubeConfig
-                        - leaderElection
-                        - logLevel
-                        - managerImage
-                        - metricsPort
-                        - procdConfig
-                        - resyncPeriod
-                        - webhookCertPath
-                        - webhookKeyPath
-                        - webhookPort
                         type: object
                       enabled:
                         default: true
@@ -979,12 +948,15 @@ spec:
                         type: object
                     type: object
                   netd:
+                    default: {}
                     description: Netd configures the netd service (data plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains netd specific configuration
                         properties:
                           bpfFSPath:
+                            default: /sys/fs/bpf
                             description: BPFFSPath is the path to bpf filesystem (usually
                               /sys/fs/bpf)
                             type: string
@@ -993,16 +965,20 @@ spec:
                               (always allowed for DNS)
                             type: string
                           dnsResolvers:
+                            default:
+                            - 8.8.8.8:53
                             description: DNSResolvers are the upstream DNS resolvers
                               for the proxy
                             items:
                               type: string
                             type: array
                           failClosed:
+                            default: true
                             description: FailClosed if true, blocks all traffic when
                               netd is not ready
                             type: boolean
                           healthPort:
+                            default: 8080
                             description: HealthPort is the port for health checks
                             type: integer
                           internalGatewayCIDR:
@@ -1014,13 +990,16 @@ spec:
                               (optional, uses in-cluster config if empty)
                             type: string
                           logLevel:
+                            default: info
                             description: LogLevel is the logging level (debug, info,
                               warn, error)
                             type: string
                           metricsPort:
+                            default: 9090
                             description: MetricsPort is the port for Prometheus metrics
                             type: integer
                           metricsReportInterval:
+                            default: 10s
                             description: MetricsReportInterval is the interval for
                               reporting metrics
                             type: string
@@ -1029,25 +1008,31 @@ spec:
                               pods
                             type: string
                           nodeName:
+                            default: ${NODE_NAME}
                             description: NodeName is the name of the node this netd
                               is running on
                             type: string
                           procdPort:
+                            default: 49983
                             description: ProcdPort is the port procd listens on
                             type: integer
                           proxyHTTPPort:
+                            default: 18080
                             description: ProxyHTTPPort is the port for HTTP proxy
                               (redirect from port 80)
                             type: integer
                           proxyHTTPSPort:
+                            default: 18443
                             description: ProxyHTTPSPort is the port for HTTPS/TLS
                               proxy (redirect from port 443)
                             type: integer
                           proxyListenAddr:
+                            default: 0.0.0.0
                             description: ProxyListenAddr is the address for the L7
                               proxy to listen on
                             type: string
                           resyncPeriod:
+                            default: 30s
                             description: ResyncPeriod is the period for informer resync
                             type: string
                           storageProxyCIDR:
@@ -1055,34 +1040,15 @@ spec:
                               (always allowed)
                             type: string
                           useEBPF:
+                            default: true
                             description: UseEBPF enables eBPF-based bandwidth control
                               (more efficient than tc htb)
                             type: boolean
                           useEDT:
+                            default: true
                             description: UseEDT enables Earliest Departure Time pacing
                               for eBPF
                             type: boolean
-                        required:
-                        - bpfFSPath
-                        - clusterDNSCIDR
-                        - dnsResolvers
-                        - failClosed
-                        - healthPort
-                        - internalGatewayCIDR
-                        - kubeConfig
-                        - logLevel
-                        - metricsPort
-                        - metricsReportInterval
-                        - namespace
-                        - nodeName
-                        - procdPort
-                        - proxyHTTPPort
-                        - proxyHTTPSPort
-                        - proxyListenAddr
-                        - resyncPeriod
-                        - storageProxyCIDR
-                        - useEBPF
-                        - useEDT
                         type: object
                       enabled:
                         default: true
@@ -1188,28 +1154,27 @@ spec:
                       plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains scheduler specific configuration
                         properties:
                           databaseUrl:
                             description: Database configuration
                             type: string
                           httpPort:
+                            default: 8080
                             description: Server configuration
                             type: integer
                           logLevel:
+                            default: info
                             type: string
                           reconcileInterval:
+                            default: 30s
                             description: Reconciler configuration
                             type: string
                           shutdownTimeout:
+                            default: 30s
                             description: Timeouts
                             type: string
-                        required:
-                        - databaseUrl
-                        - httpPort
-                        - logLevel
-                        - reconcileInterval
-                        - shutdownTimeout
                         type: object
                       enabled:
                         default: true
@@ -1311,54 +1276,69 @@ spec:
                         type: object
                     type: object
                   storageProxy:
+                    default: {}
                     description: StorageProxy configures the storage-proxy service
                       (data plane)
                     properties:
                       config:
+                        default: {}
                         description: Config contains storage-proxy specific configuration
                         properties:
                           auditFile:
+                            default: /var/log/storage-proxy/audit.log
                             type: string
                           auditLog:
+                            default: true
                             type: boolean
                           cacheDir:
+                            default: /var/lib/storage-proxy/cache
                             type: string
                           databaseUrl:
                             description: Database
                             type: string
                           defaultCacheSize:
+                            default: 1G
                             type: string
                           defaultClusterId:
                             type: string
                           grpcAddr:
+                            default: 0.0.0.0
                             description: gRPC Server
                             type: string
                           grpcPort:
+                            default: 8080
                             type: integer
                           httpAddr:
+                            default: 0.0.0.0
                             description: HTTP Management API
                             type: string
                           httpPort:
+                            default: 8081
                             type: integer
                           kubeconfigPath:
                             description: Kubernetes
                             type: string
                           logLevel:
+                            default: info
                             description: Logging
                             type: string
                           maxBytesPerSecond:
+                            default: 1073741824
                             format: int64
                             type: integer
                           maxOpsPerSecond:
+                            default: 10000
                             description: Rate limiting
                             type: integer
                           metaUrl:
                             description: JuiceFS defaults
                             type: string
                           metricsEnabled:
+                            default: true
                             description: Monitoring
                             type: boolean
                           metricsPort:
+                            default: 9090
                             type: integer
                           s3AccessKey:
                             type: string
@@ -1372,30 +1352,6 @@ spec:
                             type: string
                           s3SessionToken:
                             type: string
-                        required:
-                        - auditFile
-                        - auditLog
-                        - cacheDir
-                        - databaseUrl
-                        - defaultCacheSize
-                        - defaultClusterId
-                        - grpcAddr
-                        - grpcPort
-                        - httpAddr
-                        - httpPort
-                        - kubeconfigPath
-                        - logLevel
-                        - maxBytesPerSecond
-                        - maxOpsPerSecond
-                        - metaUrl
-                        - metricsEnabled
-                        - metricsPort
-                        - s3AccessKey
-                        - s3Bucket
-                        - s3Endpoint
-                        - s3Region
-                        - s3SecretKey
-                        - s3SessionToken
                         type: object
                       enabled:
                         default: true

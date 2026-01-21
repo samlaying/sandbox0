@@ -4,37 +4,34 @@ package config
 import (
 	"fmt"
 	"os"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // SchedulerConfig holds all configuration for scheduler.
 type SchedulerConfig struct {
 	// Server configuration
-	HTTPPort int    `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default=8080
+	HTTPPort int `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default="info"
 	LogLevel string `yaml:"log_level" json:"logLevel"`
 
 	// Database configuration
+	// +optional
 	DatabaseURL string `yaml:"database_url" json:"databaseUrl"`
 
 	// Reconciler configuration
+	// +optional
+	// +kubebuilder:default="30s"
 	ReconcileInterval metav1.Duration `yaml:"reconcile_interval" json:"reconcileInterval"`
 
 	// Timeouts
+	// +optional
+	// +kubebuilder:default="30s"
 	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
-}
-
-// DefaultSchedulerConfig returns the default configuration.
-func DefaultSchedulerConfig() *SchedulerConfig {
-	return &SchedulerConfig{
-		HTTPPort:          8080,
-		LogLevel:          "info",
-		DatabaseURL:       "",
-		ReconcileInterval: metav1.Duration{Duration: 30 * time.Second},
-		ShutdownTimeout:   metav1.Duration{Duration: 30 * time.Second},
-	}
 }
 
 // LoadSchedulerConfig returns the scheduler configuration.
@@ -46,14 +43,14 @@ func LoadSchedulerConfig() *SchedulerConfig {
 
 	cfg, err := loadSchedulerConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		cfg = DefaultSchedulerConfig()
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using empty config\n", path, err)
+		cfg = &SchedulerConfig{}
 	}
 	return cfg
 }
 
 func loadSchedulerConfig(path string) (*SchedulerConfig, error) {
-	cfg := DefaultSchedulerConfig()
+	cfg := &SchedulerConfig{}
 	if path == "" {
 		return cfg, nil
 	}

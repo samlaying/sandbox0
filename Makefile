@@ -205,5 +205,5 @@ operator-install: operator-manifests
 	kubectl apply -f infra-operator/chart/crds/
 
 .PHONY: operator-run
-operator-run: operator-manifests
+operator-run: operator-install
 	go run ./infra-operator/cmd/infra-operator

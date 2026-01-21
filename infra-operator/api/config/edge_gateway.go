@@ -4,148 +4,168 @@ package config
 import (
 	"fmt"
 	"os"
-	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EdgeGatewayConfig holds all configuration for edge-gateway.
 type EdgeGatewayConfig struct {
 	// Edition: "saas" or "self-hosted"
+	// +optional
+	// +kubebuilder:default="self-hosted"
 	Edition string `yaml:"edition" json:"edition"`
 
 	// Server configuration
-	HTTPPort int    `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default=8080
+	HTTPPort int `yaml:"http_port" json:"httpPort"`
+	// +optional
+	// +kubebuilder:default="info"
 	LogLevel string `yaml:"log_level" json:"logLevel"`
 
 	// Database configuration (for API key validation)
+	// +optional
 	DatabaseURL string `yaml:"database_url" json:"databaseUrl"`
 
 	// Upstream service
+	// +optional
 	DefaultInternalGatewayURL string `yaml:"default_internal_gateway_url" json:"defaultInternalGatewayUrl"`
 
 	// Scheduler configuration (optional, for multi-cluster mode)
-	SchedulerEnabled bool   `yaml:"scheduler_enabled" json:"schedulerEnabled"`
-	SchedulerURL     string `yaml:"scheduler_url" json:"schedulerUrl"`
+	// +optional
+	SchedulerEnabled bool `yaml:"scheduler_enabled" json:"schedulerEnabled"`
+	// +optional
+	SchedulerURL string `yaml:"scheduler_url" json:"schedulerUrl"`
 
 	// JWT Configuration
-	JWTSecret          string          `yaml:"jwt_secret" json:"jwtSecret"`
-	JWTAccessTokenTTL  metav1.Duration `yaml:"jwt_access_token_ttl" json:"jwtAccessTokenTTL"`
+	// +optional
+	JWTSecret string `yaml:"jwt_secret" json:"jwtSecret"`
+	// +optional
+	// +kubebuilder:default="15m"
+	JWTAccessTokenTTL metav1.Duration `yaml:"jwt_access_token_ttl" json:"jwtAccessTokenTTL"`
+	// +optional
+	// +kubebuilder:default="168h"
 	JWTRefreshTokenTTL metav1.Duration `yaml:"jwt_refresh_token_ttl" json:"jwtRefreshTokenTTL"`
 
 	// Rate limiting
-	RateLimitRPS   int `yaml:"rate_limit_rps" json:"rateLimitRPS"`
+	// +optional
+	// +kubebuilder:default=100
+	RateLimitRPS int `yaml:"rate_limit_rps" json:"rateLimitRPS"`
+	// +optional
+	// +kubebuilder:default=200
 	RateLimitBurst int `yaml:"rate_limit_burst" json:"rateLimitBurst"`
 
 	// Timeouts
-	ProxyTimeout    metav1.Duration `yaml:"proxy_timeout" json:"proxyTimeout"`
+	// +optional
+	// +kubebuilder:default="30s"
+	ProxyTimeout metav1.Duration `yaml:"proxy_timeout" json:"proxyTimeout"`
+	// +optional
+	// +kubebuilder:default="30s"
 	ShutdownTimeout metav1.Duration `yaml:"shutdown_timeout" json:"shutdownTimeout"`
 
 	// Built-in Authentication
+	// +optional
+	// +kubebuilder:default={}
 	BuiltInAuth BuiltInAuthConfig `yaml:"built_in_auth" json:"builtInAuth"`
 
 	// OIDC Providers
+	// +optional
 	OIDCProviders []OIDCProviderConfig `yaml:"oidc_providers" json:"oidcProviders"`
 
 	// Base URL for OIDC callbacks
+	// +optional
+	// +kubebuilder:default="http://localhost:8080"
 	BaseURL string `yaml:"base_url" json:"baseUrl"`
 }
 
 // BuiltInAuthConfig configures the built-in authentication.
 type BuiltInAuthConfig struct {
 	// Enabled enables built-in email/password authentication
+	// +optional
+	// +kubebuilder:default=true
 	Enabled bool `yaml:"enabled" json:"enabled"`
 
 	// AllowRegistration allows new users to register
+	// +optional
 	AllowRegistration bool `yaml:"allow_registration" json:"allowRegistration"`
 
 	// EmailVerificationRequired requires email verification
+	// +optional
 	EmailVerificationRequired bool `yaml:"email_verification_required" json:"emailVerificationRequired"`
 
 	// AdminOnly restricts built-in auth to admin accounts only
+	// +optional
 	AdminOnly bool `yaml:"admin_only" json:"adminOnly"`
 
 	// InitUser is the initial admin user (for self-hosted)
+	// +optional
 	InitUser *InitUserConfig `yaml:"init_user" json:"initUser"`
 }
 
 // InitUserConfig configures the initial admin user.
 type InitUserConfig struct {
-	Email    string `yaml:"email" json:"email"`
+	// +optional
+	Email string `yaml:"email" json:"email"`
+	// +optional
 	Password string `yaml:"password" json:"password"`
-	Name     string `yaml:"name" json:"name"`
+	// +optional
+	Name string `yaml:"name" json:"name"`
 }
 
 // OIDCProviderConfig configures an OIDC provider.
 type OIDCProviderConfig struct {
 	// ID is the unique identifier for the provider (e.g., "github", "google")
+	// +optional
 	ID string `yaml:"id" json:"id"`
 
 	// Name is the display name
+	// +optional
 	Name string `yaml:"name" json:"name"`
 
 	// Enabled toggles the provider
+	// +optional
 	Enabled bool `yaml:"enabled" json:"enabled"`
 
 	// ClientID is the OAuth client ID
+	// +optional
 	ClientID string `yaml:"client_id" json:"clientId"`
 
 	// ClientSecret is the OAuth client secret
+	// +optional
 	ClientSecret string `yaml:"client_secret" json:"clientSecret"`
 
 	// DiscoveryURL is the OIDC discovery URL (.well-known/openid-configuration)
+	// +optional
 	DiscoveryURL string `yaml:"discovery_url" json:"discoveryUrl"`
 
 	// Scopes are the OAuth scopes to request
+	// +optional
+	// +kubebuilder:default={"openid","email","profile"}
 	Scopes []string `yaml:"scopes" json:"scopes"`
 
 	// AutoProvision automatically creates users on first login
+	// +optional
 	AutoProvision bool `yaml:"auto_provision" json:"autoProvision"`
 
 	// TeamMapping configures automatic team assignment
+	// +optional
 	TeamMapping *TeamMappingConfig `yaml:"team_mapping" json:"teamMapping"`
 }
 
 // TeamMappingConfig configures automatic team mapping for OIDC.
 type TeamMappingConfig struct {
 	// Domain filters users by email domain
+	// +optional
 	Domain string `yaml:"domain" json:"domain"`
 
 	// DefaultRole is the role assigned to new users
+	// +optional
 	DefaultRole string `yaml:"default_role" json:"defaultRole"`
 
 	// DefaultTeamID is the team to add users to
+	// +optional
 	DefaultTeamID string `yaml:"default_team_id" json:"defaultTeamId"`
-}
-
-// DefaultEdgeGatewayConfig returns the default configuration.
-func DefaultEdgeGatewayConfig() *EdgeGatewayConfig {
-	return &EdgeGatewayConfig{
-		Edition:                   "self-hosted",
-		HTTPPort:                  8080,
-		LogLevel:                  "info",
-		DatabaseURL:               "",
-		DefaultInternalGatewayURL: "http://internal-gateway.sandbox0-system:8443",
-		JWTSecret:                 "",
-		JWTAccessTokenTTL:         metav1.Duration{Duration: 15 * time.Minute},
-		JWTRefreshTokenTTL:        metav1.Duration{Duration: 7 * 24 * time.Hour},
-		RateLimitRPS:              100,
-		RateLimitBurst:            200,
-		ProxyTimeout:              metav1.Duration{Duration: 30 * time.Second},
-		ShutdownTimeout:           metav1.Duration{Duration: 30 * time.Second},
-		BaseURL:                   "http://localhost:8080",
-		BuiltInAuth: BuiltInAuthConfig{
-			Enabled:           true,
-			AllowRegistration: false,
-			AdminOnly:         false,
-			InitUser: &InitUserConfig{
-				Email:    "admin@localhost",
-				Password: "admin123",
-				Name:     "Admin",
-			},
-		},
-	}
 }
 
 // LoadEdgeGatewayConfig returns the edge-gateway configuration.
@@ -157,14 +177,14 @@ func LoadEdgeGatewayConfig() *EdgeGatewayConfig {
 
 	cfg, err := loadEdgeGatewayConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using defaults\n", path, err)
-		cfg = DefaultEdgeGatewayConfig()
+		fmt.Fprintf(os.Stderr, "Failed to load config from %s: %v, using empty config\n", path, err)
+		cfg = &EdgeGatewayConfig{}
 	}
 	return cfg
 }
 
 func loadEdgeGatewayConfig(path string) (*EdgeGatewayConfig, error) {
-	cfg := DefaultEdgeGatewayConfig()
+	cfg := &EdgeGatewayConfig{}
 	if path == "" {
 		return cfg, nil
 	}
@@ -179,13 +199,6 @@ func loadEdgeGatewayConfig(path string) (*EdgeGatewayConfig, error) {
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	// Apply defaults to OIDC providers
-	for i := range cfg.OIDCProviders {
-		if len(cfg.OIDCProviders[i].Scopes) == 0 {
-			cfg.OIDCProviders[i].Scopes = []string{"openid", "email", "profile"}
-		}
 	}
 
 	return cfg, nil

@@ -99,6 +99,7 @@ type Sandbox0InfraSpec struct {
 
 	// Services configures individual services
 	// +optional
+	// +kubebuilder:default={}
 	Services *ServicesConfig `json:"services,omitempty"`
 
 	// Region identifies the region for multi-cluster deployments
@@ -357,6 +358,7 @@ type KeyPairSecretRef struct {
 type ServicesConfig struct {
 	// EdgeGateway configures the edge-gateway service (control plane)
 	// +optional
+	// +kubebuilder:default={}
 	EdgeGateway *EdgeGatewayServiceConfig `json:"edgeGateway,omitempty"`
 
 	// Scheduler configures the scheduler service (control plane)
@@ -365,18 +367,22 @@ type ServicesConfig struct {
 
 	// InternalGateway configures the internal-gateway service (data plane)
 	// +optional
+	// +kubebuilder:default={}
 	InternalGateway *InternalGatewayServiceConfig `json:"internalGateway,omitempty"`
 
 	// Manager configures the manager service (data plane)
 	// +optional
+	// +kubebuilder:default={}
 	Manager *ManagerServiceConfig `json:"manager,omitempty"`
 
 	// StorageProxy configures the storage-proxy service (data plane)
 	// +optional
+	// +kubebuilder:default={}
 	StorageProxy *StorageProxyServiceConfig `json:"storageProxy,omitempty"`
 
 	// Netd configures the netd service (data plane)
 	// +optional
+	// +kubebuilder:default={}
 	Netd *NetdServiceConfig `json:"netd,omitempty"`
 }
 
@@ -408,6 +414,7 @@ type EdgeGatewayServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains edge-gateway specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.EdgeGatewayConfig `json:"config,omitempty"`
 }
 
@@ -416,6 +423,7 @@ type SchedulerServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains scheduler specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.SchedulerConfig `json:"config,omitempty"`
 }
 
@@ -424,6 +432,7 @@ type InternalGatewayServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains internal-gateway specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.InternalGatewayConfig `json:"config,omitempty"`
 }
 
@@ -432,6 +441,7 @@ type ManagerServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains manager specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.ManagerConfig `json:"config,omitempty"`
 }
 
@@ -440,6 +450,7 @@ type StorageProxyServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains storage-proxy specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.StorageProxyConfig `json:"config,omitempty"`
 }
 
@@ -448,6 +459,7 @@ type NetdServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
 	// Config contains netd specific configuration
 	// +optional
+	// +kubebuilder:default={}
 	Config *config.NetdConfig `json:"config,omitempty"`
 }
 
