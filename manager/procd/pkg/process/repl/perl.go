@@ -95,6 +95,7 @@ func (p *PerlREPL) Start() error {
 	p.cmd = cmd
 	p.SetPTY(ptmx)
 	p.SetPID(cmd.Process.Pid)
+	p.SetStartTime(time.Now())
 	p.SetState(process.ProcessStateRunning)
 
 	// Start output reader
@@ -210,6 +211,8 @@ func (p *PerlREPL) monitorProcess() {
 
 	p.SetExitCode(exitCode)
 
+	duration := time.Since(p.StartTime())
+
 	if exitCode == 0 {
 		p.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -217,6 +220,16 @@ func (p *PerlREPL) monitorProcess() {
 	} else {
 		p.SetState(process.ProcessStateCrashed)
 	}
+
+	p.NotifyExit(process.ExitEvent{
+		ProcessID:   p.ID(),
+		ProcessType: p.Type(),
+		PID:         p.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       p.State(),
+		Config:      p.GetConfig(),
+	})
 
 	p.CloseOutput()
 }

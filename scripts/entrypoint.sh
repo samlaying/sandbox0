@@ -3,12 +3,12 @@ set -eu
 
 service="${SERVICE:-}"
 if [ -z "$service" ]; then
-  echo "SERVICE is required (e.g. edge-gateway, internal-gateway, manager, scheduler, storage-proxy, netd, k8s-plugin)" >&2
+  echo "SERVICE is required (e.g. edge-gateway, internal-gateway, manager, scheduler, storage-proxy, netd, k8s-plugin, infra-operator)" >&2
   exit 1
 fi
 
 case "$service" in
-  edge-gateway|internal-gateway|manager|scheduler|storage-proxy|netd|k8s-plugin)
+  edge-gateway|internal-gateway|manager|scheduler|storage-proxy|netd|k8s-plugin|infra-operator)
     exec "/usr/local/bin/$service" "$@"
     ;;
   *)

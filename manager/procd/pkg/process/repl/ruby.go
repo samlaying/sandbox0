@@ -95,6 +95,7 @@ func (r *RubyREPL) Start() error {
 	r.cmd = cmd
 	r.SetPTY(ptmx)
 	r.SetPID(cmd.Process.Pid)
+	r.SetStartTime(time.Now())
 	r.SetState(process.ProcessStateRunning)
 
 	// Start output reader
@@ -210,6 +211,8 @@ func (r *RubyREPL) monitorProcess() {
 
 	r.SetExitCode(exitCode)
 
+	duration := time.Since(r.StartTime())
+
 	if exitCode == 0 {
 		r.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -217,6 +220,16 @@ func (r *RubyREPL) monitorProcess() {
 	} else {
 		r.SetState(process.ProcessStateCrashed)
 	}
+
+	r.NotifyExit(process.ExitEvent{
+		ProcessID:   r.ID(),
+		ProcessType: r.Type(),
+		PID:         r.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       r.State(),
+		Config:      r.GetConfig(),
+	})
 
 	r.CloseOutput()
 }

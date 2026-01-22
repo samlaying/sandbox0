@@ -76,6 +76,7 @@ func (n *NodeREPL) Start() error {
 	n.cmd = cmd
 	n.SetPTY(ptmx)
 	n.SetPID(cmd.Process.Pid)
+	n.SetStartTime(time.Now())
 	n.SetState(process.ProcessStateRunning)
 
 	// Start output reader
@@ -191,6 +192,8 @@ func (n *NodeREPL) monitorProcess() {
 
 	n.SetExitCode(exitCode)
 
+	duration := time.Since(n.StartTime())
+
 	if exitCode == 0 {
 		n.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -198,6 +201,16 @@ func (n *NodeREPL) monitorProcess() {
 	} else {
 		n.SetState(process.ProcessStateCrashed)
 	}
+
+	n.NotifyExit(process.ExitEvent{
+		ProcessID:   n.ID(),
+		ProcessType: n.Type(),
+		PID:         n.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       n.State(),
+		Config:      n.GetConfig(),
+	})
 
 	n.CloseOutput()
 }

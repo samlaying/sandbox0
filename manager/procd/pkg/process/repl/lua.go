@@ -89,6 +89,7 @@ func (l *LuaREPL) Start() error {
 	l.cmd = cmd
 	l.SetPTY(ptmx)
 	l.SetPID(cmd.Process.Pid)
+	l.SetStartTime(time.Now())
 	l.SetState(process.ProcessStateRunning)
 
 	// Start output reader
@@ -204,6 +205,8 @@ func (l *LuaREPL) monitorProcess() {
 
 	l.SetExitCode(exitCode)
 
+	duration := time.Since(l.StartTime())
+
 	if exitCode == 0 {
 		l.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -211,6 +214,16 @@ func (l *LuaREPL) monitorProcess() {
 	} else {
 		l.SetState(process.ProcessStateCrashed)
 	}
+
+	l.NotifyExit(process.ExitEvent{
+		ProcessID:   l.ID(),
+		ProcessType: l.Type(),
+		PID:         l.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       l.State(),
+		Config:      l.GetConfig(),
+	})
 
 	l.CloseOutput()
 }

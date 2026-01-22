@@ -60,6 +60,23 @@ type ProcdConfig struct {
 	// +kubebuilder:default="30s"
 	CacheTTL metav1.Duration `yaml:"cache_ttl" json:"cacheTTL"`
 
+	// Webhook configuration
+	// +optional
+	// +kubebuilder:default="/etc/sandbox0/annotations"
+	WebhookAnnotationsPath string `yaml:"webhook_annotations_path" json:"webhookAnnotationsPath"`
+	// +optional
+	// +kubebuilder:default=256
+	WebhookQueueSize int `yaml:"webhook_queue_size" json:"webhookQueueSize"`
+	// +optional
+	// +kubebuilder:default="5s"
+	WebhookRequestTimeout metav1.Duration `yaml:"webhook_request_timeout" json:"webhookRequestTimeout"`
+	// +optional
+	// +kubebuilder:default=3
+	WebhookMaxRetries int `yaml:"webhook_max_retries" json:"webhookMaxRetries"`
+	// +optional
+	// +kubebuilder:default="500ms"
+	WebhookBaseBackoff metav1.Duration `yaml:"webhook_base_backoff" json:"webhookBaseBackoff"`
+
 	setKeys map[string]string `yaml:"-" json:"-"`
 }
 

@@ -12,6 +12,7 @@ import (
 type Manager struct {
 	mu       sync.RWMutex
 	contexts map[string]*Context
+	onExit   process.ExitHandler
 }
 
 // NewManager creates a new context manager.
@@ -21,21 +22,31 @@ func NewManager() *Manager {
 	}
 }
 
+// SetExitHandler sets a global exit handler for new contexts.
+func (m *Manager) SetExitHandler(handler process.ExitHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onExit = handler
+}
+
 // CreateContext creates a new context.
 func (m *Manager) CreateContext(config process.ProcessConfig) (*Context, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Define exit handler for the new context
-	exitHandler := func(cfg *process.ProcessConfig) {
-		// Create the callback context asynchronously to avoid holding locks or blocking
-		go func() {
-			if _, err := m.CreateContext(*cfg); err != nil {
-				// Log error? Accessing logger here is hard as Manager doesn't have it.
-				// Maybe we should inject logger into Manager?
-				fmt.Printf("Failed to create on_exit context: %v\n", err)
-			}
-		}()
+	exitHandler := func(event process.ExitEvent) {
+		if event.Config.AutoRestart {
+			// Create the callback context asynchronously to avoid holding locks or blocking
+			go func(cfg process.ProcessConfig) {
+				if _, err := m.CreateContext(cfg); err != nil {
+					fmt.Printf("Failed to auto-restart context: %v\n", err)
+				}
+			}(event.Config)
+		}
+		if m.onExit != nil {
+			m.onExit(event)
+		}
 	}
 
 	ctx, err := NewContext(config, exitHandler)

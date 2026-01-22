@@ -89,6 +89,7 @@ func (b *BashREPL) Start() error {
 	b.cmd = cmd
 	b.SetPTY(ptmx)
 	b.SetPID(cmd.Process.Pid)
+	b.SetStartTime(time.Now())
 	b.SetState(process.ProcessStateRunning)
 
 	// Start output reader
@@ -204,6 +205,8 @@ func (b *BashREPL) monitorProcess() {
 
 	b.SetExitCode(exitCode)
 
+	duration := time.Since(b.StartTime())
+
 	if exitCode == 0 {
 		b.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -211,6 +214,16 @@ func (b *BashREPL) monitorProcess() {
 	} else {
 		b.SetState(process.ProcessStateCrashed)
 	}
+
+	b.NotifyExit(process.ExitEvent{
+		ProcessID:   b.ID(),
+		ProcessType: b.Type(),
+		PID:         b.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       b.State(),
+		Config:      b.GetConfig(),
+	})
 
 	b.CloseOutput()
 }

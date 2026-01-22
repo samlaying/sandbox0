@@ -8,14 +8,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
+	"github.com/sandbox0-ai/infra/manager/pkg/controller"
 	ctxpkg "github.com/sandbox0-ai/infra/manager/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
 	procdhttp "github.com/sandbox0-ai/infra/manager/procd/pkg/http"
+	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/volume"
+	"github.com/sandbox0-ai/infra/manager/procd/pkg/webhook"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -45,6 +49,39 @@ func main() {
 
 	// Initialize managers
 	contextManager := ctxpkg.NewManager()
+
+	webhookDispatcher := webhook.NewDispatcher(webhook.Options{
+		QueueSize:      cfg.WebhookQueueSize,
+		MaxRetries:     cfg.WebhookMaxRetries,
+		BaseBackoff:    cfg.WebhookBaseBackoff.Duration,
+		RequestTimeout: cfg.WebhookRequestTimeout.Duration,
+	}, logger)
+
+	annotationsPath := cfg.WebhookAnnotationsPath
+	if annotationsPath == "" {
+		annotationsPath = "/etc/sandbox0/annotations"
+	}
+
+	contextManager.SetExitHandler(func(event process.ExitEvent) {
+		eventType := "process.exited"
+		if event.State == process.ProcessStateCrashed || event.State == process.ProcessStateKilled {
+			eventType = "process.crashed"
+		}
+		payload := map[string]any{
+			"process_id":     event.ProcessID,
+			"process_type":   event.ProcessType,
+			"pid":            event.PID,
+			"exit_code":      event.ExitCode,
+			"duration_ms":    event.Duration.Milliseconds(),
+			"stdout_preview": event.StdoutPreview,
+			"stderr_preview": event.StderrPreview,
+			"state":          event.State,
+		}
+		webhookDispatcher.Enqueue(webhook.Event{
+			EventType: eventType,
+			Payload:   payload,
+		})
+	})
 
 	// Create shared token provider for storage-proxy communication
 	tokenProvider := procdhttp.NewTokenProvider()
@@ -88,6 +125,34 @@ func main() {
 		zap.Strings("allowed_callers", validatorConfig.AllowedCallers),
 	)
 
+	annotationCtx, cancelAnnotations := context.WithCancel(context.Background())
+	var readyOnce sync.Once
+	if err := webhook.WatchAnnotations(annotationCtx, annotationsPath, logger, func(annotations map[string]string) {
+		webhookURL := annotations[controller.AnnotationWebhookURL]
+		webhookSecret := annotations[controller.AnnotationWebhookSecret]
+		teamID := annotations[controller.AnnotationTeamID]
+		sandboxID := annotations[controller.AnnotationSandboxID]
+
+		webhookDispatcher.SetConfig(webhookURL, webhookSecret)
+		webhookDispatcher.SetIdentity(sandboxID, teamID)
+
+		if webhookURL != "" {
+			readyOnce.Do(func() {
+				webhookDispatcher.Enqueue(webhook.Event{
+					EventType: "sandbox.ready",
+					Payload: map[string]any{
+						"http_port":  cfg.HTTPPort,
+						"sandbox_id": sandboxID,
+					},
+				})
+			})
+		}
+	}); err != nil {
+		logger.Warn("Failed to start webhook annotation watcher",
+			zap.Error(err),
+		)
+	}
+
 	// Note: Network isolation is now handled by the netd service (DaemonSet).
 	// procd no longer manages network policies.
 
@@ -99,6 +164,7 @@ func main() {
 		fileManager,
 		authValidator,
 		tokenProvider,
+		webhookDispatcher,
 		logger,
 	)
 
@@ -124,6 +190,7 @@ func main() {
 		contextManager.Cleanup()
 		volumeManager.Cleanup()
 		fileManager.Close()
+		cancelAnnotations()
 
 		done <- true
 	}()

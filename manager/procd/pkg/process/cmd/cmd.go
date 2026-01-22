@@ -98,6 +98,7 @@ func (c *CMD) Start() error {
 		c.SetPTY(ptmx)
 		c.cmd = cmd
 		c.SetPID(cmd.Process.Pid)
+		c.SetStartTime(time.Now())
 		c.SetState(process.ProcessStateRunning)
 
 		// Start output reader
@@ -117,6 +118,7 @@ func (c *CMD) Start() error {
 
 		c.cmd = cmd
 		c.SetPID(cmd.Process.Pid)
+		c.SetStartTime(time.Now())
 		c.SetState(process.ProcessStateRunning)
 
 		// Start process monitor
@@ -216,6 +218,10 @@ func (c *CMD) monitorProcess() {
 
 	c.SetExitCode(exitCode)
 
+	duration := time.Since(c.StartTime())
+	stdoutPreview := ""
+	stderrPreview := ""
+
 	// Publish final output for non-PTY commands
 	if c.GetPTY() == nil {
 		if c.stdout.Len() > 0 {
@@ -230,6 +236,8 @@ func (c *CMD) monitorProcess() {
 				Data:   c.stderr.Bytes(),
 			})
 		}
+		stdoutPreview = truncatePreview(c.stdout.Bytes(), 2048)
+		stderrPreview = truncatePreview(c.stderr.Bytes(), 2048)
 	}
 
 	if exitCode == 0 {
@@ -240,5 +248,27 @@ func (c *CMD) monitorProcess() {
 		c.SetState(process.ProcessStateCrashed)
 	}
 
+	c.NotifyExit(process.ExitEvent{
+		ProcessID:     c.ID(),
+		ProcessType:   c.Type(),
+		PID:           c.PID(),
+		ExitCode:      exitCode,
+		Duration:      duration,
+		State:         c.State(),
+		StdoutPreview: stdoutPreview,
+		StderrPreview: stderrPreview,
+		Config:        c.GetConfig(),
+	})
+
 	c.CloseOutput()
+}
+
+func truncatePreview(data []byte, limit int) string {
+	if limit <= 0 || len(data) == 0 {
+		return ""
+	}
+	if len(data) <= limit {
+		return string(data)
+	}
+	return string(data[:limit])
 }

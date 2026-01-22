@@ -88,6 +88,7 @@ func (z *ZshREPL) Start() error {
 	z.cmd = cmd
 	z.SetPTY(ptmx)
 	z.SetPID(cmd.Process.Pid)
+	z.SetStartTime(time.Now())
 	z.SetState(process.ProcessStateRunning)
 
 	go z.readOutput(ptmx)
@@ -199,6 +200,8 @@ func (z *ZshREPL) monitorProcess() {
 
 	z.SetExitCode(exitCode)
 
+	duration := time.Since(z.StartTime())
+
 	if exitCode == 0 {
 		z.SetState(process.ProcessStateStopped)
 	} else if exitCode == -1 || exitCode == 137 {
@@ -206,6 +209,16 @@ func (z *ZshREPL) monitorProcess() {
 	} else {
 		z.SetState(process.ProcessStateCrashed)
 	}
+
+	z.NotifyExit(process.ExitEvent{
+		ProcessID:   z.ID(),
+		ProcessType: z.Type(),
+		PID:         z.PID(),
+		ExitCode:    exitCode,
+		Duration:    duration,
+		State:       z.State(),
+		Config:      z.GetConfig(),
+	})
 
 	z.CloseOutput()
 }

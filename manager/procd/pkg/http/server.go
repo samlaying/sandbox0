@@ -14,6 +14,7 @@ import (
 	ctxpkg "github.com/sandbox0-ai/infra/manager/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/http/handlers"
+	"github.com/sandbox0-ai/infra/manager/procd/pkg/webhook"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/volume"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"go.uber.org/zap"
@@ -62,6 +63,9 @@ type Server struct {
 
 	// Internal auth validator
 	authValidator *internalauth.Validator
+
+	// Webhook dispatcher
+	webhookDispatcher *webhook.Dispatcher
 }
 
 // NewServer creates a new HTTP server.
@@ -72,6 +76,7 @@ func NewServer(
 	fileManager *file.Manager,
 	authValidator *internalauth.Validator,
 	tokenProvider *TokenProvider,
+	webhookDispatcher *webhook.Dispatcher,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
@@ -82,6 +87,7 @@ func NewServer(
 		fileManager:    fileManager,
 		authValidator:  authValidator,
 		tokenProvider:  tokenProvider,
+		webhookDispatcher: webhookDispatcher,
 		logger:         logger,
 	}
 
@@ -138,6 +144,10 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/files/watch", fileHandler.Watch).Methods("GET")
 	api.HandleFunc("/files/move", fileHandler.Move).Methods("POST")
 	api.PathPrefix("/files/").HandlerFunc(fileHandler.Handle)
+
+	// Webhook handlers
+	webhookHandler := handlers.NewWebhookHandler(s.webhookDispatcher)
+	api.HandleFunc("/webhook/publish", webhookHandler.Publish).Methods("POST")
 }
 
 // Start starts the HTTP server.

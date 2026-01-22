@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
@@ -138,6 +141,13 @@ type SandboxConfig struct {
 	EnvVars map[string]string                 `json:"env_vars,omitempty"`
 	TTL     int32                             `json:"ttl,omitempty"` // Time-to-live in seconds
 	Network *v1alpha1.TplSandboxNetworkPolicy `json:"network,omitempty"`
+	Webhook *WebhookConfig                    `json:"webhook,omitempty"`
+}
+
+// WebhookConfig represents outbound webhook configuration.
+type WebhookConfig struct {
+	URL    string `json:"url"`
+	Secret string `json:"secret,omitempty"`
 }
 
 // ClaimResponse represents a sandbox claim response
@@ -296,6 +306,7 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
+	pod.Annotations[controller.AnnotationSandboxID] = pod.Name
 	pod.Annotations[controller.AnnotationTeamID] = req.TeamID
 	pod.Annotations[controller.AnnotationUserID] = req.UserID
 	pod.Annotations[controller.AnnotationClaimedAt] = s.clock.Now().Format(time.RFC3339)
@@ -317,12 +328,19 @@ func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.Sa
 		}
 		pod.Annotations[controller.AnnotationConfig] = string(configJSON)
 	}
+	webhookInfo := s.getWebhookInfo(req)
+	if webhookInfo != nil {
+		s.applyWebhookAnnotations(pod, webhookInfo)
+	}
 
 	// Build and add network policy annotation
 	if s.NetworkPolicyService != nil {
 		var requestNetwork *v1alpha1.TplSandboxNetworkPolicy
 		if req.Config != nil {
 			requestNetwork = req.Config.Network
+		}
+		if webhookInfo != nil {
+			requestNetwork = s.appendWebhookNetworkPolicy(requestNetwork, webhookInfo.URL)
 		}
 
 		networkPolicyJSON, err := s.NetworkPolicyService.BuildNetworkPolicyAnnotation(&BuildNetworkPolicyRequest{
@@ -393,6 +411,7 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 				controller.LabelSandboxID:  podName,
 			},
 			Annotations: map[string]string{
+				controller.AnnotationSandboxID: podName,
 				controller.AnnotationTeamID:    req.TeamID,
 				controller.AnnotationUserID:    req.UserID,
 				controller.AnnotationClaimedAt: s.clock.Now().Format(time.RFC3339),
@@ -418,12 +437,19 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 		}
 		pod.Annotations[controller.AnnotationConfig] = string(configJSON)
 	}
+	webhookInfo := s.getWebhookInfo(req)
+	if webhookInfo != nil {
+		s.applyWebhookAnnotations(pod, webhookInfo)
+	}
 
 	// Build and add network policy annotation
 	if s.NetworkPolicyService != nil {
 		var requestNetwork *v1alpha1.TplSandboxNetworkPolicy
 		if req.Config != nil {
 			requestNetwork = req.Config.Network
+		}
+		if webhookInfo != nil {
+			requestNetwork = s.appendWebhookNetworkPolicy(requestNetwork, webhookInfo.URL)
 		}
 
 		networkPolicyJSON, err := s.NetworkPolicyService.BuildNetworkPolicyAnnotation(&BuildNetworkPolicyRequest{
@@ -473,6 +499,83 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 	)
 
 	return createdPod, nil
+}
+
+type webhookInfo struct {
+	URL    string
+	Secret string
+}
+
+func (s *SandboxService) getWebhookInfo(req *ClaimRequest) *webhookInfo {
+	if req == nil || req.Config == nil || req.Config.Webhook == nil {
+		return nil
+	}
+	urlValue := strings.TrimSpace(req.Config.Webhook.URL)
+	if urlValue == "" {
+		return nil
+	}
+	return &webhookInfo{
+		URL:    urlValue,
+		Secret: strings.TrimSpace(req.Config.Webhook.Secret),
+	}
+}
+
+func (s *SandboxService) applyWebhookAnnotations(pod *corev1.Pod, info *webhookInfo) {
+	if pod == nil || info == nil {
+		return
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations[controller.AnnotationWebhookURL] = info.URL
+	if info.Secret != "" {
+		pod.Annotations[controller.AnnotationWebhookSecret] = info.Secret
+	} else {
+		delete(pod.Annotations, controller.AnnotationWebhookSecret)
+	}
+}
+
+func (s *SandboxService) appendWebhookNetworkPolicy(
+	requestNetwork *v1alpha1.TplSandboxNetworkPolicy,
+	webhookURL string,
+) *v1alpha1.TplSandboxNetworkPolicy {
+	if webhookURL == "" {
+		return requestNetwork
+	}
+	parsed, err := url.Parse(webhookURL)
+	if err != nil {
+		s.logger.Warn("Failed to parse webhook URL",
+			zap.String("webhook_url", webhookURL),
+			zap.Error(err),
+		)
+		return requestNetwork
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		s.logger.Warn("Webhook URL missing hostname",
+			zap.String("webhook_url", webhookURL),
+		)
+		return requestNetwork
+	}
+	if requestNetwork == nil {
+		requestNetwork = &v1alpha1.TplSandboxNetworkPolicy{}
+	}
+	if requestNetwork.Egress == nil {
+		requestNetwork.Egress = &v1alpha1.NetworkEgressPolicy{}
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		requestNetwork.Egress.AllowedIPs = append(requestNetwork.Egress.AllowedIPs, formatCIDRForIP(ip))
+		return requestNetwork
+	}
+	requestNetwork.Egress.AllowedDomains = append(requestNetwork.Egress.AllowedDomains, host)
+	return requestNetwork
+}
+
+func formatCIDRForIP(ip net.IP) string {
+	if ip.To4() != nil {
+		return ip.String() + "/32"
+	}
+	return ip.String() + "/128"
 }
 
 // TerminateSandbox terminates a sandbox

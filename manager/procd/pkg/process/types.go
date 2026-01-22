@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // ProcessType defines the type of process.
@@ -103,8 +104,21 @@ type ResourceUsage struct {
 	MemoryBytes int64 `json:"memory_bytes"`
 }
 
+// ExitEvent captures details about a process exit.
+type ExitEvent struct {
+	ProcessID     string
+	ProcessType   ProcessType
+	PID           int
+	ExitCode      int
+	Duration      time.Duration
+	State         ProcessState
+	StdoutPreview string
+	StderrPreview string
+	Config        ProcessConfig
+}
+
 // ExitHandler is a function that handles process exit events.
-type ExitHandler func(*ProcessConfig)
+type ExitHandler func(ExitEvent)
 
 // Process interface defines the contract for all process types.
 type Process interface {
@@ -270,6 +284,7 @@ type BaseProcess struct {
 	exitCode        int
 	pty             *os.File
 	outputMultiplex *MultiplexedChannel[ProcessOutput]
+	startTime       time.Time
 
 	// cpuTracker tracks CPU time between samples for percentage calculation
 	cpuTracker *cpuTracker
@@ -490,6 +505,30 @@ func (bp *BaseProcess) SetExitCode(code int) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 	bp.exitCode = code
+}
+
+// SetStartTime records when the process starts.
+func (bp *BaseProcess) SetStartTime(start time.Time) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	bp.startTime = start
+}
+
+// StartTime returns the recorded start time.
+func (bp *BaseProcess) StartTime() time.Time {
+	bp.mu.RLock()
+	defer bp.mu.RUnlock()
+	return bp.startTime
+}
+
+// NotifyExit invokes the exit handler, if configured.
+func (bp *BaseProcess) NotifyExit(event ExitEvent) {
+	bp.mu.RLock()
+	handler := bp.exitHandler
+	bp.mu.RUnlock()
+	if handler != nil {
+		handler(event)
+	}
 }
 
 // PublishOutput publishes output to all subscribers.
