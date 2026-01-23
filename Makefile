@@ -1,4 +1,4 @@
-.PHONY: all build build-all test test-all lint tidy vendor clean helm-update helm-configs release docker-build docker-push proto manifests
+.PHONY: all build build-all test test-all test-integration test-integration-verbose test-e2e test-e2e-kind test-e2e-destroy test-e2e-specific lint tidy vendor clean helm-update helm-configs release docker-build docker-push proto manifests
 
 # Tool Binaries
 LOCALBIN ?= $(shell pwd)/bin
@@ -146,6 +146,39 @@ test-all:
 		printf "$(CYAN)Testing $$service...$(RESET)\n"; \
 		$(MAKE) test $$service || exit 1; \
 	done
+
+# Integration tests
+test-integration:
+	@printf "$(CYAN)Running integration tests...$(RESET)\n"
+	GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./tests/integration/... -timeout=10m
+
+test-integration-verbose:
+	@printf "$(CYAN)Running integration tests (verbose)...$(RESET)\n"
+	GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./tests/integration/... -timeout=10m -v
+
+# E2E tests
+test-e2e: test-integration
+	@printf "$(CYAN)Running E2E tests...$(RESET)\n"
+	kind create cluster --config tests/e2e/kind-config.yaml || true
+	kind load docker-image sandbox0ai/infra:latest || true
+	go test -v ./tests/e2e/... -timeout=30m
+
+test-e2e-kind:
+	@printf "$(CYAN)Creating Kind cluster...$(RESET)\n"
+	kind create cluster --config tests/e2e/kind-config.yaml --name sandbox0-e2e
+
+test-e2e-destroy:
+	@printf "$(YELLOW)Destroying Kind cluster...$(RESET)\n"
+	kind delete cluster --name sandbox0-e2e
+
+test-e2e-specific:
+	@if [ -z "$(SPEC)" ]; then \
+		echo "Error: SPEC is required"; \
+		echo "Usage: make test-e2e-specific SPEC=Describe/It"; \
+		exit 1; \
+	fi
+	@printf "$(CYAN)Running E2E test: $(SPEC)...$(RESET)\n"
+	go test -v ./tests/e2e/... -focus="$(SPEC)" -timeout=30m
 
 # Prevent make from treating service names as targets
 edge-gateway internal-gateway manager scheduler storage-proxy netd k8s-plugin procd infra-operator:
