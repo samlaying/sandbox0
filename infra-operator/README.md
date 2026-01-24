@@ -8,7 +8,7 @@ The Sandbox0Infra Operator automates the deployment and management of sandbox0 i
 
 - **all**: Local development mode with all components and builtin database/storage
 - **control-plane**: Cloud control plane with edge-gateway and scheduler
-- **data-plane**: Cloud data plane with internal-gateway, manager, storage-proxy, and netd
+- **data-plane**: Cloud data plane with internal-gateway, manager, storage-proxy, and Cilium
 
 ## Features
 

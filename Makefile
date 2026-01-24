@@ -8,7 +8,7 @@ $(LOCALBIN):
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 CONTROLLER_TOOLS_VERSION ?= v0.20.0
 
-SERVICES := edge-gateway internal-gateway manager scheduler storage-proxy netd k8s-plugin procd infra-operator
+SERVICES := edge-gateway internal-gateway manager scheduler storage-proxy k8s-plugin procd infra-operator
 
 # Default version
 VERSION ?= latest
@@ -43,9 +43,6 @@ build-all: manifests
 	@printf "$(GREEN)Building storage-proxy...$(RESET)\n"
 	@mkdir -p storage-proxy/bin
 	@go build -v -o storage-proxy/bin/storage-proxy ./storage-proxy/cmd/storage-proxy
-	@printf "$(GREEN)Building netd...$(RESET)\n"
-	@mkdir -p netd/bin
-	@go build -v -o netd/bin/netd ./netd/cmd/netd
 	@printf "$(GREEN)Building k8s-plugin...$(RESET)\n"
 	@mkdir -p k8s-plugin/bin
 	@go build -v -o k8s-plugin/bin/k8s-plugin ./k8s-plugin
@@ -82,9 +79,6 @@ build: manifests
 			$(MAKE) proto; \
 			mkdir -p storage-proxy/bin; \
 			go build -v -o storage-proxy/bin/storage-proxy ./storage-proxy/cmd/storage-proxy; \
-		elif [ "$$service" = "netd" ]; then \
-			mkdir -p netd/bin; \
-			go build -v -o netd/bin/netd ./netd/cmd/netd; \
 		elif [ "$$service" = "k8s-plugin" ]; then \
 			mkdir -p k8s-plugin/bin; \
 			go build -v -o k8s-plugin/bin/k8s-plugin ./k8s-plugin; \
@@ -128,8 +122,6 @@ test:
 			GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./scheduler/...; \
 		elif [ "$$service" = "storage-proxy" ]; then \
 			GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./storage-proxy/...; \
-		elif [ "$$service" = "netd" ]; then \
-			GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./netd/...; \
 		elif [ "$$service" = "k8s-plugin" ]; then \
 			GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./k8s-plugin/...; \
 		elif [ "$$service" = "infra-operator" ]; then \
@@ -182,7 +174,7 @@ test-e2e-specific:
 	unset http_proxy && unset https_proxy && unset all_proxy && go test -v ./tests/e2e/... -focus="$(SPEC)" -timeout=30m
 
 # Prevent make from treating service names as targets
-edge-gateway internal-gateway manager scheduler storage-proxy netd k8s-plugin procd infra-operator:
+edge-gateway internal-gateway manager scheduler storage-proxy k8s-plugin procd infra-operator:
 	@:
 
 lint:

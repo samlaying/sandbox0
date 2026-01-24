@@ -90,7 +90,7 @@ type ManagerConfig struct {
 	BandwidthAccountingInterval int `yaml:"bandwidth_accounting_interval" json:"bandwidthAccountingInterval"`
 	// +optional
 	// +kubebuilder:default={}
-	Network NetworkProviderConfig `yaml:"network" json:"network"`
+	Network NetworkProviderConfig `yaml:"network" json:"-"`
 
 	// Pause/Resume
 	// +optional
@@ -191,6 +191,21 @@ type CiliumConfig struct {
 	// +optional
 	// +kubebuilder:default="CiliumNetworkPolicy"
 	CNPKind string `yaml:"cnp_kind" json:"cnpKind"`
+
+	// InstallVersion is the Cilium version to install when auto-install is enabled.
+	// +optional
+	// +kubebuilder:default="1.18.0"
+	InstallVersion string `yaml:"install_version" json:"installVersion"`
+
+	// InstallNamespace is the namespace where Cilium is installed.
+	// +optional
+	// +kubebuilder:default="kube-system"
+	InstallNamespace string `yaml:"install_namespace" json:"installNamespace"`
+
+	// AllowUpgrade controls whether infra-operator can upgrade an existing Cilium install.
+	// +optional
+	// +kubebuilder:default=false
+	AllowUpgrade bool `yaml:"allow_upgrade" json:"allowUpgrade"`
 
 	// FieldManager is the SSA field manager name.
 	// +optional

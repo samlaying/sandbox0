@@ -97,6 +97,11 @@ type Sandbox0InfraSpec struct {
 	// +optional
 	InternalAuth *InternalAuthConfig `json:"internalAuth,omitempty"`
 
+	// Network configures cluster-wide network provider settings.
+	// +optional
+	// +kubebuilder:default={}
+	Network config.NetworkProviderConfig `json:"network,omitempty"`
+
 	// Services configures individual services
 	// +optional
 	// +kubebuilder:default={}
@@ -456,11 +461,6 @@ type ServicesConfig struct {
 	// +optional
 	// +kubebuilder:default={}
 	StorageProxy *StorageProxyServiceConfig `json:"storageProxy,omitempty"`
-
-	// Netd configures the netd service (data plane)
-	// +optional
-	// +kubebuilder:default={}
-	Netd *NetdServiceConfig `json:"netd,omitempty"`
 }
 
 // BaseServiceConfig defines common service configuration
@@ -529,15 +529,6 @@ type StorageProxyServiceConfig struct {
 	// +optional
 	// +kubebuilder:default={}
 	Config *config.StorageProxyConfig `json:"config,omitempty"`
-}
-
-// NetdServiceConfig defines configuration for netd service
-type NetdServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
-	// Config contains netd specific configuration
-	// +optional
-	// +kubebuilder:default={}
-	Config *config.NetdConfig `json:"config,omitempty"`
 }
 
 // ServiceNetworkConfig defines service network configuration
@@ -746,7 +737,7 @@ const (
 	ConditionTypeInternalGatewayReady = "InternalGatewayReady"
 	ConditionTypeManagerReady         = "ManagerReady"
 	ConditionTypeStorageProxyReady    = "StorageProxyReady"
-	ConditionTypeNetdReady            = "NetdReady"
+	ConditionTypeCiliumReady          = "CiliumReady"
 	ConditionTypeSchedulerReady       = "SchedulerReady"
 	ConditionTypeInternalAuthReady    = "InternalAuthReady"
 	ConditionTypeCRDsInstalled        = "CRDsInstalled"

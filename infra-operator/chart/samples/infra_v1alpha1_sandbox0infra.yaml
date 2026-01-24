@@ -12,6 +12,8 @@ metadata:
 spec:
   mode: all
   version: "latest"
+  network:
+    provider: cilium
   database:
     type: builtin
     builtin:
@@ -54,8 +56,6 @@ spec:
     storageProxy:
       enabled: true
       replicas: 1
-    netd:
-      enabled: true
   initUser:
     enabled: true
     email: "admin@localhost"

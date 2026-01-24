@@ -142,7 +142,7 @@ var _ = Describe("Operator entrypoint", Ordered, func() {
 			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, dataPlane.Namespace, fmt.Sprintf("deployment/%s-storage-proxy", dataPlane.Name), "5m")
 			Expect(err).NotTo(HaveOccurred())
 
-			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, dataPlane.Namespace, fmt.Sprintf("daemonset/%s-netd", dataPlane.Name), "5m")
+			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, "kube-system", "daemonset/cilium", "10m")
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -227,7 +227,7 @@ var _ = Describe("Operator entrypoint", Ordered, func() {
 			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, allInOne.Namespace, fmt.Sprintf("deployment/%s-storage-proxy", allInOne.Name), "5m")
 			Expect(err).NotTo(HaveOccurred())
 
-			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, allInOne.Namespace, fmt.Sprintf("daemonset/%s-netd", allInOne.Name), "5m")
+			err = framework.KubectlRolloutStatus(testCtx.Context, cfg.Kubeconfig, "kube-system", "daemonset/cilium", "10m")
 			Expect(err).NotTo(HaveOccurred())
 
 		})

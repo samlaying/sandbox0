@@ -49,6 +49,5 @@ secrets/
 helm/charts/edge-gateway
 helm/charts/internal-gateway
 helm/charts/manager
-helm/charts/netd
 helm/charts/storage-proxy
 helm/charts/scheduler

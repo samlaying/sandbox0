@@ -140,8 +140,8 @@ func main() {
 		zap.Strings("allowed_callers", validatorConfig.AllowedCallers),
 	)
 
-	// Note: Network isolation is now handled by the netd service (DaemonSet).
-	// procd no longer manages network policies.
+	// Note: Network isolation is now handled by the Cilium provider.
+	// Procd no longer manages network policies.
 
 	// Create and start HTTP server
 	server := procdhttp.NewServer(

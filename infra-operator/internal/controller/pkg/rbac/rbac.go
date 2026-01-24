@@ -99,34 +99,6 @@ func (r *Reconciler) ReconcileSchedulerRBAC(ctx context.Context, infra *infrav1a
 	return r.reconcileServiceAccount(ctx, infra, name, labels)
 }
 
-// ReconcileNetdRBAC reconciles RBAC for the netd service.
-func (r *Reconciler) ReconcileNetdRBAC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
-	name := fmt.Sprintf("%s-netd", infra.Name)
-	labels := map[string]string{
-		"app.kubernetes.io/name":       "netd",
-		"app.kubernetes.io/instance":   infra.Name,
-		"app.kubernetes.io/managed-by": "sandbox0infra-operator",
-	}
-
-	if err := r.reconcileServiceAccount(ctx, infra, name, labels); err != nil {
-		return err
-	}
-
-	rules := []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{""},
-			Resources: []string{"pods", "nodes", "events"},
-			Verbs:     []string{"get", "list", "watch", "create", "patch"},
-		},
-	}
-
-	if err := r.reconcileClusterRole(ctx, name, labels, rules); err != nil {
-		return err
-	}
-
-	return r.reconcileClusterRoleBinding(ctx, infra, name, labels, name, name)
-}
-
 // ReconcileStorageProxyRBAC reconciles RBAC for the storage-proxy service.
 func (r *Reconciler) ReconcileStorageProxyRBAC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	name := fmt.Sprintf("%s-storage-proxy", infra.Name)

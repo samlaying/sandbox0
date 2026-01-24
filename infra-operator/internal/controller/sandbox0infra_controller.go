@@ -38,12 +38,12 @@ import (
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/rbac"
+	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/cilium"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/edgegateway"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalauth"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/internalgateway"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/manager"
-	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/netd"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/scheduler"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storage"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storageproxy"
@@ -206,7 +206,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 	internalGatewayReconciler := internalgateway.NewReconciler(resources)
 	managerReconciler := manager.NewReconciler(resources)
 	storageProxyReconciler := storageproxy.NewReconciler(resources)
-	netdReconciler := netd.NewReconciler(resources)
+	ciliumReconciler := cilium.NewReconciler(resources)
 	rbacReconciler := rbac.NewReconciler(resources)
 
 	steps := []reconcileStep{
@@ -265,14 +265,26 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 			SuccessMessage: "Internal gateway is ready",
 			ErrorReason:    "InternalGatewayFailed",
 		},
-		{
+	}
+	if cilium.IsEnabled(infra) {
+		steps = append(steps, reconcileStep{
+			Name:           "cilium",
+			Run:            func(ctx context.Context) error { return ciliumReconciler.Reconcile(ctx, infra) },
+			ConditionType:  infrav1alpha1.ConditionTypeCiliumReady,
+			SuccessReason:  "CiliumReady",
+			SuccessMessage: "Cilium is ready",
+			ErrorReason:    "CiliumFailed",
+		})
+	}
+	steps = append(steps,
+		reconcileStep{
 			Name:                 "manager-rbac",
 			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
 			ErrorReason:          "ManagerRBACFailed",
 			SkipSuccessCondition: true,
 		},
-		{
+		reconcileStep{
 			Name:           "manager",
 			Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
@@ -280,14 +292,14 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 			SuccessMessage: "Manager is ready",
 			ErrorReason:    "ManagerFailed",
 		},
-		{
+		reconcileStep{
 			Name:                 "storage-proxy-rbac",
 			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeStorageProxyReady,
 			ErrorReason:          "StorageProxyRBACFailed",
 			SkipSuccessCondition: true,
 		},
-		{
+		reconcileStep{
 			Name:           "storage-proxy",
 			Run:            func(ctx context.Context) error { return storageProxyReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
@@ -295,22 +307,7 @@ func (r *Sandbox0InfraReconciler) reconcileAllMode(ctx context.Context, infra *i
 			SuccessMessage: "Storage proxy is ready",
 			ErrorReason:    "StorageProxyFailed",
 		},
-		{
-			Name:                 "netd-rbac",
-			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) },
-			ConditionType:        infrav1alpha1.ConditionTypeNetdReady,
-			ErrorReason:          "NetdRBACFailed",
-			SkipSuccessCondition: true,
-		},
-		{
-			Name:           "netd",
-			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo) },
-			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
-			SuccessReason:  "NetdReady",
-			SuccessMessage: "Netd is ready",
-			ErrorReason:    "NetdFailed",
-		},
-	}
+	)
 
 	if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
 		steps = append(steps, reconcileStep{
@@ -402,7 +399,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 	internalGatewayReconciler := internalgateway.NewReconciler(resources)
 	managerReconciler := manager.NewReconciler(resources)
 	storageProxyReconciler := storageproxy.NewReconciler(resources)
-	netdReconciler := netd.NewReconciler(resources)
+	ciliumReconciler := cilium.NewReconciler(resources)
 	rbacReconciler := rbac.NewReconciler(resources)
 
 	steps := []reconcileStep{
@@ -464,14 +461,26 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 			SuccessMessage: "Internal gateway is ready",
 			ErrorReason:    "InternalGatewayFailed",
 		},
-		{
+	}
+	if cilium.IsEnabled(infra) {
+		steps = append(steps, reconcileStep{
+			Name:           "cilium",
+			Run:            func(ctx context.Context) error { return ciliumReconciler.Reconcile(ctx, infra) },
+			ConditionType:  infrav1alpha1.ConditionTypeCiliumReady,
+			SuccessReason:  "CiliumReady",
+			SuccessMessage: "Cilium is ready",
+			ErrorReason:    "CiliumFailed",
+		})
+	}
+	steps = append(steps,
+		reconcileStep{
 			Name:                 "manager-rbac",
 			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
 			ErrorReason:          "ManagerRBACFailed",
 			SkipSuccessCondition: true,
 		},
-		{
+		reconcileStep{
 			Name:           "manager",
 			Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
@@ -479,14 +488,14 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 			SuccessMessage: "Manager is ready",
 			ErrorReason:    "ManagerFailed",
 		},
-		{
+		reconcileStep{
 			Name:                 "storage-proxy-rbac",
 			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) },
 			ConditionType:        infrav1alpha1.ConditionTypeStorageProxyReady,
 			ErrorReason:          "StorageProxyRBACFailed",
 			SkipSuccessCondition: true,
 		},
-		{
+		reconcileStep{
 			Name:           "storage-proxy",
 			Run:            func(ctx context.Context) error { return storageProxyReconciler.Reconcile(ctx, infra, imageRepo) },
 			ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
@@ -494,22 +503,7 @@ func (r *Sandbox0InfraReconciler) reconcileDataPlaneMode(ctx context.Context, in
 			SuccessMessage: "Storage proxy is ready",
 			ErrorReason:    "StorageProxyFailed",
 		},
-		{
-			Name:                 "netd-rbac",
-			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) },
-			ConditionType:        infrav1alpha1.ConditionTypeNetdReady,
-			ErrorReason:          "NetdRBACFailed",
-			SkipSuccessCondition: true,
-		},
-		{
-			Name:           "netd",
-			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo) },
-			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
-			SuccessReason:  "NetdReady",
-			SuccessMessage: "Netd is ready",
-			ErrorReason:    "NetdFailed",
-		},
-	}
+	)
 
 	if infra.Spec.Cluster != nil {
 		steps = append(steps, reconcileStep{
@@ -609,7 +603,9 @@ func (r *Sandbox0InfraReconciler) expectedConditionTypes(infra *infrav1alpha1.Sa
 			infrav1alpha1.ConditionTypeInternalGatewayReady,
 			infrav1alpha1.ConditionTypeManagerReady,
 			infrav1alpha1.ConditionTypeStorageProxyReady,
-			infrav1alpha1.ConditionTypeNetdReady,
+		}
+		if cilium.IsEnabled(infra) {
+			conditions = append(conditions, infrav1alpha1.ConditionTypeCiliumReady)
 		}
 		if infra.Spec.Cluster != nil {
 			conditions = append(conditions, infrav1alpha1.ConditionTypeClusterRegistered)
@@ -625,7 +621,9 @@ func (r *Sandbox0InfraReconciler) expectedConditionTypes(infra *infrav1alpha1.Sa
 			infrav1alpha1.ConditionTypeInternalGatewayReady,
 			infrav1alpha1.ConditionTypeManagerReady,
 			infrav1alpha1.ConditionTypeStorageProxyReady,
-			infrav1alpha1.ConditionTypeNetdReady,
+		}
+		if cilium.IsEnabled(infra) {
+			conditions = append(conditions, infrav1alpha1.ConditionTypeCiliumReady)
 		}
 		if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
 			conditions = append(conditions, infrav1alpha1.ConditionTypeInitUserReady)

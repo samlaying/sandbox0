@@ -376,6 +376,84 @@ spec:
                 - control-plane
                 - data-plane
                 type: string
+              network:
+                default: {}
+                description: Network configures cluster-wide network provider settings.
+                properties:
+                  cilium:
+                    default: {}
+                    description: Cilium config is used when provider is set to cilium.
+                    properties:
+                      allowUpgrade:
+                        default: false
+                        description: AllowUpgrade controls whether infra-operator
+                          can upgrade an existing Cilium install.
+                        type: boolean
+                      baselinePolicyName:
+                        default: sandbox0-baseline
+                        description: BaselinePolicyName is the name for the namespace
+                          baseline policy.
+                        type: string
+                      cnpGroup:
+                        default: cilium.io
+                        description: CNPGroup is the API group for CiliumNetworkPolicy.
+                        type: string
+                      cnpKind:
+                        default: CiliumNetworkPolicy
+                        description: CNPKind is the Kind for CiliumNetworkPolicy.
+                        type: string
+                      cnpVersion:
+                        default: v2
+                        description: CNPVersion is the API version for CiliumNetworkPolicy.
+                        type: string
+                      egressBandwidthAnnotation:
+                        default: kubernetes.io/egress-bandwidth
+                        description: EgressBandwidthAnnotation is the egress bandwidth
+                          annotation key.
+                        type: string
+                      enableBandwidthAnnotations:
+                        default: true
+                        description: EnableBandwidthAnnotations enables pod bandwidth
+                          annotations.
+                        type: boolean
+                      fieldManager:
+                        default: sandbox0-manager
+                        description: FieldManager is the SSA field manager name.
+                        type: string
+                      ingressBandwidthAnnotation:
+                        default: kubernetes.io/ingress-bandwidth
+                        description: IngressBandwidthAnnotation is the ingress bandwidth
+                          annotation key.
+                        type: string
+                      installNamespace:
+                        default: kube-system
+                        description: InstallNamespace is the namespace where Cilium
+                          is installed.
+                        type: string
+                      installVersion:
+                        default: 1.18.0
+                        description: InstallVersion is the Cilium version to install
+                          when auto-install is enabled.
+                        type: string
+                      policyNamePrefix:
+                        default: sandbox0
+                        description: PolicyNamePrefix is the prefix for generated
+                          Cilium policies.
+                        type: string
+                      sandboxSelectorLabelKey:
+                        default: sandbox0.ai/sandbox-id
+                        description: SandboxSelectorLabelKey selects sandbox pods
+                          for baseline policy.
+                        type: string
+                    type: object
+                  provider:
+                    default: cilium
+                    description: Provider is the network provider name (noop, cilium).
+                    enum:
+                    - noop
+                    - cilium
+                    type: string
+                type: object
               region:
                 description: Region identifies the region for multi-cluster deployments
                 type: string
@@ -826,7 +904,6 @@ spec:
                             type: string
                           databaseMaxConns:
                             default: 10
-                            description: Database
                             format: int32
                             type: integer
                           databaseMinConns:
@@ -980,246 +1057,6 @@ spec:
                             default: 9443
                             description: Webhook
                             type: integer
-                        type: object
-                      enabled:
-                        default: true
-                        description: Enabled enables or disables the service
-                        type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
-                      replicas:
-                        default: 1
-                        description: Replicas specifies the number of replicas
-                        format: int32
-                        type: integer
-                      resources:
-                        description: Resources specifies resource requirements
-                        properties:
-                          claims:
-                            description: |-
-                              Claims lists the names of resources, defined in spec.resourceClaims,
-                              that are used by this container.
-
-                              This field depends on the
-                              DynamicResourceAllocation feature gate.
-
-                              This field is immutable. It can only be set for containers.
-                            items:
-                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                              properties:
-                                name:
-                                  description: |-
-                                    Name must match the name of one entry in pod.spec.resourceClaims of
-                                    the Pod where this field is used. It makes that resource available
-                                    inside a container.
-                                  type: string
-                                request:
-                                  description: |-
-                                    Request is the name chosen for a request in the referenced claim.
-                                    If empty, everything from the claim is made available, otherwise
-                                    only the result of this request.
-                                  type: string
-                              required:
-                              - name
-                              type: object
-                            type: array
-                            x-kubernetes-list-map-keys:
-                            - name
-                            x-kubernetes-list-type: map
-                          limits:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Limits describes the maximum amount of compute resources allowed.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                          requests:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Requests describes the minimum amount of compute resources required.
-                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                        type: object
-                      service:
-                        description: Service configures the Kubernetes service
-                        properties:
-                          port:
-                            default: 80
-                            description: Port specifies the service port
-                            format: int32
-                            type: integer
-                          type:
-                            default: ClusterIP
-                            description: Type specifies the service type
-                            type: string
-                        type: object
-                    type: object
-                  netd:
-                    default: {}
-                    description: Netd configures the netd service (data plane)
-                    properties:
-                      config:
-                        default: {}
-                        description: Config contains netd specific configuration
-                        properties:
-                          bpfFSPath:
-                            default: /sys/fs/bpf
-                            description: BPFFSPath is the path to bpf filesystem (usually
-                              /sys/fs/bpf)
-                            type: string
-                          bpfPinPath:
-                            default: netd
-                            description: BPFPinPath is the sub-path within BPFFS to
-                              pin BPF maps/programs
-                            type: string
-                          burstRatio:
-                            default: "0.125"
-                            description: BurstRatio is the default ratio of rate to
-                              burst (e.g. 0.125 for 1/8)
-                            type: string
-                          clusterDNSCIDR:
-                            description: ClusterDNSCIDR is the CIDR for cluster DNS
-                              (always allowed for DNS)
-                            type: string
-                          dnsPort:
-                            default: 53
-                            description: DNSPort is the port used for DNS lookups
-                            type: integer
-                          dnsResolvers:
-                            default:
-                            - 8.8.8.8:53
-                            description: DNSResolvers are the upstream DNS resolvers
-                              for the proxy
-                            items:
-                              type: string
-                            type: array
-                          edtHorizon:
-                            default: 10ms
-                            description: EDTHorizon is the horizon for EDT-based pacing
-                            type: string
-                          failClosed:
-                            default: true
-                            description: FailClosed if true, blocks all traffic when
-                              netd is not ready
-                            type: boolean
-                          healthPort:
-                            default: 8080
-                            description: HealthPort is the port for health checks
-                            type: integer
-                          internalGatewayCIDR:
-                            description: InternalGatewayCIDR is the CIDR for internal-gateway
-                              (allowed for ingress to procd)
-                            type: string
-                          kubeConfig:
-                            description: KubeConfig is the path to kubeconfig file
-                              (optional, uses in-cluster config if empty)
-                            type: string
-                          logLevel:
-                            default: info
-                            description: LogLevel is the logging level (debug, info,
-                              warn, error)
-                            type: string
-                          metricsPort:
-                            default: 9090
-                            description: MetricsPort is the port for Prometheus metrics
-                            type: integer
-                          metricsReportInterval:
-                            default: 10s
-                            description: MetricsReportInterval is the interval for
-                              reporting metrics
-                            type: string
-                          nodeName:
-                            default: ${NODE_NAME}
-                            description: NodeName is the name of the node this netd
-                              is running on
-                            type: string
-                          procdPort:
-                            default: 49983
-                            description: ProcdPort is the port procd listens on
-                            type: integer
-                          proxyDNSTimeout:
-                            default: 10s
-                            description: ProxyDNSTimeout is the timeout for DNS resolution
-                              in the proxy
-                            type: string
-                          proxyHTTPPort:
-                            default: 18080
-                            description: ProxyHTTPPort is the port for HTTP proxy
-                              (redirect from port 80)
-                            type: integer
-                          proxyHTTPSPort:
-                            default: 18443
-                            description: ProxyHTTPSPort is the port for HTTPS/TLS
-                              proxy (redirect from port 443)
-                            type: integer
-                          proxyHeaderLimit:
-                            default: 65536
-                            description: ProxyHeaderLimit is the maximum size for
-                              HTTP headers
-                            format: int64
-                            type: integer
-                          proxyListenAddr:
-                            default: 0.0.0.0
-                            description: ProxyListenAddr is the address for the L7
-                              proxy to listen on
-                            type: string
-                          proxyUpstreamTimeout:
-                            default: 10s
-                            description: ProxyUpstreamTimeout is the timeout for connecting
-                              to upstream servers
-                            type: string
-                          resyncPeriod:
-                            default: 30s
-                            description: ResyncPeriod is the period for informer resync
-                            type: string
-                          shutdownDelay:
-                            default: 2s
-                            description: ShutdownDelay is the delay before final shutdown
-                            type: string
-                          storageProxyCIDR:
-                            description: StorageProxyCIDR is the CIDR for storage-proxy
-                              (always allowed)
-                            type: string
-                          useEBPF:
-                            default: true
-                            description: UseEBPF enables eBPF-based bandwidth control
-                              (more efficient than tc htb)
-                            type: boolean
-                          useEDT:
-                            default: true
-                            description: UseEDT enables Earliest Departure Time pacing
-                              for eBPF
-                            type: boolean
-                          vethPrefix:
-                            default: veth
-                            description: VethPrefix is the prefix for veth interfaces
-                            type: string
                         type: object
                       enabled:
                         default: true

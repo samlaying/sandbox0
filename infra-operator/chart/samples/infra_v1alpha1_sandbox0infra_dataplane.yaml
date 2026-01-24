@@ -13,6 +13,8 @@ spec:
   mode: data-plane
   region: aws/us-east-1
   version: "latest"
+  network:
+    provider: cilium
   database:
     type: postgres
     external:
@@ -68,5 +70,3 @@ spec:
     storageProxy:
       enabled: true
       replicas: 2
-    netd:
-      enabled: true
