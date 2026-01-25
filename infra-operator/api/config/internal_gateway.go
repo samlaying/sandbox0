@@ -28,6 +28,7 @@ type InternalGatewayConfig struct {
 	// AuthMode controls which authentication modes are accepted on /api/v1.
 	// Allowed values: "internal", "public", "both".
 	// +optional
+	// +kubebuilder:validation:Enum=internal;public;both
 	// +kubebuilder:default="internal"
 	AuthMode string `yaml:"auth_mode" json:"authMode"`
 	// AllowedCallers is the list of services allowed to call internal-gateway

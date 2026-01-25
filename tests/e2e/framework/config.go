@@ -16,7 +16,6 @@ type Config struct {
 	SkipClusterDelete     bool
 	SkipOperatorInstall   bool
 	SkipOperatorUninstall bool
-	TestMode              string
 
 	OperatorChartPath       string
 	OperatorNamespace       string
@@ -27,13 +26,7 @@ type Config struct {
 	OperatorImageTag        string
 	OperatorImagePullPolicy string
 
-	InfraNamespace                string
-	InfraControlPlaneManifestPath string
-	InfraControlPlaneName         string
-	InfraDataPlaneManifestPath    string
-	InfraDataPlaneName            string
-	InfraAllManifestPath          string
-	InfraAllName                  string
+	InfraNamespace string
 }
 
 // LoadConfig reads E2E configuration from environment variables.
@@ -46,10 +39,6 @@ func LoadConfig() (Config, error) {
 	defaultKindConfig := filepath.Join(infraRoot, "tests", "e2e", "kind-config.yaml")
 	defaultOperatorChart := filepath.Join(infraRoot, "infra-operator", "chart")
 	defaultOperatorValues := filepath.Join(defaultOperatorChart, "values.yaml")
-	defaultInfraControlPlane := filepath.Join(defaultOperatorChart, "samples", "infra_v1alpha1_sandbox0infra_controlplane.yaml")
-	defaultInfraDataPlane := filepath.Join(defaultOperatorChart, "samples", "infra_v1alpha1_sandbox0infra_dataplane.yaml")
-	defaultInfraAll := filepath.Join(defaultOperatorChart, "samples", "infra_v1alpha1_sandbox0infra.yaml")
-
 	cfg := Config{
 		ClusterName:           envString("E2E_CLUSTER_NAME", "sandbox0-e2e"),
 		KindConfigPath:        envString("E2E_KIND_CONFIG", defaultKindConfig),
@@ -58,7 +47,6 @@ func LoadConfig() (Config, error) {
 		SkipClusterDelete:     envBool("E2E_SKIP_CLUSTER_DELETE", false),
 		SkipOperatorInstall:   envBool("E2E_SKIP_OPERATOR_INSTALL", false),
 		SkipOperatorUninstall: envBool("E2E_SKIP_OPERATOR_UNINSTALL", false),
-		TestMode:              envString("E2E_TEST_MODE", "all"),
 
 		OperatorChartPath:       envString("E2E_OPERATOR_CHART", defaultOperatorChart),
 		OperatorNamespace:       envString("E2E_OPERATOR_NAMESPACE", "infra-operator"),
@@ -69,13 +57,7 @@ func LoadConfig() (Config, error) {
 		OperatorImageTag:        envString("E2E_OPERATOR_IMAGE_TAG", ""),
 		OperatorImagePullPolicy: envString("E2E_OPERATOR_IMAGE_PULL_POLICY", "IfNotPresent"),
 
-		InfraNamespace:                envString("E2E_INFRA_NAMESPACE", "sandbox0-system"),
-		InfraControlPlaneManifestPath: envString("E2E_INFRA_CONTROL_PLANE_MANIFEST", defaultInfraControlPlane),
-		InfraControlPlaneName:         envString("E2E_INFRA_CONTROL_PLANE_NAME", "sandbox0-control-plane"),
-		InfraDataPlaneManifestPath:    envString("E2E_INFRA_DATA_PLANE_MANIFEST", defaultInfraDataPlane),
-		InfraDataPlaneName:            envString("E2E_INFRA_DATA_PLANE_NAME", "sandbox0-data-plane"),
-		InfraAllManifestPath:          envString("E2E_INFRA_ALL_MANIFEST", defaultInfraAll),
-		InfraAllName:                  envString("E2E_INFRA_ALL_NAME", "sandbox0-dev"),
+		InfraNamespace: envString("E2E_INFRA_NAMESPACE", "sandbox0-system"),
 	}
 
 	if cfg.UseExistingCluster {
@@ -88,10 +70,6 @@ func LoadConfig() (Config, error) {
 	if cfg.OperatorChartPath == "" && !cfg.SkipOperatorInstall {
 		return Config{}, fmt.Errorf("operator chart path is required")
 	}
-	if cfg.InfraControlPlaneManifestPath == "" || cfg.InfraDataPlaneManifestPath == "" || cfg.InfraAllManifestPath == "" {
-		return Config{}, fmt.Errorf("infra manifest paths are required")
-	}
-
 	return cfg, nil
 }
 

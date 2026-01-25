@@ -168,6 +168,17 @@ func ApplyInfraAllSecrets(ctx context.Context, kubeconfig, namespace string) err
 	})
 }
 
+// AdminPasswordSecret returns a randomized admin password secret spec.
+func AdminPasswordSecret(namespace string) SecretSpec {
+	return SecretSpec{
+		Name:      "admin-password",
+		Namespace: namespace,
+		StringData: map[string]string{
+			"password": randomHex(16),
+		},
+	}
+}
+
 func applyManifestFromString(ctx context.Context, kubeconfig, prefix, content string) error {
 	file, err := os.CreateTemp("", prefix)
 	if err != nil {

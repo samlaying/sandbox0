@@ -1,0 +1,68 @@
+# Example: Multi-cluster data plane (internal-gateway + manager + storage-proxy)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandbox0-system
+---
+apiVersion: infra.sandbox0.ai/v1alpha1
+kind: Sandbox0Infra
+metadata:
+  name: s0dp
+  namespace: sandbox0-system
+spec:
+  version: "latest"
+  network:
+    # Optional network policy; remove if not needed.
+    provider: cilium
+  database:
+    # Must match the control plane database.
+    type: external
+    external:
+      host: your-db.rds.amazonaws.com
+      port: 5432
+      database: sandbox0
+      username: sandbox0
+      passwordSecret:
+        name: db-credentials
+        key: password
+  storage:
+    # Data plane storage (choose s3 or oss for production).
+    type: s3
+    s3:
+      bucket: sandbox0-prod
+      region: us-east-1
+      endpoint: https://s3.amazonaws.com
+      credentialsSecret:
+        name: aws-credentials
+        accessKeyKey: accessKeyId
+        secretKeyKey: secretAccessKey
+  # Example OSS storage:
+  # storage:
+  #   type: oss
+  #   oss:
+  #     bucket: sandbox0-prod
+  #     region: cn-hangzhou
+  #     endpoint: https://oss-cn-hangzhou.aliyuncs.com
+  #     credentialsSecret:
+  #       name: oss-credentials
+  #       accessKeyKey: accessKeyId
+  #       secretKeyKey: accessKeySecret
+  controlPlane:
+    url: https://api.sandbox0.ai
+    internalAuthPublicKeySecret:
+      name: control-plane-public-key
+      key: public.key
+  cluster:
+    id: cluster-001
+    name: Production US East 1
+  services:
+    internalGateway:
+      enabled: true
+      replicas: 1
+      authMode: internal
+    manager:
+      enabled: true
+      replicas: 1
+    storageProxy:
+      enabled: true
+      replicas: 1

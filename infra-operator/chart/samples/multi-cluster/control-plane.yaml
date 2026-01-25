@@ -1,0 +1,42 @@
+# Example: Multi-cluster control plane (edge-gateway + scheduler)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandbox0-system
+---
+apiVersion: infra.sandbox0.ai/v1alpha1
+kind: Sandbox0Infra
+metadata:
+  name: s0cp
+  namespace: sandbox0-system
+spec:
+  version: "latest"
+  database:
+    # Control plane and data plane should share the same PG instance.
+    type: external
+    external:
+      host: your-db.rds.amazonaws.com
+      port: 5432
+      database: sandbox0
+      username: sandbox0
+      passwordSecret:
+        name: db-credentials
+        key: password
+  services:
+    edgeGateway:
+      enabled: true
+      replicas: 1
+      service:
+        type: NodePort
+        port: 80
+      config:
+        schedulerEnabled: true
+    scheduler:
+      enabled: true
+      replicas: 1
+  initUser:
+    enabled: true
+    email: "admin@localhost"
+    passwordSecret:
+      name: admin-password
+      key: password

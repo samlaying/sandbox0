@@ -1,0 +1,58 @@
+# Example: Single-cluster network policy mode (minimal + Cilium)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sandbox0-system
+---
+apiVersion: infra.sandbox0.ai/v1alpha1
+kind: Sandbox0Infra
+metadata:
+  name: s0
+  namespace: sandbox0-system
+spec:
+  version: "latest"
+  network:
+    # Enable network policy with Cilium.
+    provider: cilium
+  database:
+    # Use builtin for quick start; switch to external for managed PG.
+    type: builtin
+    builtin:
+      enabled: true
+      persistence:
+        enabled: true
+        size: "20Gi"
+  # Example external database:
+  # database:
+  #   type: external
+  #   external:
+  #     host: your-db.rds.amazonaws.com
+  #     port: 5432
+  #     database: sandbox0
+  #     username: sandbox0
+  #     passwordSecret:
+  #       name: db-credentials
+  #       key: password
+  services:
+    internalGateway:
+      enabled: true
+      replicas: 1
+      authMode: public
+    manager:
+      enabled: true
+      replicas: 1
+      config:
+        templateNamespace: sandbox0
+        defaultTemplate:
+          name: default
+          image: sandbox0ai/otemplates:default-v0.1.0
+          pool:
+            minIdle: 1
+            maxIdle: 5
+            autoScale: true
+  initUser:
+    enabled: true
+    email: "admin@localhost"
+    passwordSecret:
+      name: admin-password
+      key: password

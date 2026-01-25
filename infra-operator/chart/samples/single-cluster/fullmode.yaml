@@ -1,4 +1,4 @@
-# Example: Local development mode (all components with builtin database/storage)
+# Example: Single-cluster full mode (control plane + data plane + storage + network)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -7,20 +7,22 @@ metadata:
 apiVersion: infra.sandbox0.ai/v1alpha1
 kind: Sandbox0Infra
 metadata:
-  name: sandbox0-data-plane
+  name: s0
   namespace: sandbox0-system
 spec:
   version: "latest"
   network:
+    # Enable network policy with Cilium.
     provider: cilium
   database:
+    # Use builtin for quick start; switch to external for managed PG.
     type: builtin
     builtin:
       enabled: true
       persistence:
         enabled: true
         size: "20Gi"
-  # If you already have a database, switch to an external config like this:
+  # Example external database:
   # database:
   #   type: external
   #   external:
@@ -31,30 +33,39 @@ spec:
   #     passwordSecret:
   #       name: db-credentials
   #       key: password
-  #     sslMode: require
   storage:
+    # Builtin storage is for quick start; use s3/oss for production scale.
     type: builtin
     builtin:
       enabled: true
       persistence:
         enabled: true
         size: "20Gi"
-  # If you already have object storage, switch to an external config like this:
+  # Example S3 storage:
   # storage:
   #   type: s3
   #   s3:
-  #     bucket: sandbox0-prod-us-east-1
+  #     bucket: sandbox0-prod
   #     region: us-east-1
+  #     endpoint: https://s3.amazonaws.com
   #     credentialsSecret:
   #       name: aws-credentials
   #       accessKeyKey: accessKeyId
   #       secretKeyKey: secretAccessKey
   services:
+    edgeGateway:
+      enabled: true
+      replicas: 1
+      service:
+        type: NodePort
+        port: 80
+    scheduler:
+      enabled: true
+      replicas: 1
     internalGateway:
       enabled: true
       replicas: 1
-      config:
-        authMode: public
+      authMode: internal
     manager:
       enabled: true
       replicas: 1
@@ -66,8 +77,13 @@ spec:
           pool:
             minIdle: 1
             maxIdle: 5
-            # autoScale lets manager scale the template pool between minIdle and maxIdle.
             autoScale: true
     storageProxy:
       enabled: true
       replicas: 1
+  initUser:
+    enabled: true
+    email: "admin@localhost"
+    passwordSecret:
+      name: admin-password
+      key: password

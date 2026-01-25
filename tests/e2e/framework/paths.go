@@ -29,3 +29,14 @@ func FindInfraRoot() (string, error) {
 		current = parent
 	}
 }
+
+// ResolveSamplePath returns the absolute path for a chart sample file.
+func ResolveSamplePath(cfg Config, relativePath string) (string, error) {
+	if cfg.OperatorChartPath == "" {
+		return "", fmt.Errorf("operator chart path is required")
+	}
+	if relativePath == "" {
+		return "", fmt.Errorf("sample path is required")
+	}
+	return filepath.Join(cfg.OperatorChartPath, "samples", relativePath), nil
+}
