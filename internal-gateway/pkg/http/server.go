@@ -281,6 +281,7 @@ func (s *Server) setupRoutes() {
 				contexts.POST("/:ctx_id/input", s.contextInput)
 				contexts.POST("/:ctx_id/resize", s.contextResize)
 				contexts.POST("/:ctx_id/signal", s.contextSignal)
+				contexts.GET("/:ctx_id/stats", s.contextStats)
 				contexts.GET("/:ctx_id/ws", s.contextWebSocket)
 			}
 
@@ -289,7 +290,7 @@ func (s *Server) setupRoutes() {
 			{
 				sandboxvolumes.POST("/mount", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.mountSandboxVolume)
 				sandboxvolumes.POST("/unmount", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.unmountSandboxVolume)
-				sandboxvolumes.GET("", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandboxVolumeStatus)
+				sandboxvolumes.GET("/status", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandboxVolumeStatus)
 			}
 
 			// === File System (→ Procd) ===

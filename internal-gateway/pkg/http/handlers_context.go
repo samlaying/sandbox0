@@ -160,6 +160,24 @@ func (s *Server) contextSignal(c *gin.Context) {
 	s.proxyToProcd(c, procdURL)
 }
 
+// contextStats gets stats for a context
+func (s *Server) contextStats(c *gin.Context) {
+	sandboxID := c.Param("id")
+	ctxID := c.Param("ctx_id")
+	if sandboxID == "" || ctxID == "" {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id and ctx_id are required")
+		return
+	}
+
+	procdURL, err := s.getProcdURL(c, sandboxID)
+	if err != nil {
+		return
+	}
+
+	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/stats"
+	s.proxyToProcd(c, procdURL)
+}
+
 // contextWebSocket handles WebSocket connections for context
 func (s *Server) contextWebSocket(c *gin.Context) {
 	sandboxID := c.Param("id")
