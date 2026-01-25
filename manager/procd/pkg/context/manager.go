@@ -45,14 +45,6 @@ func (m *Manager) CreateContext(config process.ProcessConfig) (*Context, error) 
 
 	// Define exit handler for the new context
 	exitHandler := func(event process.ExitEvent) {
-		if event.Config.AutoRestart {
-			// Create the callback context asynchronously to avoid holding locks or blocking
-			go func(cfg process.ProcessConfig) {
-				if _, err := m.CreateContext(cfg); err != nil {
-					fmt.Printf("Failed to auto-restart context: %v\n", err)
-				}
-			}(event.Config)
-		}
 		if m.onExit != nil {
 			m.onExit(event)
 		}

@@ -51,14 +51,14 @@ type PTYSize struct {
 
 // ProcessConfig holds configuration for creating a process.
 type ProcessConfig struct {
-	Type        ProcessType       `json:"type"`
-	Language    string            `json:"language"` // For REPL: python, node, bash, zsh, ruby, lua, php, r, perl, etc.
-	Command     []string          `json:"command"`  // For CMD: command path and arguments, e.g., ["/bin/ls", "-la"]
-	CWD         string            `json:"cwd"`
-	EnvVars     map[string]string `json:"env_vars"`
-	AutoRestart bool              `json:"auto_restart"`
-	PTYSize     *PTYSize          `json:"pty_size"`
-	Term        string            `json:"term"`
+	Type     ProcessType       `json:"type"`
+	Language string            `json:"language"` // For REPL: python, node, bash, zsh, ruby, lua, php, r, perl, etc.
+	Code     string            `json:"code"`     // For REPL: code to execute
+	Command  []string          `json:"command"`  // For CMD: command path and arguments, e.g., ["/bin/ls", "-la"]
+	CWD      string            `json:"cwd"`
+	EnvVars  map[string]string `json:"env_vars"`
+	PTYSize  *PTYSize          `json:"pty_size"`
+	Term     string            `json:"term"`
 }
 
 // ProcessOutput represents output from a process.
@@ -165,6 +165,11 @@ type Process interface {
 	// Status
 	ExitCode() (int, error)
 	ResourceUsage() ResourceUsage
+}
+
+type CodeInterpreter interface {
+	Process
+	ExecuteCode(string) (*ExecutionResult, error)
 }
 
 // MultiplexedChannel provides a fan-out mechanism for process output.

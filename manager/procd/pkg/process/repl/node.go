@@ -71,28 +71,6 @@ func (n *NodeREPL) Restart() error {
 	return n.Start()
 }
 
-// ExecuteCode executes JavaScript code in the REPL.
-func (n *NodeREPL) ExecuteCode(code string) (*process.ExecutionResult, error) {
-	if !n.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := n.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	// Write code to PTY
-	_, err := fmt.Fprintln(ptyFile, code)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (n *NodeREPL) ResizeTerminal(size process.PTYSize) error {
 	if !n.IsRunning() {

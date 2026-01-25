@@ -105,33 +105,6 @@ func (p *PythonREPL) Restart() error {
 	return p.Start()
 }
 
-// ExecuteCode executes Python code in the REPL.
-func (p *PythonREPL) ExecuteCode(code string) (*process.ExecutionResult, error) {
-	if !p.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := p.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	p.promptMu.Lock()
-	defer p.promptMu.Unlock()
-
-	p.lastInput = code
-
-	// Write code to PTY
-	_, err := fmt.Fprintln(ptyFile, code)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (p *PythonREPL) ResizeTerminal(size process.PTYSize) error {
 	if !p.IsRunning() {

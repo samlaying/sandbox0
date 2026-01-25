@@ -90,28 +90,6 @@ func (r *RREPL) Restart() error {
 	return r.Start()
 }
 
-// ExecuteCode executes R code in the REPL.
-func (r *RREPL) ExecuteCode(code string) (*process.ExecutionResult, error) {
-	if !r.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := r.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	// Write code to PTY
-	_, err := fmt.Fprintln(ptyFile, code)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (r *RREPL) ResizeTerminal(size process.PTYSize) error {
 	if !r.IsRunning() {

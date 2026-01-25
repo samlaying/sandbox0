@@ -40,24 +40,24 @@ func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger) *ContextHand
 
 // CreateContextRequest is the request body for creating a context.
 type CreateContextRequest struct {
-	Type     string            `json:"type"`     // "repl" or "cmd"
-	Language string            `json:"language"` // For REPL: python, node, bash, zsh, etc.
-	Command  []string          `json:"command"`  // For CMD: command path and args, e.g., ["/bin/ls", "-la"]
-	CWD      string            `json:"cwd"`
-	EnvVars  map[string]string `json:"env_vars"`
-	PTYSize  *process.PTYSize  `json:"pty_size"`
+	Type     process.ProcessType `json:"type"`     // "repl" or "cmd"
+	Language string              `json:"language"` // For REPL: python, node, bash, zsh, etc.
+	Command  []string            `json:"command"`  // For CMD: command path and args, e.g., ["/bin/ls", "-la"]
+	CWD      string              `json:"cwd"`
+	EnvVars  map[string]string   `json:"env_vars"`
+	PTYSize  *process.PTYSize    `json:"pty_size"`
 }
 
 // ContextResponse is the response body for a context.
 type ContextResponse struct {
-	ID        string            `json:"id"`
-	Type      string            `json:"type"`
-	Language  string            `json:"language"`
-	CWD       string            `json:"cwd"`
-	EnvVars   map[string]string `json:"env_vars"`
-	Running   bool              `json:"running"`
-	Paused    bool              `json:"paused"`
-	CreatedAt string            `json:"created_at"`
+	ID        string              `json:"id"`
+	Type      process.ProcessType `json:"type"`
+	Language  string              `json:"language"`
+	CWD       string              `json:"cwd"`
+	EnvVars   map[string]string   `json:"env_vars"`
+	Running   bool                `json:"running"`
+	Paused    bool                `json:"paused"`
+	CreatedAt string              `json:"created_at"`
 }
 
 // ContextStatsResponse is the response body for context resource stats.
@@ -97,7 +97,7 @@ func (h *ContextHandler) List(w http.ResponseWriter, r *http.Request) {
 	for _, ctx := range contexts {
 		response = append(response, ContextResponse{
 			ID:        ctx.ID,
-			Type:      string(ctx.Type),
+			Type:      ctx.Type,
 			Language:  ctx.Language,
 			CWD:       ctx.CWD,
 			EnvVars:   ctx.EnvVars,
@@ -120,22 +120,14 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Default to REPL type (includes shells like bash/zsh)
-	processType := process.ProcessTypeREPL
-	if req.Type == "cmd" {
-		processType = process.ProcessTypeCMD
-	}
-
-	config := process.ProcessConfig{
-		Type:     processType,
+	ctx, err := h.manager.CreateContext(process.ProcessConfig{
+		Type:     req.Type,
 		Language: req.Language,
 		Command:  req.Command,
 		CWD:      req.CWD,
 		EnvVars:  req.EnvVars,
 		PTYSize:  req.PTYSize,
-	}
-
-	ctx, err := h.manager.CreateContext(config)
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create_failed", err.Error())
 		return
@@ -143,7 +135,7 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, ContextResponse{
 		ID:        ctx.ID,
-		Type:      string(ctx.Type),
+		Type:      ctx.Type,
 		Language:  ctx.Language,
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,
@@ -170,7 +162,7 @@ func (h *ContextHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, ContextResponse{
 		ID:        ctx.ID,
-		Type:      string(ctx.Type),
+		Type:      ctx.Type,
 		Language:  ctx.Language,
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,
@@ -215,7 +207,7 @@ func (h *ContextHandler) Restart(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, ContextResponse{
 		ID:        ctx.ID,
-		Type:      string(ctx.Type),
+		Type:      ctx.Type,
 		Language:  ctx.Language,
 		CWD:       ctx.CWD,
 		EnvVars:   ctx.EnvVars,

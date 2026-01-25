@@ -85,27 +85,6 @@ func (z *ZshREPL) Restart() error {
 	return z.Start()
 }
 
-// ExecuteCode executes a command in the Zsh REPL.
-func (z *ZshREPL) ExecuteCode(cmd string) (*process.ExecutionResult, error) {
-	if !z.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := z.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	_, err := fmt.Fprintln(ptyFile, cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (z *ZshREPL) ResizeTerminal(size process.PTYSize) error {
 	if !z.IsRunning() {

@@ -106,8 +106,8 @@ func (s *Server) restartContext(c *gin.Context) {
 	s.proxyToProcd(c, procdURL)
 }
 
-// executeInContext executes code/command in a context
-func (s *Server) executeInContext(c *gin.Context) {
+// contextInput sends input to a context
+func (s *Server) contextInput(c *gin.Context) {
 	sandboxID := c.Param("id")
 	ctxID := c.Param("ctx_id")
 	if sandboxID == "" || ctxID == "" {
@@ -120,7 +120,43 @@ func (s *Server) executeInContext(c *gin.Context) {
 		return
 	}
 
-	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/execute"
+	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/input"
+	s.proxyToProcd(c, procdURL)
+}
+
+// contextResize resizes a context
+func (s *Server) contextResize(c *gin.Context) {
+	sandboxID := c.Param("id")
+	ctxID := c.Param("ctx_id")
+	if sandboxID == "" || ctxID == "" {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id and ctx_id are required")
+		return
+	}
+
+	procdURL, err := s.getProcdURL(c, sandboxID)
+	if err != nil {
+		return
+	}
+
+	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/resize"
+	s.proxyToProcd(c, procdURL)
+}
+
+// contextSignal sends a signal to a context
+func (s *Server) contextSignal(c *gin.Context) {
+	sandboxID := c.Param("id")
+	ctxID := c.Param("ctx_id")
+	if sandboxID == "" || ctxID == "" {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id and ctx_id are required")
+		return
+	}
+
+	procdURL, err := s.getProcdURL(c, sandboxID)
+	if err != nil {
+		return
+	}
+
+	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/signal"
 	s.proxyToProcd(c, procdURL)
 }
 

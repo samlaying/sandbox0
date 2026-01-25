@@ -32,9 +32,8 @@ func TestManager_CreateContext(t *testing.T) {
 
 	// Create first context
 	config := process.ProcessConfig{
-		Type:        process.ProcessTypeCMD,
-		Command:     []string{"/bin/echo", "test"},
-		AutoRestart: false,
+		Type:    process.ProcessTypeCMD,
+		Command: []string{"/bin/echo", "test"},
 	}
 
 	ctx1, err := m.CreateContext(config)

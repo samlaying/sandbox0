@@ -78,28 +78,6 @@ func (p *PHPREPL) Restart() error {
 	return p.Start()
 }
 
-// ExecuteCode executes PHP code in the REPL.
-func (p *PHPREPL) ExecuteCode(code string) (*process.ExecutionResult, error) {
-	if !p.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := p.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	// Write code to PTY
-	_, err := fmt.Fprintln(ptyFile, code)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (p *PHPREPL) ResizeTerminal(size process.PTYSize) error {
 	if !p.IsRunning() {

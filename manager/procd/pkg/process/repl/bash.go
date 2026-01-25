@@ -84,28 +84,6 @@ func (b *BashREPL) Restart() error {
 	return b.Start()
 }
 
-// ExecuteCode executes a command in the Bash REPL.
-func (b *BashREPL) ExecuteCode(cmd string) (*process.ExecutionResult, error) {
-	if !b.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := b.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	// Write command to PTY
-	_, err := fmt.Fprintln(ptyFile, cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (b *BashREPL) ResizeTerminal(size process.PTYSize) error {
 	if !b.IsRunning() {

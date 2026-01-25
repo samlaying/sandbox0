@@ -84,28 +84,6 @@ func (l *LuaREPL) Restart() error {
 	return l.Start()
 }
 
-// ExecuteCode executes Lua code in the REPL.
-func (l *LuaREPL) ExecuteCode(code string) (*process.ExecutionResult, error) {
-	if !l.IsRunning() {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	ptyFile := l.GetPTY()
-	if ptyFile == nil {
-		return nil, process.ErrProcessNotRunning
-	}
-
-	// Write code to PTY
-	_, err := fmt.Fprintln(ptyFile, code)
-	if err != nil {
-		return nil, err
-	}
-
-	return &process.ExecutionResult{
-		Output: []byte{},
-	}, nil
-}
-
 // ResizeTerminal resizes the PTY.
 func (l *LuaREPL) ResizeTerminal(size process.PTYSize) error {
 	if !l.IsRunning() {

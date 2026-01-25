@@ -73,29 +73,6 @@ func TestPythonREPL_StartWithoutPython(t *testing.T) {
 	t.Skip("Python is available, skipping 'not found' test")
 }
 
-// TestPythonREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestPythonREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "python",
-	}
-
-	repl, err := NewPythonREPL("test-not-running", config)
-	if err != nil {
-		t.Fatalf("NewPythonREPL() failed = %v", err)
-	}
-
-	// Try to execute code without starting
-	result, err := repl.ExecuteCode("print('hello')")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
 // TestPythonREPL_ResizeTerminalNotRunning tests ResizeTerminal when not running.
 func TestPythonREPL_ResizeTerminalNotRunning(t *testing.T) {
 	config := process.ProcessConfig{
@@ -326,28 +303,6 @@ func TestNewNodeREPL(t *testing.T) {
 	}
 }
 
-// TestNodeREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestNodeREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "node",
-	}
-
-	repl, err := NewNodeREPL("test-node-not-running", config)
-	if err != nil {
-		t.Fatalf("NewNodeREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("console.log('test')")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
 // TestNodeREPL_ResizeTerminalNotRunning tests ResizeTerminal when not running.
 func TestNodeREPL_ResizeTerminalNotRunning(t *testing.T) {
 	config := process.ProcessConfig{
@@ -397,28 +352,6 @@ func TestNewBashREPL(t *testing.T) {
 	}
 }
 
-// TestBashREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestBashREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "bash",
-	}
-
-	repl, err := NewBashREPL("test-bash-not-running", config)
-	if err != nil {
-		t.Fatalf("NewBashREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("echo test")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
 // TestBashREPL_ResizeTerminalNotRunning tests ResizeTerminal when not running.
 func TestBashREPL_ResizeTerminalNotRunning(t *testing.T) {
 	config := process.ProcessConfig{
@@ -465,28 +398,6 @@ func TestNewZshREPL(t *testing.T) {
 	// Verify the prompt is set
 	if repl.prompt != "SANDBOX0>>> " {
 		t.Errorf("prompt = %s, want 'SANDBOX0>>> '", repl.prompt)
-	}
-}
-
-// TestZshREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestZshREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "zsh",
-	}
-
-	repl, err := NewZshREPL("test-zsh-not-running", config)
-	if err != nil {
-		t.Fatalf("NewZshREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("echo test")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
 	}
 }
 
@@ -848,115 +759,5 @@ func TestNewPerlREPL(t *testing.T) {
 
 	if repl.Type() != process.ProcessTypeREPL {
 		t.Errorf("Type() = %s, want %s", repl.Type(), process.ProcessTypeREPL)
-	}
-}
-
-// TestRubyREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestRubyREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "ruby",
-	}
-
-	repl, err := NewRubyREPL("test-ruby-not-running", config)
-	if err != nil {
-		t.Fatalf("NewRubyREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("puts 'hello'")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
-// TestLuaREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestLuaREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "lua",
-	}
-
-	repl, err := NewLuaREPL("test-lua-not-running", config)
-	if err != nil {
-		t.Fatalf("NewLuaREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("print('hello')")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
-// TestPHPREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestPHPREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "php",
-	}
-
-	repl, err := NewPHPREPL("test-php-not-running", config)
-	if err != nil {
-		t.Fatalf("NewPHPREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("echo 'hello';")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
-// TestRREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestRREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "r",
-	}
-
-	repl, err := NewRREPL("test-r-not-running", config)
-	if err != nil {
-		t.Fatalf("NewRREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("print('hello')")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
-	}
-}
-
-// TestPerlREPL_ExecuteCodeNotRunning tests ExecuteCode when not running.
-func TestPerlREPL_ExecuteCodeNotRunning(t *testing.T) {
-	config := process.ProcessConfig{
-		Type:     process.ProcessTypeREPL,
-		Language: "perl",
-	}
-
-	repl, err := NewPerlREPL("test-perl-not-running", config)
-	if err != nil {
-		t.Fatalf("NewPerlREPL() failed = %v", err)
-	}
-
-	result, err := repl.ExecuteCode("print 'hello'")
-	if err != process.ErrProcessNotRunning {
-		t.Errorf("ExecuteCode() error = %v, want %v", err, process.ErrProcessNotRunning)
-	}
-
-	if result != nil {
-		t.Error("ExecuteCode() returned non-nil result when not running")
 	}
 }

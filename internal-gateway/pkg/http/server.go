@@ -273,12 +273,14 @@ func (s *Server) setupRoutes() {
 			// === Process/Context Management (→ Procd) ===
 			contexts := sandboxes.Group("/:id/contexts")
 			{
-				contexts.POST("", s.createContext) // async mode
+				contexts.POST("", s.createContext)
 				contexts.GET("", s.listContexts)
 				contexts.GET("/:ctx_id", s.getContext)
 				contexts.DELETE("/:ctx_id", s.deleteContext)
 				contexts.POST("/:ctx_id/restart", s.restartContext)
-				contexts.POST("/:ctx_id/execute", s.executeInContext)
+				contexts.POST("/:ctx_id/input", s.contextInput)
+				contexts.POST("/:ctx_id/resize", s.contextResize)
+				contexts.POST("/:ctx_id/signal", s.contextSignal)
 				contexts.GET("/:ctx_id/ws", s.contextWebSocket)
 			}
 
