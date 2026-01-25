@@ -28,14 +28,14 @@ const (
 
 // Operator is the main controller for SandboxTemplate CRD
 type Operator struct {
-	k8sClient   kubernetes.Interface
-	podLister   corelisters.PodLister
-	podsSynced  cache.InformerSynced
-	poolManager *PoolManager
-	autoScaler  *AutoScaler
-	recorder    record.EventRecorder
-	clock       TimeProvider
-	logger      *zap.Logger
+	k8sClient      kubernetes.Interface
+	podLister      corelisters.PodLister
+	podsSynced     cache.InformerSynced
+	poolManager    *PoolManager
+	autoScaler     *AutoScaler
+	recorder       record.EventRecorder
+	clock          TimeProvider
+	logger         *zap.Logger
 	statsPublisher TemplateStatsPublisher
 
 	workqueue workqueue.TypedRateLimitingInterface[string]

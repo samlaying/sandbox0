@@ -22,8 +22,8 @@ type Response struct {
 	Error   *Error `json:"error,omitempty"`
 }
 
-// RawResponse is used when decoding typed response payloads.
-type RawResponse struct {
+// rawResponse is used when decoding typed response payloads.
+type rawResponse struct {
 	Success bool            `json:"success"`
 	Data    json.RawMessage `json:"data,omitempty"`
 	Error   *Error          `json:"error,omitempty"`
@@ -39,16 +39,16 @@ const (
 	CodeInternal     = "internal_error"
 )
 
-// SuccessResponse builds a success envelope.
-func SuccessResponse(data any) Response {
+// successresp builds a success envelope.
+func successresp(data any) Response {
 	return Response{
 		Success: true,
 		Data:    data,
 	}
 }
 
-// ErrorResponse builds an error envelope.
-func ErrorResponse(code, message string, details ...any) Response {
+// errorresp builds an error envelope.
+func errorresp(code, message string, details ...any) Response {
 	resp := Response{
 		Success: false,
 		Error: &Error{
@@ -62,8 +62,8 @@ func ErrorResponse(code, message string, details ...any) Response {
 	return resp
 }
 
-// Write writes a response envelope using net/http.
-func Write(w http.ResponseWriter, status int, resp Response) error {
+// write writes a response envelope using net/http.
+func write(w http.ResponseWriter, status int, resp Response) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	return json.NewEncoder(w).Encode(resp)
@@ -71,32 +71,32 @@ func Write(w http.ResponseWriter, status int, resp Response) error {
 
 // WriteSuccess writes a success envelope using net/http.
 func WriteSuccess(w http.ResponseWriter, status int, data any) error {
-	return Write(w, status, SuccessResponse(data))
+	return write(w, status, successresp(data))
 }
 
 // WriteError writes an error envelope using net/http.
 func WriteError(w http.ResponseWriter, status int, code, message string, details ...any) error {
-	return Write(w, status, ErrorResponse(code, message, details...))
+	return write(w, status, errorresp(code, message, details...))
 }
 
-// JSON writes a response envelope using gin.
-func JSON(c *gin.Context, status int, resp Response) {
+// jsonfunc writes a response envelope using gin.
+func jsonfunc(c *gin.Context, status int, resp Response) {
 	c.JSON(status, resp)
 }
 
 // JSONSuccess writes a success envelope using gin.
 func JSONSuccess(c *gin.Context, status int, data any) {
-	JSON(c, status, SuccessResponse(data))
+	jsonfunc(c, status, successresp(data))
 }
 
 // JSONError writes an error envelope using gin.
 func JSONError(c *gin.Context, status int, code, message string, details ...any) {
-	JSON(c, status, ErrorResponse(code, message, details...))
+	jsonfunc(c, status, errorresp(code, message, details...))
 }
 
 // DecodeResponse decodes a standardized response and unmarshals the data payload.
 func DecodeResponse[T any](r io.Reader) (*T, *Error, error) {
-	var raw RawResponse
+	var raw rawResponse
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
 		return nil, nil, err
 	}
