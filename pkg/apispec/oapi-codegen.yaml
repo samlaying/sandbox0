@@ -1,0 +1,4 @@
+package: apispec
+output: types.gen.go
+generate:
+  - types

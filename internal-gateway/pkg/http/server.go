@@ -29,24 +29,24 @@ import (
 
 // Server represents the HTTP server for internal-gateway
 type Server struct {
-	router          *gin.Engine
-	cfg             *config.InternalGatewayConfig
-	proxy2Mgr       *proxy.Router
-	proxy2sp        *proxy.Router
-	managerClient   *client.ManagerClient
-	authMiddleware  *middleware.InternalAuthMiddleware
-	publicAuth      *gatewaymiddleware.AuthMiddleware
-	compositeAuth   *middleware.CompositeAuthMiddleware
-	publicRepo      *gatewaydb.Repository
-	rateLimiter     *gatewaymiddleware.RateLimiter
-	externalLimiter *middleware.ExternalRateLimiter
-	publicBuiltin   *gatewaybuiltin.Provider
-	publicOIDC      *gatewayoidc.Manager
-	publicJWT       *gatewayjwt.Issuer
-	requestLogger   *middleware.RequestLogger
-	logger          *zap.Logger
-	internalAuthGen *internalauth.Generator
-	procdAuthGen    *internalauth.Generator
+	router              *gin.Engine
+	cfg                 *config.InternalGatewayConfig
+	proxy2Mgr           *proxy.Router
+	proxy2sp            *proxy.Router
+	managerClient       *client.ManagerClient
+	authMiddleware      *middleware.InternalAuthMiddleware
+	publicAuth          *gatewaymiddleware.AuthMiddleware
+	compositeAuth       *middleware.CompositeAuthMiddleware
+	publicRepo          *gatewaydb.Repository
+	rateLimiter         *gatewaymiddleware.RateLimiter
+	externalLimiter     *middleware.ExternalRateLimiter
+	publicBuiltin       *gatewaybuiltin.Provider
+	publicOIDC          *gatewayoidc.Manager
+	publicJWT           *gatewayjwt.Issuer
+	requestLogger       *middleware.RequestLogger
+	logger              *zap.Logger
+	internalAuthGen     *internalauth.Generator
+	procdAuthGen        *internalauth.Generator
 	internalAuthEnabled bool
 }
 
@@ -196,24 +196,24 @@ func NewServer(
 	}
 
 	server := &Server{
-		router:          router,
-		cfg:             cfg,
-		proxy2Mgr:       proxy2Mgr,
-		proxy2sp:        proxy2sp,
-		managerClient:   managerClient,
-		authMiddleware:  authMiddleware,
-		publicAuth:      publicAuth,
-		compositeAuth:   compositeAuth,
-		publicRepo:      publicRepo,
-		rateLimiter:     rateLimiter,
-		externalLimiter: externalLimiter,
-		publicBuiltin:   publicBuiltin,
-		publicOIDC:      publicOIDC,
-		publicJWT:       publicJWT,
-		requestLogger:   requestLogger,
-		logger:          logger,
-		internalAuthGen: internalAuthGen,
-		procdAuthGen:    procdAuthGen,
+		router:              router,
+		cfg:                 cfg,
+		proxy2Mgr:           proxy2Mgr,
+		proxy2sp:            proxy2sp,
+		managerClient:       managerClient,
+		authMiddleware:      authMiddleware,
+		publicAuth:          publicAuth,
+		compositeAuth:       compositeAuth,
+		publicRepo:          publicRepo,
+		rateLimiter:         rateLimiter,
+		externalLimiter:     externalLimiter,
+		publicBuiltin:       publicBuiltin,
+		publicOIDC:          publicOIDC,
+		publicJWT:           publicJWT,
+		requestLogger:       requestLogger,
+		logger:              logger,
+		internalAuthGen:     internalAuthGen,
+		procdAuthGen:        procdAuthGen,
 		internalAuthEnabled: internalAuthEnabled,
 	}
 
