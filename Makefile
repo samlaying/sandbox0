@@ -126,7 +126,14 @@ test-integration-verbose:
 # E2E tests
 test-e2e:
 	@printf "$(CYAN)Running E2E tests...$(RESET)\n"
-	unset http_proxy && unset https_proxy && unset all_proxy && go test -v -count=1 ./tests/e2e/... -timeout=30m
+	go test -v -count=1 ./tests/e2e/... -timeout=30m
+
+# Clean kind image
+# docker exec -it $(docker ps | grep sandbox0-e2e | cut -f1 -d" ") bash -c 'ctr -n=k8s.io images rm docker.io/sandbox0ai/infra:latest'
+
+test-e2e-local:
+	@printf "$(CYAN)Running E2E tests locally...$(RESET)\n"
+	unset http_proxy && unset https_proxy && unset all_proxy && E2E_USE_EXISTING_CLUSTER=true go test -v -count=1 ./tests/e2e/... -timeout=30m
 
 test-e2e-kind:
 	@printf "$(CYAN)Creating Kind cluster...$(RESET)\n"

@@ -27,21 +27,30 @@ func NewCompositeAuthMiddleware(internal *InternalAuthMiddleware, public *gatewa
 
 func (m *CompositeAuthMiddleware) Authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authCtx, claims, err := m.internal.AuthenticateRequest(c)
-		if err == nil {
-			m.internal.setAuthContext(c, authCtx, claims)
-			c.Next()
-			return
+		if m.internal != nil {
+			authCtx, claims, err := m.internal.AuthenticateRequest(c)
+			if err == nil {
+				m.internal.setAuthContext(c, authCtx, claims)
+				c.Next()
+				return
+			}
+
+			if c.GetHeader(internalauth.DefaultTokenHeader) != "" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error": err.Error(),
+				})
+				return
+			}
 		}
 
-		if c.GetHeader(internalauth.DefaultTokenHeader) != "" {
+		if m.public == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": err.Error(),
+				"error": "public authentication unavailable",
 			})
 			return
 		}
 
-		authCtx, err = m.public.AuthenticateRequest(c)
+		authCtx, err := m.public.AuthenticateRequest(c)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": err.Error(),

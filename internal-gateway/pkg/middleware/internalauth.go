@@ -57,6 +57,10 @@ func (m *InternalAuthMiddleware) AuthenticateRequest(c *gin.Context) (*auth.Auth
 }
 
 func (m *InternalAuthMiddleware) authenticateRequest(c *gin.Context, allowAuthHeader bool) (*auth.AuthContext, *internalauth.Claims, error) {
+	if m.validator == nil {
+		return nil, nil, ErrInvalidInternalToken
+	}
+
 	// Extract internal token from header
 	token := c.GetHeader(internalauth.DefaultTokenHeader)
 	if token == "" {

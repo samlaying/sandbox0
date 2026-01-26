@@ -46,6 +46,7 @@ type CreateContextRequest struct {
 	CWD      string              `json:"cwd"`
 	EnvVars  map[string]string   `json:"env_vars"`
 	PTYSize  *process.PTYSize    `json:"pty_size"`
+	Input    string              `json:"input"`
 }
 
 // ContextResponse is the response body for a context.
@@ -131,6 +132,17 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create_failed", err.Error())
 		return
+	}
+
+	if req.Input != "" {
+		if err := h.manager.WriteInput(ctx.ID, []byte(req.Input)); err != nil {
+			if errors.Is(err, process.ErrProcessNotRunning) {
+				writeError(w, http.StatusConflict, "process_not_running", err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, ContextResponse{

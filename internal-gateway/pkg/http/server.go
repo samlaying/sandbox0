@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"net/http"
 	"strings"
@@ -46,6 +47,7 @@ type Server struct {
 	logger          *zap.Logger
 	internalAuthGen *internalauth.Generator
 	procdAuthGen    *internalauth.Generator
+	internalAuthEnabled bool
 }
 
 // NewServer creates a new HTTP server
@@ -92,10 +94,17 @@ func NewServer(
 		}
 	}
 
+	internalAuthEnabled := authModeEnabled(cfg.AuthMode, authModeInternal)
+	publicAuthEnabled := authModeEnabled(cfg.AuthMode, authModePublic)
+
 	// Initialize internal auth keys
-	publicKey, err := internalauth.LoadEd25519PublicKeyFromFile(internalauth.DefaultInternalJWTPublicKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load internal JWT public key: %w", err)
+	var publicKey ed25519.PublicKey
+	if internalAuthEnabled {
+		var err error
+		publicKey, err = internalauth.LoadEd25519PublicKeyFromFile(internalauth.DefaultInternalJWTPublicKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load internal JWT public key: %w", err)
+		}
 	}
 
 	privateKey, err := internalauth.LoadEd25519PrivateKeyFromFile(internalauth.DefaultInternalJWTPrivateKeyPath)
@@ -108,12 +117,15 @@ func NewServer(
 	if len(allowedCallers) == 0 {
 		allowedCallers = []string{"edge-gateway", "scheduler"}
 	}
-	validator := internalauth.NewValidator(internalauth.ValidatorConfig{
-		Target:             "internal-gateway",
-		PublicKey:          publicKey,
-		AllowedCallers:     allowedCallers,
-		ClockSkewTolerance: 10 * time.Second,
-	})
+	var validator *internalauth.Validator
+	if internalAuthEnabled {
+		validator = internalauth.NewValidator(internalauth.ValidatorConfig{
+			Target:             "internal-gateway",
+			PublicKey:          publicKey,
+			AllowedCallers:     allowedCallers,
+			ClockSkewTolerance: 10 * time.Second,
+		})
+	}
 
 	// Create middleware
 	authMiddleware := middleware.NewInternalAuthMiddleware(validator, logger)
@@ -146,7 +158,7 @@ func NewServer(
 	var publicOIDC *gatewayoidc.Manager
 	var publicJWT *gatewayjwt.Issuer
 
-	if authModeEnabled(cfg.AuthMode, authModePublic) || authModeEnabled(cfg.AuthMode, authModeBoth) {
+	if publicAuthEnabled {
 		if pool == nil {
 			return nil, fmt.Errorf("public auth requires database connection")
 		}
@@ -202,6 +214,7 @@ func NewServer(
 		logger:          logger,
 		internalAuthGen: internalAuthGen,
 		procdAuthGen:    procdAuthGen,
+		internalAuthEnabled: internalAuthEnabled,
 	}
 
 	server.setupRoutes()
@@ -337,16 +350,18 @@ func (s *Server) setupRoutes() {
 	// Internal API routes (for scheduler to call)
 	// These routes are authenticated but don't require specific permissions
 	// (scheduler uses *:* permissions)
-	internal := s.router.Group("/internal/v1")
-	internal.Use(s.managerUpstreamMiddleware())
-	internal.Use(s.authMiddleware.Authenticate())
-	{
+	if s.internalAuthEnabled {
+		internal := s.router.Group("/internal/v1")
+		internal.Use(s.managerUpstreamMiddleware())
+		internal.Use(s.authMiddleware.Authenticate())
+		{
 
-		// Cluster information (→ Manager)
-		internal.GET("/cluster/summary", s.getClusterSummary)
+			// Cluster information (→ Manager)
+			internal.GET("/cluster/summary", s.getClusterSummary)
 
-		// Template statistics (→ Manager)
-		internal.GET("/templates/stats", s.getTemplateStats)
+			// Template statistics (→ Manager)
+			internal.GET("/templates/stats", s.getTemplateStats)
+		}
 	}
 }
 

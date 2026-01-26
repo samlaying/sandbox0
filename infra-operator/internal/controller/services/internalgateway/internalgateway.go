@@ -19,6 +19,7 @@ package internalgateway
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -60,7 +61,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 
 	labels := common.GetServiceLabels(infra.Name, "internal-gateway")
 	dataPlaneSecretName, dataPlanePrivateKey, _ := internalauth.GetDataPlaneKeyRefs(infra)
-	controlPlaneSecretName, _, controlPlanePublicKey := internalauth.GetControlPlaneKeyRefs(infra)
 
 	config, err := r.buildConfig(ctx, infra)
 	if err != nil {
@@ -70,10 +70,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		return err
 	}
 
-	controlPlanePublicSecretName, controlPlanePublicKeyKey := internalauth.GetControlPlanePublicKeyRef(infra)
-	if controlPlanePublicSecretName == "" {
-		controlPlanePublicSecretName = controlPlaneSecretName
-		controlPlanePublicKeyKey = controlPlanePublicKey
+	needsControlPlanePublicKey := internalAuthRequiresControlPlaneKey(config)
+	controlPlanePublicSecretName := ""
+	controlPlanePublicKeyKey := ""
+	if needsControlPlanePublicKey {
+		controlPlaneSecretName, _, controlPlanePublicKey := internalauth.GetControlPlaneKeyRefs(infra)
+		controlPlanePublicSecretName, controlPlanePublicKeyKey = internalauth.GetControlPlanePublicKeyRef(infra)
+		if controlPlanePublicSecretName == "" {
+			controlPlanePublicSecretName = controlPlaneSecretName
+			controlPlanePublicKeyKey = controlPlanePublicKey
+		}
 	}
 
 	var resources *corev1.ResourceRequirements
@@ -86,6 +92,67 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	httpPort := int32(config.HTTPPort)
 
 	// Create deployment
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      "config",
+			MountPath: "/config/config.yaml",
+			SubPath:   "config.yaml",
+			ReadOnly:  true,
+		},
+		{
+			Name:      "internal-jwt-private-key",
+			MountPath: pkginternalauth.DefaultInternalJWTPrivateKeyPath,
+			SubPath:   "internal_jwt_private.key",
+			ReadOnly:  true,
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: deploymentName},
+				},
+			},
+		},
+		{
+			Name: "internal-jwt-private-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: dataPlaneSecretName,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  dataPlanePrivateKey,
+							Path: "internal_jwt_private.key",
+						},
+					},
+				},
+			},
+		},
+	}
+	if needsControlPlanePublicKey {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "internal-jwt-public-key",
+			MountPath: pkginternalauth.DefaultInternalJWTPublicKeyPath,
+			SubPath:   "internal_jwt_public.key",
+			ReadOnly:  true,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "internal-jwt-public-key",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: controlPlanePublicSecretName,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  controlPlanePublicKeyKey,
+							Path: "internal_jwt_public.key",
+						},
+					},
+				},
+			},
+		})
+	}
+
 	if err := r.Resources.ReconcileDeployment(ctx, infra, deploymentName, labels, replicas, common.ServiceDefinition{
 		Name:       "internal-gateway",
 		Port:       httpPort,
@@ -107,64 +174,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				Value: "/config/config.yaml",
 			},
 		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "config",
-				MountPath: "/config/config.yaml",
-				SubPath:   "config.yaml",
-				ReadOnly:  true,
-			},
-			{
-				Name:      "internal-jwt-private-key",
-				MountPath: pkginternalauth.DefaultInternalJWTPrivateKeyPath,
-				SubPath:   "internal_jwt_private.key",
-				ReadOnly:  true,
-			},
-			{
-				Name:      "internal-jwt-public-key",
-				MountPath: pkginternalauth.DefaultInternalJWTPublicKeyPath,
-				SubPath:   "internal_jwt_public.key",
-				ReadOnly:  true,
-			},
-		},
-		Volumes: []corev1.Volume{
-			{
-				Name: "config",
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{Name: deploymentName},
-					},
-				},
-			},
-			{
-				Name: "internal-jwt-private-key",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: dataPlaneSecretName,
-						Items: []corev1.KeyToPath{
-							{
-								Key:  dataPlanePrivateKey,
-								Path: "internal_jwt_private.key",
-							},
-						},
-					},
-				},
-			},
-			{
-				Name: "internal-jwt-public-key",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: controlPlanePublicSecretName,
-						Items: []corev1.KeyToPath{
-							{
-								Key:  controlPlanePublicKeyKey,
-								Path: "internal_jwt_public.key",
-							},
-						},
-					},
-				},
-			},
-		},
+		VolumeMounts: volumeMounts,
+		Volumes:      volumes,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -263,4 +274,15 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 
 	return cfg, nil
+}
+
+func internalAuthRequiresControlPlaneKey(cfg *apiconfig.InternalGatewayConfig) bool {
+	if cfg == nil {
+		return true
+	}
+	mode := strings.TrimSpace(strings.ToLower(cfg.AuthMode))
+	if mode == "" {
+		mode = "internal"
+	}
+	return mode == "internal" || mode == "both"
 }
