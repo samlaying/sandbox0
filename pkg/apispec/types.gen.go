@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	BearerAuthScopes    = "bearerAuth.Scopes"
-	InternalTokenScopes = "internalToken.Scopes"
+	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
 // Defines values for AddTeamMemberRequestRole.
@@ -348,7 +347,6 @@ type ClaimRequest struct {
 // ClaimResponse defines model for ClaimResponse.
 type ClaimResponse struct {
 	ClusterId    *string `json:"cluster_id"`
-	Namespace    string  `json:"namespace"`
 	PodName      string  `json:"pod_name"`
 	ProcdAddress string  `json:"procd_address"`
 	SandboxId    string  `json:"sandbox_id"`
@@ -744,7 +742,6 @@ type Sandbox struct {
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	Id           string    `json:"id"`
-	Namespace    string    `json:"namespace"`
 	PodName      string    `json:"pod_name"`
 	ProcdAddress string    `json:"procd_address"`
 	Status       string    `json:"status"`
@@ -783,7 +780,6 @@ type SandboxStatus struct {
 	ClaimedAt    *string `json:"claimed_at,omitempty"`
 	CreatedAt    *string `json:"created_at,omitempty"`
 	ExpiresAt    *string `json:"expires_at,omitempty"`
-	Namespace    *string `json:"namespace,omitempty"`
 	PodName      *string `json:"pod_name,omitempty"`
 	ProcdAddress *string `json:"procd_address,omitempty"`
 	SandboxId    *string `json:"sandbox_id,omitempty"`

@@ -226,13 +226,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	// Create service
 	serviceType := common.ResolveServiceType(serviceConfig)
 	servicePort := common.ResolveServicePort(serviceConfig, httpPort)
-	if err := r.Resources.ReconcileService(ctx, infra, deploymentName, labels, serviceType, servicePort, httpPort); err != nil {
+	if err := r.Resources.ReconcileServicePorts(ctx, infra, deploymentName, labels, serviceType, []corev1.ServicePort{
+		common.BuildServicePort("http", servicePort, httpPort),
+		common.BuildServicePort("metrics", metricsPort, metricsPort),
+		common.BuildServicePort("webhook", webhookPort, webhookPort),
+	}); err != nil {
 		return err
 	}
-	if err := r.Resources.ReconcileService(ctx, infra, fmt.Sprintf("%s-metrics", deploymentName), labels, corev1.ServiceTypeClusterIP, metricsPort, metricsPort); err != nil {
+	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-metrics", deploymentName)); err != nil {
 		return err
 	}
-	if err := r.Resources.ReconcileService(ctx, infra, fmt.Sprintf("%s-webhook", deploymentName), labels, corev1.ServiceTypeClusterIP, webhookPort, webhookPort); err != nil {
+	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-webhook", deploymentName)); err != nil {
 		return err
 	}
 

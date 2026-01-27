@@ -14,16 +14,17 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func registerApiMinimalSuite(env *framework.ScenarioEnv) {
+func registerApiMinimalSuite(envProvider func() *framework.ScenarioEnv) {
 	Describe("API minimal mode", Ordered, func() {
 		var (
+			env       *framework.ScenarioEnv
 			session   *e2eutils.Session
 			cleanup   func()
 			sandboxID string
 		)
 
 		BeforeAll(func() {
-			Expect(env).NotTo(BeNil())
+			env = shouldRunApiScenario(envProvider, "minimal")
 
 			var err error
 			session, cleanup, err = e2eutils.NewAPISession(env, false)
@@ -33,7 +34,7 @@ func registerApiMinimalSuite(env *framework.ScenarioEnv) {
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() error {
-				return session.Login(env.TestCtx.Context, GinkgoT(), "admin@localhost", password)
+				return session.Login(env.TestCtx.Context, GinkgoT(), "admin@example.com", password)
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 			Eventually(func() error {

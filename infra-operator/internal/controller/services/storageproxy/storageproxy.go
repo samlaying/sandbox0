@@ -198,13 +198,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	// Create service (gRPC)
 	serviceType := common.ResolveServiceType(serviceConfig)
 	servicePort := common.ResolveServicePort(serviceConfig, grpcPort)
-	if err := r.Resources.ReconcileService(ctx, infra, serviceName, labels, serviceType, servicePort, grpcPort); err != nil {
+	if err := r.Resources.ReconcileServicePorts(ctx, infra, serviceName, labels, serviceType, []corev1.ServicePort{
+		common.BuildServicePort("grpc", servicePort, grpcPort),
+		common.BuildServicePort("http", httpPort, httpPort),
+		common.BuildServicePort("metrics", metricsPort, metricsPort),
+	}); err != nil {
 		return err
 	}
-	if err := r.Resources.ReconcileService(ctx, infra, fmt.Sprintf("%s-http", serviceName), labels, corev1.ServiceTypeClusterIP, httpPort, httpPort); err != nil {
+	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-http", serviceName)); err != nil {
 		return err
 	}
-	if err := r.Resources.ReconcileService(ctx, infra, fmt.Sprintf("%s-metrics", serviceName), labels, corev1.ServiceTypeClusterIP, metricsPort, metricsPort); err != nil {
+	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-metrics", serviceName)); err != nil {
 		return err
 	}
 

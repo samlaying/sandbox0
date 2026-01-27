@@ -51,8 +51,8 @@ func init() {
 				GinkgoWriter.Printf("Scenario %s teardown completed.\n", scenario.Name)
 			})
 
-			cases.RegisterApiSuite(func() *framework.ScenarioEnv { return env })
 			cases.RegisterOperatorSuite(func() *framework.ScenarioEnv { return env })
+			cases.RegisterApiSuite(func() *framework.ScenarioEnv { return env })
 		})
 	}
 }

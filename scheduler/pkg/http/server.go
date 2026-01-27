@@ -91,7 +91,7 @@ func (s *Server) setupRoutes() {
 		// Apply internal auth to all v1 routes (requests come from edge-gateway)
 		v1.Use(s.authMiddleware())
 
-		// Template Management (source of truth for multi-cluster)
+		// Template Management (source of truth)
 		templates := v1.Group("/templates")
 		{
 			templates.GET("", s.listTemplates)

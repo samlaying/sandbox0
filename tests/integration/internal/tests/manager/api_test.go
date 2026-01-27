@@ -115,7 +115,7 @@ func newManagerTestEnvWithOptions(t *testing.T, opts managerTestEnvOptions) *man
 		sandboxService.SetProcdClient(opts.procdClient)
 	}
 
-	templateService := service.NewTemplateService(crdClient, templateLister, nil, logger)
+	templateService := service.NewTemplateService(crdClient, templateLister, nil, logger, "sandbox0")
 	clusterService := service.NewClusterService(
 		k8sClient,
 		podLister,

@@ -14,26 +14,27 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func registerApiFullModeSuite(env *framework.ScenarioEnv) {
+func registerApiFullModeSuite(envProvider func() *framework.ScenarioEnv) {
 	Describe("API full mode", Ordered, func() {
 		var (
+			env       *framework.ScenarioEnv
 			session   *e2eutils.Session
 			cleanup   func()
 			sandboxID string
 		)
 
 		BeforeAll(func() {
-			Expect(env).NotTo(BeNil())
+			env = shouldRunApiScenario(envProvider, "fullmode")
 
 			var err error
-			session, cleanup, err = e2eutils.NewAPISession(env, true)
+			session, cleanup, err = e2eutils.NewAPISession(env, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			password, err := framework.GetSecretValue(env.TestCtx.Context, env.Config.Kubeconfig, env.Infra.Namespace, "admin-password", "password")
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() error {
-				return session.Login(env.TestCtx.Context, GinkgoT(), "admin@localhost", password)
+				return session.Login(env.TestCtx.Context, GinkgoT(), "admin@example.com", password)
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 			Eventually(func() error {

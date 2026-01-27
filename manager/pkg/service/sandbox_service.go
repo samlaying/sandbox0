@@ -35,7 +35,6 @@ type Sandbox struct {
 	ProcdAddress string    `json:"procd_address"`
 	Status       string    `json:"status"`
 	PodName      string    `json:"pod_name"`
-	Namespace    string    `json:"namespace"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	ClaimedAt    time.Time `json:"claimed_at"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -62,6 +61,7 @@ type SandboxServiceConfig struct {
 	PauseMinCPU                 string
 	ProcdPort                   int
 	ProcdClientTimeout          time.Duration
+	TemplateNamespace           string
 }
 
 // SandboxService handles sandbox operations
@@ -77,6 +77,7 @@ type SandboxService struct {
 	clock                  TimeProvider
 	config                 SandboxServiceConfig
 	logger                 *zap.Logger
+	templateNamespace      string
 }
 
 // TimeProvider provides time functions, allowing for synchronized time across clusters
@@ -118,6 +119,10 @@ func NewSandboxService(
 	if networkProvider == nil {
 		networkProvider = network.NewNoopProvider()
 	}
+	templateNamespace := strings.TrimSpace(config.TemplateNamespace)
+	if templateNamespace == "" {
+		templateNamespace = "sandbox0"
+	}
 
 	return &SandboxService{
 		k8sClient:              k8sClient,
@@ -131,6 +136,7 @@ func NewSandboxService(
 		clock:                  clock,
 		config:                 config,
 		logger:                 logger,
+		templateNamespace:      templateNamespace,
 	}
 }
 
@@ -144,11 +150,10 @@ func (s *SandboxService) SetProcdClient(client *ProcdClient) {
 
 // ClaimRequest represents a sandbox claim request
 type ClaimRequest struct {
-	Namespace string
-	TeamID    string         `json:"team_id"`
-	UserID    string         `json:"user_id"`
-	Template  string         `json:"template"`
-	Config    *SandboxConfig `json:"config,omitempty"`
+	TeamID   string         `json:"team_id"`
+	UserID   string         `json:"user_id"`
+	Template string         `json:"template"`
+	Config   *SandboxConfig `json:"config,omitempty"`
 }
 
 // SandboxConfig represents sandbox configuration
@@ -172,7 +177,6 @@ type ClaimResponse struct {
 	ProcdAddress string  `json:"procd_address"`
 	PodName      string  `json:"pod_name"`
 	Template     string  `json:"template"`
-	Namespace    string  `json:"namespace"`
 	ClusterId    *string `json:"cluster_id,omitempty"`
 }
 
@@ -180,7 +184,7 @@ type ClaimResponse struct {
 func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*ClaimResponse, error) {
 	start := time.Now()
 	s.logger.Info("Claiming sandbox",
-		zap.String("namespace", req.Namespace),
+		zap.String("namespace", s.templateNamespace),
 		zap.String("template", req.Template),
 		zap.String("teamID", req.TeamID),
 	)
@@ -193,7 +197,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 
 	if req.TeamID != "" {
 		privateName := naming.TemplateNameForCluster(naming.ScopeTeam, req.TeamID, req.Template)
-		t, getErr := s.templateLister.Get(req.Namespace, privateName)
+		t, getErr := s.templateLister.Get(s.templateNamespace, privateName)
 		if getErr == nil {
 			template = t
 			resolvedName = privateName
@@ -201,10 +205,10 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	}
 
 	if template == nil {
-		template, err = s.templateLister.Get(req.Namespace, req.Template)
+		template, err = s.templateLister.Get(s.templateNamespace, req.Template)
 		if err != nil {
 			if errors.IsNotFound(err) {
-				return nil, fmt.Errorf("template %s not found in namespace %s", req.Template, req.Namespace)
+				return nil, fmt.Errorf("template %s not found in namespace %s", req.Template, s.templateNamespace)
 			}
 			return nil, fmt.Errorf("get template: %w", err)
 		}
@@ -234,7 +238,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 		}
 		if errors.IsConflict(err) {
 			s.logger.Info("Idle pod is already claimed, trying again",
-				zap.String("namespace", req.Namespace),
+				zap.String("namespace", s.templateNamespace),
 				zap.String("template", req.Template),
 				zap.String("teamID", req.TeamID),
 				zap.Error(err),
@@ -276,7 +280,6 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 		ProcdAddress: procdAddress,
 		PodName:      pod.Name,
 		Template:     req.Template,
-		Namespace:    pod.Namespace,
 		ClusterId:    template.Spec.ClusterId,
 	}, nil
 }
@@ -701,7 +704,6 @@ func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbo
 		ProcdAddress: s.prodAddress(pod.Name, pod.Namespace),
 		Status:       status,
 		PodName:      pod.Name,
-		Namespace:    pod.Namespace,
 		ExpiresAt:    expiresAt,
 		ClaimedAt:    claimedAt,
 		CreatedAt:    createdAt,
@@ -741,7 +743,6 @@ func (s *SandboxService) GetSandboxStatus(ctx context.Context, sandboxID string)
 		"team_id":       sandbox.TeamID,
 		"user_id":       sandbox.UserID,
 		"pod_name":      sandbox.PodName,
-		"namespace":     sandbox.Namespace,
 		"status":        sandbox.Status,
 		"procd_address": sandbox.ProcdAddress,
 		"claimed_at":    sandbox.ClaimedAt.Format(time.RFC3339),

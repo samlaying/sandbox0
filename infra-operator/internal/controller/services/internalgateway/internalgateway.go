@@ -254,7 +254,7 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 	if infrav1alpha1.IsStorageProxyEnabled(infra) {
 		storageProxyHTTPPort := int32(storageProxyConfig.HTTPPort)
-		storageProxyURL := fmt.Sprintf("http://%s-storage-proxy-http:%d", infra.Name, storageProxyHTTPPort)
+		storageProxyURL := fmt.Sprintf("http://%s-storage-proxy:%d", infra.Name, storageProxyHTTPPort)
 		cfg.StorageProxyURL = storageProxyURL
 	} else {
 		cfg.StorageProxyURL = ""
@@ -272,7 +272,6 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 			Name:     infra.Spec.InitUser.Name,
 		}
 	}
-
 	return cfg, nil
 }
 

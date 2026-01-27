@@ -1,4 +1,4 @@
-# Example: Single-cluster full mode (control plane + data plane + storage + network)
+# Example: Single-cluster full mode (internal-gateway + manager + storage + network)
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -53,20 +53,11 @@ spec:
   #       accessKeyKey: accessKeyId
   #       secretKeyKey: secretAccessKey
   services:
-    edgeGateway:
-      enabled: true
-      replicas: 1
-      service:
-        type: NodePort
-        port: 80
-    scheduler:
-      enabled: true
-      replicas: 1
     internalGateway:
       enabled: true
       replicas: 1
       config:
-        authMode: internal
+        authMode: public
     manager:
       enabled: true
       replicas: 1
@@ -84,7 +75,7 @@ spec:
       replicas: 1
   initUser:
     enabled: true
-    email: "admin@localhost"
+    email: "admin@example.com"
     passwordSecret:
       name: admin-password
       key: password

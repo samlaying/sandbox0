@@ -749,7 +749,6 @@ paths:
       summary: Create (claim) a sandbox
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/claim
       requestBody:
@@ -777,7 +776,6 @@ paths:
       summary: Get sandbox by ID
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}
       parameters:
@@ -806,7 +804,6 @@ paths:
       summary: Update sandbox configuration
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}
       parameters:
@@ -841,7 +838,6 @@ paths:
       summary: Delete (terminate) a sandbox
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}
       parameters:
@@ -871,7 +867,6 @@ paths:
       summary: Get sandbox status
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/status
       parameters:
@@ -895,7 +890,6 @@ paths:
       summary: Pause a sandbox
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/pause
       parameters:
@@ -919,7 +913,6 @@ paths:
       summary: Resume a sandbox
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/resume
       parameters:
@@ -943,7 +936,6 @@ paths:
       summary: Refresh sandbox TTL
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/refresh
       parameters:
@@ -973,7 +965,6 @@ paths:
       summary: Get sandbox network policy
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/network
       parameters:
@@ -996,7 +987,6 @@ paths:
       summary: Update sandbox network policy
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/network
       parameters:
@@ -1020,7 +1010,6 @@ paths:
       summary: Get sandbox bandwidth policy
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/bandwidth
       parameters:
@@ -1037,7 +1026,6 @@ paths:
       summary: Update sandbox bandwidth policy
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/sandboxes/{id}/bandwidth
       parameters:
@@ -1061,7 +1049,6 @@ paths:
       summary: Create a context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts
       parameters:
@@ -1084,7 +1071,6 @@ paths:
       summary: List contexts
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts
       parameters:
@@ -1102,7 +1088,6 @@ paths:
       summary: Get context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}
       parameters:
@@ -1120,7 +1105,6 @@ paths:
       summary: Delete context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}
       parameters:
@@ -1139,7 +1123,6 @@ paths:
       summary: Restart context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/restart
       parameters:
@@ -1158,7 +1141,6 @@ paths:
       summary: Send input to context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/input
       parameters:
@@ -1183,7 +1165,6 @@ paths:
       summary: Resize context PTY
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/resize
       parameters:
@@ -1208,7 +1189,6 @@ paths:
       summary: Send signal to context
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/signal
       parameters:
@@ -1233,7 +1213,6 @@ paths:
       summary: Get context stats
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/stats
       parameters:
@@ -1253,7 +1232,6 @@ paths:
       description: Upgrades to WebSocket for streaming I/O.
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/contexts/{ctx_id}/ws
       parameters:
@@ -1268,7 +1246,6 @@ paths:
       summary: Mount sandbox volume in sandbox
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/sandboxvolumes/mount
       parameters:
@@ -1292,7 +1269,6 @@ paths:
       summary: Unmount sandbox volume
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/sandboxvolumes/unmount
       parameters:
@@ -1316,7 +1292,6 @@ paths:
       summary: Get sandbox volume mount status
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/sandboxvolumes/status
       parameters:
@@ -1334,7 +1309,6 @@ paths:
       summary: Move a file or directory
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/files/move
       parameters:
@@ -1363,7 +1337,6 @@ paths:
         - binary=true: returns base64 content
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/files/{path}
       parameters:
@@ -1389,7 +1362,6 @@ paths:
       description: Use `mkdir=true` to create directories, otherwise writes file content.
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/files/{path}
       parameters:
@@ -1422,7 +1394,6 @@ paths:
       summary: Delete file or directory
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: procd
       x-upstream-path: /api/v1/files/{path}
       parameters:
@@ -1441,7 +1412,6 @@ paths:
       summary: List templates
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates
       responses:
@@ -1456,7 +1426,6 @@ paths:
       summary: Create template
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates
       requestBody:
@@ -1478,7 +1447,6 @@ paths:
       summary: Get template
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates/{id}
       parameters:
@@ -1501,7 +1469,6 @@ paths:
       summary: Update template
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates/{id}
       parameters:
@@ -1524,7 +1491,6 @@ paths:
       summary: Delete template
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates/{id}
       parameters:
@@ -1542,7 +1508,6 @@ paths:
       summary: Warm template pool
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: manager
       x-upstream-path: /api/v1/templates/{id}/pool/warm
       parameters:
@@ -1566,7 +1531,6 @@ paths:
       summary: Create sandbox volume
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes
       requestBody:
@@ -1587,7 +1551,6 @@ paths:
       summary: List sandbox volumes
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes
       responses:
@@ -1603,7 +1566,6 @@ paths:
       summary: Get sandbox volume
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}
       parameters:
@@ -1626,7 +1588,6 @@ paths:
       summary: Delete sandbox volume
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}
       parameters:
@@ -1650,7 +1611,6 @@ paths:
       summary: Create snapshot
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}/snapshots
       parameters:
@@ -1673,7 +1633,6 @@ paths:
       summary: List snapshots
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}/snapshots
       parameters:
@@ -1691,7 +1650,6 @@ paths:
       summary: Get snapshot
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}/snapshots/{snapshot_id}
       parameters:
@@ -1715,7 +1673,6 @@ paths:
       summary: Delete snapshot
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}/snapshots/{snapshot_id}
       parameters:
@@ -1734,7 +1691,6 @@ paths:
       summary: Restore snapshot
       security:
         - bearerAuth: []
-        - internalToken: []
       x-upstream-service: storage-proxy
       x-upstream-path: /sandboxvolumes/{id}/snapshots/{snapshot_id}/restore
       parameters:
@@ -1753,10 +1709,6 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    internalToken:
-      type: apiKey
-      in: header
-      name: X-Internal-Token
   parameters:
     SandboxID:
       name: id
@@ -2385,12 +2337,10 @@ components:
           type: string
         template:
           type: string
-        namespace:
-          type: string
         cluster_id:
           type: string
           nullable: true
-      required: [sandbox_id, status, procd_address, pod_name, template, namespace]
+      required: [sandbox_id, status, procd_address, pod_name, template]
     SuccessClaimResponse:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"
@@ -2415,8 +2365,6 @@ components:
           type: string
         pod_name:
           type: string
-        namespace:
-          type: string
         expires_at:
           type: string
           format: date-time
@@ -2433,7 +2381,6 @@ components:
         - procd_address
         - status
         - pod_name
-        - namespace
         - expires_at
         - claimed_at
         - created_at
@@ -2454,8 +2401,6 @@ components:
         user_id:
           type: string
         pod_name:
-          type: string
-        namespace:
           type: string
         status:
           type: string

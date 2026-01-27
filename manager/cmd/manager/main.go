@@ -224,6 +224,7 @@ func main() {
 		PauseMinCPU:                 cfg.PauseMinCPU,
 		ProcdPort:                   cfg.ProcdConfig.HTTPPort,
 		ProcdClientTimeout:          cfg.ProcdClientTimeout.Duration,
+		TemplateNamespace:           templateNamespace,
 	}
 
 	sandboxService := service.NewSandboxService(
@@ -244,6 +245,7 @@ func main() {
 		operator.GetTemplateLister(),
 		networkProvider,
 		logger,
+		templateNamespace,
 	)
 
 	// Create cluster service (for scheduler)

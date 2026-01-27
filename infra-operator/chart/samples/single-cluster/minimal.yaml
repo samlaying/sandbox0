@@ -50,7 +50,7 @@ spec:
             autoScale: true
   initUser:
     enabled: true
-    email: "admin@localhost"
+    email: "admin@example.com"
     passwordSecret:
       name: admin-password
       key: password

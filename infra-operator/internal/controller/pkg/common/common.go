@@ -294,6 +294,17 @@ func ResolveServicePort(config *infrav1alpha1.ServiceNetworkConfig, fallback int
 
 // ReconcileService creates or updates a service.
 func (r *ResourceManager) ReconcileService(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, serviceType corev1.ServiceType, port, targetPort int32) error {
+	return r.ReconcileServicePorts(ctx, infra, name, labels, serviceType, []corev1.ServicePort{
+		BuildServicePort("http", port, targetPort),
+	})
+}
+
+// ReconcileServicePorts creates or updates a service with multiple ports.
+func (r *ResourceManager) ReconcileServicePorts(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, serviceType corev1.ServiceType, ports []corev1.ServicePort) error {
+	if len(ports) == 0 {
+		return fmt.Errorf("service %q requires at least one port", name)
+	}
+
 	svc := &corev1.Service{}
 	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, svc)
 	if err != nil && !errors.IsNotFound(err) {
@@ -308,13 +319,7 @@ func (r *ResourceManager) ReconcileService(ctx context.Context, infra *infrav1al
 		Spec: corev1.ServiceSpec{
 			Type:     serviceType,
 			Selector: labels,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "http",
-					Port:       port,
-					TargetPort: intstr.FromInt(int(targetPort)),
-				},
-			},
+			Ports:    ports,
 		},
 	}
 
@@ -328,6 +333,28 @@ func (r *ResourceManager) ReconcileService(ctx context.Context, infra *infrav1al
 
 	svc.Spec = desiredSvc.Spec
 	return r.Client.Update(ctx, svc)
+}
+
+// BuildServicePort returns a ServicePort with a target port.
+func BuildServicePort(name string, port, targetPort int32) corev1.ServicePort {
+	return corev1.ServicePort{
+		Name:       name,
+		Port:       port,
+		TargetPort: intstr.FromInt(int(targetPort)),
+	}
+}
+
+// DeleteServiceIfExists removes a service when present.
+func (r *ResourceManager) DeleteServiceIfExists(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string) error {
+	svc := &corev1.Service{}
+	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, svc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return r.Client.Delete(ctx, svc)
 }
 
 // ReconcileIngress creates or updates an ingress.

@@ -36,16 +36,11 @@ func (s *Server) claimSandbox(c *gin.Context) {
 	if req.Template == "" {
 		req.Template = defaultTemplate.Name
 	}
-	if cfg.TemplateNamespace == "" {
-		cfg.TemplateNamespace = "sandbox0"
-	}
-	req.Namespace = cfg.TemplateNamespace
 
 	resp, err := s.sandboxService.ClaimSandbox(c.Request.Context(), &req)
 	if err != nil {
 		s.logger.Error("Failed to claim sandbox",
 			zap.String("template", req.Template),
-			zap.String("namespace", req.Namespace),
 			zap.String("teamID", req.TeamID),
 			zap.Error(err),
 		)
