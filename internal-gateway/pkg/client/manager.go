@@ -90,7 +90,6 @@ func (c *ManagerClient) GetSandbox(ctx context.Context, sandboxID, userID, teamI
 	c.logger.Debug("Retrieved sandbox from manager",
 		zap.String("sandbox_id", sandboxID),
 		zap.String("team_id", sandbox.TeamID),
-		zap.String("procd_address", sandbox.ProcdAddress),
 	)
 
 	return sandbox, nil

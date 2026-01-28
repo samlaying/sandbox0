@@ -14,8 +14,6 @@ func (s *Session) ClaimSandbox(ctx context.Context, t ContractT, template string
 		return nil, fmt.Errorf("team or user id missing")
 	}
 	req := apispec.ClaimRequest{
-		TeamId:   s.teamID,
-		UserId:   &s.userID,
 		Template: &template,
 	}
 	status, body, err := s.doJSONSpecRequest(t, ctx, http.MethodPost, "/api/v1/sandboxes", "/api/v1/sandboxes", req, true)

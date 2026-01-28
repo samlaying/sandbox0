@@ -96,6 +96,7 @@ func newManagerTestEnvWithOptions(t *testing.T, opts managerTestEnvOptions) *man
 	nodeLister := corelisters.NewNodeLister(nodeIndexer)
 	secretLister := corelisters.NewSecretLister(secretIndexer)
 	namespaceLister := corelisters.NewNamespaceLister(namespaceIndexer)
+	sandboxIndex := service.NewSandboxIndex()
 
 	templateLister := &testTemplateLister{
 		client: crdClient,
@@ -105,6 +106,7 @@ func newManagerTestEnvWithOptions(t *testing.T, opts managerTestEnvOptions) *man
 	sandboxService := service.NewSandboxService(
 		k8sClient,
 		podLister,
+		sandboxIndex,
 		secretLister,
 		templateLister,
 		nil,

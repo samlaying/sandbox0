@@ -81,9 +81,9 @@ func (c *CMD) Start() error {
 	cmd.Env = env
 
 	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	// cmd.SysProcAttr = &syscall.SysProcAttr{
+	// 	Setpgid: true,
+	// }
 
 	// Check if PTY is requested
 	if config.PTYSize != nil {

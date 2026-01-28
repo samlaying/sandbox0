@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -35,45 +31,12 @@ func (r *RubyREPL) Start() error {
 	config := r.GetConfig()
 
 	// Try Ruby interpreters in order of preference
-	var cmd *exec.Cmd
-	rubyCandidates := []struct {
-		name string
-		args []string
-	}{
+	rubyCandidates := []execCandidate{
 		{"irb", []string{"--simple-prompt", "--noreadline"}},
 		{"ruby", []string{"-e", "require 'irb'; IRB.start"}},
 	}
 
-	for _, candidate := range rubyCandidates {
-		if path, err := exec.LookPath(candidate.name); err == nil {
-			cmd = exec.Command(path, candidate.args...)
-			break
-		}
-	}
-
-	if cmd == nil {
-		r.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: no Ruby interpreter found (tried: irb, ruby)", process.ErrProcessStartFailed)
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return r.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(r.BaseProcess, r.runner, config, rubyCandidates, nil)
 }
 
 // Stop stops the Ruby REPL process.

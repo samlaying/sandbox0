@@ -152,6 +152,9 @@ func main() {
 	secretLister := informerFactory.Core().V1().Secrets().Lister()
 	namespaceLister := informerFactory.Core().V1().Namespaces().Lister()
 
+	sandboxIndex := service.NewSandboxIndex()
+	podInformer.AddEventHandler(sandboxIndex.ResourceEventHandler())
+
 	// Create network policy service for building policy annotations
 	networkPolicyService := service.NewNetworkPolicyService(service.NetworkPolicyServiceConfig{
 		DefaultBandwidthRateBps:     cfg.DefaultBandwidthRateBps,
@@ -230,6 +233,7 @@ func main() {
 	sandboxService := service.NewSandboxService(
 		k8sClient,
 		podLister,
+		sandboxIndex,
 		secretLister,
 		operator.GetTemplateLister(),
 		networkPolicyService,

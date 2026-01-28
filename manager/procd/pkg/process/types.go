@@ -179,6 +179,8 @@ type MultiplexedChannel[T any] struct {
 	Source      chan T
 	subscribers []chan T
 	bufferSize  int
+	history     []T
+	historySize int
 	closed      bool
 }
 
@@ -188,6 +190,8 @@ func NewMultiplexedChannel[T any](bufferSize int) *MultiplexedChannel[T] {
 		Source:      make(chan T, bufferSize),
 		subscribers: make([]chan T, 0),
 		bufferSize:  bufferSize,
+		history:     make([]T, 0, bufferSize),
+		historySize: bufferSize,
 	}
 
 	go mc.dispatch()
@@ -223,13 +227,21 @@ func (mc *MultiplexedChannel[T]) Fork() (<-chan T, func()) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
-	if mc.closed {
-		ch := make(chan T)
-		close(ch)
-		return ch, func() {}
+	sub := make(chan T, mc.bufferSize)
+replayHistory:
+	for _, event := range mc.history {
+		select {
+		case sub <- event:
+		default:
+			break replayHistory
+		}
 	}
 
-	sub := make(chan T, mc.bufferSize)
+	if mc.closed {
+		close(sub)
+		return sub, func() {}
+	}
+
 	mc.subscribers = append(mc.subscribers, sub)
 
 	cancel := func() {
@@ -268,6 +280,17 @@ func (mc *MultiplexedChannel[T]) Publish(event T) {
 	if closed {
 		return // Channel is closed, drop the event
 	}
+
+	mc.mu.Lock()
+	if mc.historySize > 0 {
+		if len(mc.history) >= mc.historySize {
+			copy(mc.history, mc.history[1:])
+			mc.history[len(mc.history)-1] = event
+		} else {
+			mc.history = append(mc.history, event)
+		}
+	}
+	mc.mu.Unlock()
 
 	select {
 	case mc.Source <- event:

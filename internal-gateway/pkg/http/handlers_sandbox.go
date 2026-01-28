@@ -38,7 +38,7 @@ func (s *Server) proxyToManager(c *gin.Context) {
 // createSandbox creates a new sandbox
 func (s *Server) createSandbox(c *gin.Context) {
 	// Rewrite path for manager
-	c.Request.URL.Path = "/api/v1/sandboxes/claim"
+	c.Request.URL.Path = "/api/v1/sandboxes"
 
 	s.proxyToManager(c)
 }

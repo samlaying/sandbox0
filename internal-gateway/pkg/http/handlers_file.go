@@ -83,8 +83,13 @@ func (s *Server) handleFileWatch(c *gin.Context) {
 		return
 	}
 
+	requestModifier, err := s.buildProcdRequestModifier(c)
+	if err != nil {
+		return
+	}
+
 	// Handle WebSocket upgrade for file watching
-	wsProxy := proxy.NewWebSocketProxy(s.logger)
+	wsProxy := proxy.NewWebSocketProxy(s.logger, proxy.WithRequestModifier(requestModifier))
 	c.Request.URL.Path = "/api/v1/files/watch"
 	wsProxy.Proxy(procdURL)(c)
 }

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ramr/go-reaper"
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	ctxpkg "github.com/sandbox0-ai/infra/manager/procd/pkg/context"
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
@@ -24,6 +25,9 @@ import (
 )
 
 func main() {
+	// Start the reaper to clean up zombie processes
+	go reaper.Reap()
+
 	// Load configuration
 	cfg := config.LoadProcdConfig()
 

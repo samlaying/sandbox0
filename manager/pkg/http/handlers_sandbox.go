@@ -20,21 +20,19 @@ func (s *Server) claimSandbox(c *gin.Context) {
 		return
 	}
 
-	// Validate required fields
-	if req.TeamID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "team_id is required")
+	claims := internalauth.ClaimsFromContext(c.Request.Context())
+	if claims == nil {
+		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "missing authentication")
 		return
 	}
-	cfg := config.LoadManagerConfig()
-	defaultTemplate := config.DefaultTemplateConfig{}
-	if cfg.DefaultTemplate != nil {
-		defaultTemplate = *cfg.DefaultTemplate
-	}
-	if defaultTemplate.Name == "" {
-		defaultTemplate.Name = "default"
-	}
+	req.TeamID = claims.TeamID
+	req.UserID = claims.UserID
+
 	if req.Template == "" {
-		req.Template = defaultTemplate.Name
+		cfg := config.LoadManagerConfig()
+		if cfg.DefaultTemplate != nil && cfg.DefaultTemplate.Name != "" {
+			req.Template = cfg.DefaultTemplate.Name
+		}
 	}
 
 	resp, err := s.sandboxService.ClaimSandbox(c.Request.Context(), &req)

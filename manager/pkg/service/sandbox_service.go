@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -32,7 +33,7 @@ type Sandbox struct {
 	TemplateID   string    `json:"template_id"`
 	TeamID       string    `json:"team_id"`
 	UserID       string    `json:"user_id"`
-	ProcdAddress string    `json:"procd_address"`
+	InternalAddr string    `json:"internal_addr"`
 	Status       string    `json:"status"`
 	PodName      string    `json:"pod_name"`
 	ExpiresAt    time.Time `json:"expires_at"`
@@ -67,6 +68,7 @@ type SandboxServiceConfig struct {
 type SandboxService struct {
 	k8sClient              kubernetes.Interface
 	podLister              corelisters.PodLister
+	sandboxIndex           *SandboxIndex
 	secretLister           corelisters.SecretLister
 	templateLister         controller.TemplateLister
 	NetworkPolicyService   *NetworkPolicyService
@@ -102,6 +104,7 @@ type TokenGenerator interface {
 func NewSandboxService(
 	k8sClient kubernetes.Interface,
 	podLister corelisters.PodLister,
+	sandboxIndex *SandboxIndex,
 	secretLister corelisters.SecretLister,
 	templateLister controller.TemplateLister,
 	networkPolicyService *NetworkPolicyService,
@@ -122,6 +125,7 @@ func NewSandboxService(
 	return &SandboxService{
 		k8sClient:              k8sClient,
 		podLister:              podLister,
+		sandboxIndex:           sandboxIndex,
 		secretLister:           secretLister,
 		templateLister:         templateLister,
 		NetworkPolicyService:   networkPolicyService,
@@ -145,8 +149,8 @@ func (s *SandboxService) SetProcdClient(client *ProcdClient) {
 
 // ClaimRequest represents a sandbox claim request
 type ClaimRequest struct {
-	TeamID   string         `json:"team_id"`
-	UserID   string         `json:"user_id"`
+	TeamID   string
+	UserID   string
 	Template string         `json:"template"`
 	Config   *SandboxConfig `json:"config,omitempty"`
 }
@@ -271,7 +275,10 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	// Note: Network and bandwidth policies are now stored in pod annotations
 	// They are set in claimIdlePod() and createNewPod() methods
 
-	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
+	procdAddress, err := s.prodAddress(ctx, pod)
+	if err != nil {
+		return nil, fmt.Errorf("get procd address: %w", err)
+	}
 	if err := s.initializeProcd(ctx, pod, req, procdAddress); err != nil {
 		return nil, fmt.Errorf("initialize procd: %w", err)
 	}
@@ -682,15 +689,30 @@ func (s *SandboxService) GetSandbox(ctx context.Context, sandboxID string) (*San
 		return nil, fmt.Errorf("get pod: %w", err)
 	}
 
-	return s.podToSandbox(pod, sandboxID), nil
+	return s.podToSandbox(ctx, pod, sandboxID), nil
 }
 
 func (s *SandboxService) getSandboxPod(ctx context.Context, sandboxID string) (*corev1.Pod, error) {
-	return s.podLister.Pods("").Get(sandboxID)
+	if s.sandboxIndex != nil {
+		if namespace, ok := s.sandboxIndex.GetNamespace(sandboxID); ok {
+			return s.podLister.Pods(namespace).Get(sandboxID)
+		}
+	}
+
+	pods, err := s.podLister.List(labels.SelectorFromSet(map[string]string{
+		controller.LabelSandboxID: sandboxID,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	if len(pods) == 0 {
+		return nil, errors.NewNotFound(schema.GroupResource{Resource: "pod"}, sandboxID)
+	}
+	return pods[0], nil
 }
 
 // podToSandbox converts a pod to a sandbox object
-func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbox {
+func (s *SandboxService) podToSandbox(ctx context.Context, pod *corev1.Pod, sandboxID string) *Sandbox {
 	status := s.podPhaseToSandboxStatus(pod.Status.Phase)
 
 	// Parse timestamps
@@ -703,12 +725,17 @@ func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbo
 	}
 	createdAt = pod.CreationTimestamp.Time
 
+	internalAddr, err := s.prodAddress(ctx, pod)
+	if err != nil {
+		s.logger.Error("Failed to get procd address", zap.String("sandboxID", sandboxID), zap.Error(err))
+	}
+
 	return &Sandbox{
 		ID:           sandboxID,
 		TemplateID:   pod.Labels[controller.LabelTemplateID],
 		TeamID:       pod.Annotations[controller.AnnotationTeamID],
 		UserID:       pod.Annotations[controller.AnnotationUserID],
-		ProcdAddress: s.prodAddress(pod.Name, pod.Namespace),
+		InternalAddr: internalAddr,
 		Status:       status,
 		PodName:      pod.Name,
 		ExpiresAt:    expiresAt,
@@ -717,8 +744,49 @@ func (s *SandboxService) podToSandbox(pod *corev1.Pod, sandboxID string) *Sandbo
 	}
 }
 
-func (s *SandboxService) prodAddress(name, namespace string) string {
-	return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", name, namespace, s.config.ProcdPort)
+func (s *SandboxService) prodAddress(ctx context.Context, pod *corev1.Pod) (string, error) {
+	if pod == nil {
+		return "", fmt.Errorf("pod is nil")
+	}
+	if podIP := strings.TrimSpace(pod.Status.PodIP); podIP != "" {
+		return fmt.Sprintf("http://%s:%d", podIP, s.config.ProcdPort), nil
+	}
+
+	podIP, err := s.waitForPodIP(ctx, pod.Namespace, pod.Name)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("http://%s:%d", podIP, s.config.ProcdPort), nil
+}
+
+func (s *SandboxService) waitForPodIP(ctx context.Context, namespace, name string) (string, error) {
+	const (
+		maxAttempts = 15
+		waitDelay   = 200 * time.Millisecond
+	)
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		pod, err := s.podLister.Pods(namespace).Get(name)
+		if err != nil {
+			return "", fmt.Errorf("get pod for ip: %w", err)
+		}
+		if podIP := strings.TrimSpace(pod.Status.PodIP); podIP != "" {
+			return podIP, nil
+		}
+
+		if attempt == maxAttempts-1 {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(waitDelay):
+		}
+	}
+
+	return "", fmt.Errorf("pod ip not assigned")
 }
 
 // podPhaseToSandboxStatus converts pod phase to sandbox status
@@ -745,16 +813,15 @@ func (s *SandboxService) GetSandboxStatus(ctx context.Context, sandboxID string)
 	}
 
 	status := map[string]any{
-		"sandbox_id":    sandbox.ID,
-		"template_id":   sandbox.TemplateID,
-		"team_id":       sandbox.TeamID,
-		"user_id":       sandbox.UserID,
-		"pod_name":      sandbox.PodName,
-		"status":        sandbox.Status,
-		"procd_address": sandbox.ProcdAddress,
-		"claimed_at":    sandbox.ClaimedAt.Format(time.RFC3339),
-		"expires_at":    sandbox.ExpiresAt.Format(time.RFC3339),
-		"created_at":    sandbox.CreatedAt.Format(time.RFC3339),
+		"sandbox_id":  sandbox.ID,
+		"template_id": sandbox.TemplateID,
+		"team_id":     sandbox.TeamID,
+		"user_id":     sandbox.UserID,
+		"pod_name":    sandbox.PodName,
+		"status":      sandbox.Status,
+		"claimed_at":  sandbox.ClaimedAt.Format(time.RFC3339),
+		"expires_at":  sandbox.ExpiresAt.Format(time.RFC3339),
+		"created_at":  sandbox.CreatedAt.Format(time.RFC3339),
 	}
 
 	return status, nil
@@ -825,7 +892,10 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 	}
 
 	// Call procd pause API
-	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
+	procdAddress, err := s.prodAddress(ctx, pod)
+	if err != nil {
+		return nil, fmt.Errorf("get procd address: %w", err)
+	}
 	pauseResp, err := s.procdClient.Pause(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd pause: %w", err)
@@ -888,27 +958,34 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 	// K8s doesn't allow 0 CPU, so we use a minimal value (e.g., 10m).
 	minCPU := resource.MustParse(s.config.PauseMinCPU)
 
-	// Update pod with reduced resources (in-place update)
-	podCopy := pod.DeepCopy()
-
-	// Update annotations
-	if podCopy.Annotations == nil {
-		podCopy.Annotations = make(map[string]string)
+	// Update pod annotations (metadata update)
+	annotatedPod := pod.DeepCopy()
+	if annotatedPod.Annotations == nil {
+		annotatedPod.Annotations = make(map[string]string)
 	}
-	podCopy.Annotations[controller.AnnotationPaused] = "true"
-	podCopy.Annotations[controller.AnnotationPausedAt] = s.clock.Now().Format(time.RFC3339)
-	podCopy.Annotations[controller.AnnotationPausedState] = string(pausedStateJSON)
+	annotatedPod.Annotations[controller.AnnotationPaused] = "true"
+	annotatedPod.Annotations[controller.AnnotationPausedAt] = s.clock.Now().Format(time.RFC3339)
+	annotatedPod.Annotations[controller.AnnotationPausedState] = string(pausedStateJSON)
 	// Remove expires-at annotation to stop TTL countdown during pause
-	delete(podCopy.Annotations, controller.AnnotationExpiresAt)
+	delete(annotatedPod.Annotations, controller.AnnotationExpiresAt)
 
-	// Update container resources
-	// We update if we have new memory values OR we want to reduce CPU
+	updatedPod, updateErr := s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, annotatedPod, metav1.UpdateOptions{})
+	if updateErr != nil {
+		s.logger.Error("Failed to update pod annotations after pause",
+			zap.String("sandboxID", sandboxID),
+			zap.Error(updateErr),
+		)
+		// Continue; the sandbox is still paused in procd
+	} else {
+		pod = updatedPod
+	}
+
+	// Update container resources using the resize subresource (in-place)
 	if !newLimitMemory.IsZero() || !minCPU.IsZero() {
+		resizePod := pod.DeepCopy()
 		found := false
-		for i := range podCopy.Spec.Containers {
-			container := &podCopy.Spec.Containers[i]
-			// Only update the main container "procd"
-			// Updating all containers with the same memory value is a bug, as sidecars have different requirements
+		for i := range resizePod.Spec.Containers {
+			container := &resizePod.Spec.Containers[i]
 			if container.Name != "procd" {
 				continue
 			}
@@ -922,7 +999,6 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 			}
 			container.Resources.Requests[corev1.ResourceCPU] = minCPU
 
-			// Always set the limit as per requirements
 			if container.Resources.Limits == nil {
 				container.Resources.Limits = make(corev1.ResourceList)
 			}
@@ -935,18 +1011,15 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 		if !found {
 			s.logger.Warn("Main container 'procd' not found during pause resource update",
 				zap.String("sandboxID", sandboxID))
+		} else {
+			if _, err = s.k8sClient.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, resizePod, metav1.UpdateOptions{}); err != nil {
+				s.logger.Error("Failed to update pod resources after pause",
+					zap.String("sandboxID", sandboxID),
+					zap.Error(err),
+				)
+				// Don't fail the pause operation; procd is already paused
+			}
 		}
-	}
-
-	// Apply the update
-	_, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
-	if err != nil {
-		s.logger.Error("Failed to update pod resources after pause",
-			zap.String("sandboxID", sandboxID),
-			zap.Error(err),
-		)
-		// Don't fail the pause operation, just log the error
-		// The sandbox is still paused in procd
 	}
 
 	s.logger.Info("Sandbox paused successfully",
@@ -986,11 +1059,39 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 	if pausedStateJSON != "" {
 		var pausedState PausedState
 		if err := json.Unmarshal([]byte(pausedStateJSON), &pausedState); err == nil {
-			podCopy := pod.DeepCopy()
+			annotationPod := pod.DeepCopy()
+			if annotationPod.Annotations == nil {
+				annotationPod.Annotations = make(map[string]string)
+			}
 
-			// Restore container resources
-			for i := range podCopy.Spec.Containers {
-				container := &podCopy.Spec.Containers[i]
+			// Reset TTL using original TTL (not remaining time)
+			if pausedState.OriginalTTL > 0 {
+				newExpiresAt := s.clock.Now().Add(time.Duration(pausedState.OriginalTTL) * time.Second)
+				annotationPod.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
+			} else {
+				newExpiresAt := s.clock.Now().Add(s.config.DefaultTTL)
+				annotationPod.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
+			}
+
+			// Remove pause annotations
+			delete(annotationPod.Annotations, controller.AnnotationPaused)
+			delete(annotationPod.Annotations, controller.AnnotationPausedAt)
+			delete(annotationPod.Annotations, controller.AnnotationPausedState)
+
+			updatedPod, updateErr := s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, annotationPod, metav1.UpdateOptions{})
+			if updateErr != nil {
+				s.logger.Error("Failed to restore pod annotations before resume",
+					zap.String("sandboxID", sandboxID),
+					zap.Error(updateErr),
+				)
+			} else {
+				pod = updatedPod
+			}
+
+			// Restore container resources using resize subresource
+			resizePod := pod.DeepCopy()
+			for i := range resizePod.Spec.Containers {
+				container := &resizePod.Spec.Containers[i]
 				if orig, ok := pausedState.Resources[container.Name]; ok {
 					container.Resources.Requests = orig.Requests
 					container.Resources.Limits = orig.Limits
@@ -999,27 +1100,8 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 					}
 				}
 			}
-
-			// Reset TTL using original TTL (not remaining time)
-			if pausedState.OriginalTTL > 0 {
-				// Use the original TTL to reset countdown
-				newExpiresAt := s.clock.Now().Add(time.Duration(pausedState.OriginalTTL) * time.Second)
-				podCopy.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
-			} else {
-				// Fallback to default TTL if no original TTL was saved
-				newExpiresAt := s.clock.Now().Add(s.config.DefaultTTL)
-				podCopy.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
-			}
-
-			// Remove pause annotations
-			delete(podCopy.Annotations, controller.AnnotationPaused)
-			delete(podCopy.Annotations, controller.AnnotationPausedAt)
-			delete(podCopy.Annotations, controller.AnnotationPausedState)
-
-			// Apply the update
-			_, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})
-			if err != nil {
-				s.logger.Error("Failed to restore pod state before resume",
+			if _, err = s.k8sClient.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, resizePod, metav1.UpdateOptions{}); err != nil {
+				s.logger.Error("Failed to restore pod resources before resume",
 					zap.String("sandboxID", sandboxID),
 					zap.Error(err),
 				)
@@ -1046,7 +1128,10 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 	}
 
 	// Call procd resume API
-	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
+	procdAddress, err := s.prodAddress(ctx, pod)
+	if err != nil {
+		return nil, fmt.Errorf("get procd address: %w", err)
+	}
 	resumeResp, err := s.procdClient.Resume(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd resume: %w", err)
@@ -1101,7 +1186,10 @@ func (s *SandboxService) GetSandboxResourceUsage(ctx context.Context, sandboxID 
 	}
 
 	// Call procd stats API
-	procdAddress := s.prodAddress(pod.Name, pod.Namespace)
+	procdAddress, err := s.prodAddress(ctx, pod)
+	if err != nil {
+		return nil, fmt.Errorf("get procd address: %w", err)
+	}
 	statsResp, err := s.procdClient.Stats(ctx, procdAddress, internalToken, procdToken)
 	if err != nil {
 		return nil, fmt.Errorf("call procd stats: %w", err)

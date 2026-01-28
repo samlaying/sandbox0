@@ -1,24 +1,34 @@
 package proxy
 
 import (
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
 
 // WebSocketProxy handles WebSocket connections proxying
 type WebSocketProxy struct {
 	logger *zap.Logger
+	// requestModifiers are applied before proxying.
+	requestModifiers []RequestModifier
+	upgrader         websocket.Upgrader
 }
 
 // NewWebSocketProxy creates a new WebSocket proxy
-func NewWebSocketProxy(logger *zap.Logger) *WebSocketProxy {
+func NewWebSocketProxy(logger *zap.Logger, opts ...Option) *WebSocketProxy {
+	parsedOpts := collectOptions(opts...)
 	return &WebSocketProxy{
-		logger: logger,
+		logger:           logger,
+		requestModifiers: parsedOpts.requestModifiers,
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(_ *http.Request) bool {
+				return true
+			},
+		},
 	}
 }
 
@@ -33,6 +43,8 @@ func (p *WebSocketProxy) Proxy(targetURL *url.URL) gin.HandlerFunc {
 			return
 		}
 
+		applyRequestModifiers(c.Request, p.requestModifiers)
+
 		// Create target URL
 		wsURL := *targetURL
 		if wsURL.Scheme == "http" {
@@ -43,46 +55,30 @@ func (p *WebSocketProxy) Proxy(targetURL *url.URL) gin.HandlerFunc {
 		wsURL.Path = c.Request.URL.Path
 		wsURL.RawQuery = c.Request.URL.RawQuery
 
-		// Hijack the connection
-		hijacker, ok := c.Writer.(http.Hijacker)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "WebSocket hijacking not supported",
-			})
-			return
-		}
-
-		clientConn, _, err := hijacker.Hijack()
-		if err != nil {
-			p.logger.Error("Failed to hijack connection", zap.Error(err))
-			return
-		}
-		defer clientConn.Close()
-
-		// Connect to upstream
-		upstreamConn, err := dialWebSocket(&wsURL, c.Request.Header)
+		upstreamHeaders := cloneWebSocketHeaders(c.Request.Header)
+		upstreamConn, _, err := websocket.DefaultDialer.Dial(wsURL.String(), upstreamHeaders)
 		if err != nil {
 			p.logger.Error("Failed to connect to upstream WebSocket",
 				zap.String("target", wsURL.String()),
 				zap.Error(err),
 			)
-			clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error": "upstream websocket unavailable",
+			})
 			return
 		}
 		defer upstreamConn.Close()
 
-		// Proxy bidirectionally
-		errChan := make(chan error, 2)
-		go func() {
-			_, err := io.Copy(upstreamConn, clientConn)
-			errChan <- err
-		}()
-		go func() {
-			_, err := io.Copy(clientConn, upstreamConn)
-			errChan <- err
-		}()
+		downstreamConn, err := p.upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			p.logger.Error("Failed to upgrade downstream WebSocket", zap.Error(err))
+			return
+		}
+		defer downstreamConn.Close()
 
-		// Wait for either direction to close
+		errChan := make(chan error, 2)
+		go func() { errChan <- proxyWebSocket(downstreamConn, upstreamConn) }()
+		go func() { errChan <- proxyWebSocket(upstreamConn, downstreamConn) }()
 		<-errChan
 	}
 }
@@ -93,72 +89,24 @@ func isWebSocketUpgrade(r *http.Request) bool {
 		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 }
 
-// dialWebSocket establishes a WebSocket connection to the target
-func dialWebSocket(target *url.URL, headers http.Header) (io.ReadWriteCloser, error) {
-	// Create a raw TCP connection and perform WebSocket handshake
-	// For production, use a proper WebSocket library like gorilla/websocket
+func cloneWebSocketHeaders(headers http.Header) http.Header {
+	upstreamHeaders := headers.Clone()
+	upstreamHeaders.Del("Connection")
+	upstreamHeaders.Del("Upgrade")
+	upstreamHeaders.Del("Sec-WebSocket-Key")
+	upstreamHeaders.Del("Sec-WebSocket-Version")
+	upstreamHeaders.Del("Sec-WebSocket-Extensions")
+	return upstreamHeaders
+}
 
-	// Determine target address
-	host := target.Host
-	if target.Port() == "" {
-		if target.Scheme == "ws" || target.Scheme == "http" {
-			host = host + ":80"
-		} else {
-			host = host + ":443"
+func proxyWebSocket(dst *websocket.Conn, src *websocket.Conn) error {
+	for {
+		msgType, msg, err := src.ReadMessage()
+		if err != nil {
+			return err
+		}
+		if err := dst.WriteMessage(msgType, msg); err != nil {
+			return err
 		}
 	}
-
-	// For simplicity, use net.Dial for ws:// connections
-	// In production, use gorilla/websocket Dialer
-	dialer := &http.Client{}
-
-	// Convert ws:// to http:// for the upgrade request
-	httpURL := *target
-	if httpURL.Scheme == "ws" {
-		httpURL.Scheme = "http"
-	} else if httpURL.Scheme == "wss" {
-		httpURL.Scheme = "https"
-	}
-
-	req, err := http.NewRequest("GET", httpURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Copy relevant headers
-	req.Header = make(http.Header)
-	for _, h := range []string{"Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Protocol", "Sec-WebSocket-Extensions"} {
-		if v := headers.Get(h); v != "" {
-			req.Header.Set(h, v)
-		}
-	}
-	req.Header.Set("Upgrade", "websocket")
-	req.Header.Set("Connection", "Upgrade")
-
-	// For production use, this should use a proper WebSocket dialer
-	// This is a simplified implementation
-	resp, err := dialer.Do(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return &websocketConn{body: resp.Body}, nil
-}
-
-// websocketConn wraps an io.ReadCloser to implement ReadWriteCloser
-type websocketConn struct {
-	body io.ReadCloser
-}
-
-func (w *websocketConn) Read(p []byte) (n int, err error) {
-	return w.body.Read(p)
-}
-
-func (w *websocketConn) Write(p []byte) (n int, err error) {
-	// This is a placeholder - proper WebSocket implementation needed
-	return len(p), nil
-}
-
-func (w *websocketConn) Close() error {
-	return w.body.Close()
 }

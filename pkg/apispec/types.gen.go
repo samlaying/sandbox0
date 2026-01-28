@@ -322,7 +322,6 @@ type BandwidthPolicySpec struct {
 	EgressRateLimit  *RateLimitSpec  `json:"egressRateLimit,omitempty"`
 	IngressRateLimit *RateLimitSpec  `json:"ingressRateLimit,omitempty"`
 	SandboxId        *string         `json:"sandboxId,omitempty"`
-	TeamId           *string         `json:"teamId,omitempty"`
 }
 
 // Capabilities defines model for Capabilities.
@@ -339,19 +338,16 @@ type ChangePasswordRequest struct {
 // ClaimRequest defines model for ClaimRequest.
 type ClaimRequest struct {
 	Config   *SandboxConfig `json:"config,omitempty"`
-	TeamId   string         `json:"team_id"`
 	Template *string        `json:"template,omitempty"`
-	UserId   *string        `json:"user_id,omitempty"`
 }
 
 // ClaimResponse defines model for ClaimResponse.
 type ClaimResponse struct {
-	ClusterId    *string `json:"cluster_id"`
-	PodName      string  `json:"pod_name"`
-	ProcdAddress string  `json:"procd_address"`
-	SandboxId    string  `json:"sandbox_id"`
-	Status       string  `json:"status"`
-	Template     string  `json:"template"`
+	ClusterId *string `json:"cluster_id"`
+	PodName   string  `json:"pod_name"`
+	SandboxId string  `json:"sandbox_id"`
+	Status    string  `json:"status"`
+	Template  string  `json:"template"`
 }
 
 // ContainerSpec defines model for ContainerSpec.
@@ -738,16 +734,15 @@ type ResumeSandboxResponse struct {
 
 // Sandbox defines model for Sandbox.
 type Sandbox struct {
-	ClaimedAt    time.Time `json:"claimed_at"`
-	CreatedAt    time.Time `json:"created_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	Id           string    `json:"id"`
-	PodName      string    `json:"pod_name"`
-	ProcdAddress string    `json:"procd_address"`
-	Status       string    `json:"status"`
-	TeamId       string    `json:"team_id"`
-	TemplateId   string    `json:"template_id"`
-	UserId       *string   `json:"user_id,omitempty"`
+	ClaimedAt  time.Time `json:"claimed_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Id         string    `json:"id"`
+	PodName    string    `json:"pod_name"`
+	Status     string    `json:"status"`
+	TeamId     string    `json:"team_id"`
+	TemplateId string    `json:"template_id"`
+	UserId     *string   `json:"user_id,omitempty"`
 }
 
 // SandboxConfig defines model for SandboxConfig.
@@ -777,16 +772,15 @@ type SandboxResourceUsage struct {
 
 // SandboxStatus defines model for SandboxStatus.
 type SandboxStatus struct {
-	ClaimedAt    *string `json:"claimed_at,omitempty"`
-	CreatedAt    *string `json:"created_at,omitempty"`
-	ExpiresAt    *string `json:"expires_at,omitempty"`
-	PodName      *string `json:"pod_name,omitempty"`
-	ProcdAddress *string `json:"procd_address,omitempty"`
-	SandboxId    *string `json:"sandbox_id,omitempty"`
-	Status       *string `json:"status,omitempty"`
-	TeamId       *string `json:"team_id,omitempty"`
-	TemplateId   *string `json:"template_id,omitempty"`
-	UserId       *string `json:"user_id,omitempty"`
+	ClaimedAt  *string `json:"claimed_at,omitempty"`
+	CreatedAt  *string `json:"created_at,omitempty"`
+	ExpiresAt  *string `json:"expires_at,omitempty"`
+	PodName    *string `json:"pod_name,omitempty"`
+	SandboxId  *string `json:"sandbox_id,omitempty"`
+	Status     *string `json:"status,omitempty"`
+	TeamId     *string `json:"team_id,omitempty"`
+	TemplateId *string `json:"template_id,omitempty"`
+	UserId     *string `json:"user_id,omitempty"`
 }
 
 // SandboxTemplate defines model for SandboxTemplate.

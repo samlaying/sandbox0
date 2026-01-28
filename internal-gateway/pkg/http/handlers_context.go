@@ -192,8 +192,13 @@ func (s *Server) contextWebSocket(c *gin.Context) {
 		return
 	}
 
+	requestModifier, err := s.buildProcdRequestModifier(c)
+	if err != nil {
+		return
+	}
+
 	// Handle WebSocket upgrade
-	wsProxy := proxy.NewWebSocketProxy(s.logger)
+	wsProxy := proxy.NewWebSocketProxy(s.logger, proxy.WithRequestModifier(requestModifier))
 	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/ws"
 	wsProxy.Proxy(procdURL)(c)
 }
@@ -219,11 +224,11 @@ func (s *Server) getProcdURL(c *gin.Context, sandboxID string) (*url.URL, error)
 	}
 
 	// Parse procd address
-	procdURL, err := url.Parse(sandbox.ProcdAddress)
+	procdURL, err := url.Parse(sandbox.InternalAddr)
 	if err != nil {
 		s.logger.Error("Invalid procd address",
 			zap.String("sandbox_id", sandboxID),
-			zap.String("procd_address", sandbox.ProcdAddress),
+			zap.String("procd_address", sandbox.InternalAddr),
 			zap.Error(err),
 		)
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "invalid procd address")
@@ -233,8 +238,7 @@ func (s *Server) getProcdURL(c *gin.Context, sandboxID string) (*url.URL, error)
 	return procdURL, nil
 }
 
-// proxyToProcd proxies a request to a specific procd instance
-func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
+func (s *Server) buildProcdRequestModifier(c *gin.Context) (proxy.RequestModifier, error) {
 	authCtx := middleware.GetAuthContext(c)
 
 	// Generate internal token for procd
@@ -245,7 +249,7 @@ func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
 			zap.Error(err),
 		)
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "internal authentication failed")
-		return
+		return nil, err
 	}
 
 	// Generate a special token for procd to communicate with storage-proxy
@@ -263,20 +267,29 @@ func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
 			zap.Error(err),
 		)
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "internal authentication failed")
-		return
+		return nil, err
 	}
 
-	// Set headers
-	c.Request.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
-	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
-	c.Request.Header.Set(internalauth.TokenForProcdHeader, procdStorageToken)
+	return func(req *http.Request) {
+		req.Header.Set(internalauth.TeamIDHeader, authCtx.TeamID)
+		req.Header.Set(internalauth.DefaultTokenHeader, internalToken)
+		req.Header.Set(internalauth.TokenForProcdHeader, procdStorageToken)
+	}, nil
+}
+
+// proxyToProcd proxies a request to a specific procd instance
+func (s *Server) proxyToProcd(c *gin.Context, procdURL *url.URL) {
+	requestModifier, err := s.buildProcdRequestModifier(c)
+	if err != nil {
+		return
+	}
 
 	// Create and execute reverse proxy
 	proxyTimeout := s.cfg.ProxyTimeout.Duration
 	if proxyTimeout == 0 {
 		proxyTimeout = 10 * time.Second
 	}
-	router, err := proxy.NewRouter(procdURL.String(), s.logger, proxyTimeout)
+	router, err := proxy.NewRouter(procdURL.String(), s.logger, proxyTimeout, proxy.WithRequestModifier(requestModifier))
 	if err != nil {
 		s.logger.Error("Failed to create procd proxy router",
 			zap.String("procd_url", procdURL.String()),

@@ -72,7 +72,7 @@ type ProcdConfig struct {
 	// +kubebuilder:default="500ms"
 	WebhookBaseBackoff metav1.Duration `yaml:"webhook_base_backoff" json:"webhookBaseBackoff"`
 
-	setKeys map[string]string `yaml:"-" json:"-"`
+	setKeys map[string]bool `yaml:"-" json:"-"`
 }
 
 // UnmarshalYAML captures configured keys without hardcoding them.
@@ -86,9 +86,9 @@ func (c *ProcdConfig) UnmarshalYAML(value *yaml.Node) error {
 		return err
 	}
 
-	setKeys := make(map[string]string)
-	for k, v := range raw {
-		setKeys[k] = fmt.Sprint(v)
+	setKeys := make(map[string]bool)
+	for k := range raw {
+		setKeys[k] = true
 	}
 
 	type alias ProcdConfig
@@ -104,7 +104,32 @@ func (c *ProcdConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // EnvMap returns configured keys as environment variables.
 func (c ProcdConfig) EnvMap() map[string]string {
-	return c.setKeys
+	if len(c.setKeys) == 0 {
+		return nil
+	}
+
+	env := make(map[string]string, len(c.setKeys))
+	value := reflect.ValueOf(c)
+	typ := value.Type()
+	for i := 0; i < value.NumField(); i++ {
+		field := typ.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		tag := field.Tag.Get("yaml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		key := strings.Split(tag, ",")[0]
+		if key == "" {
+			continue
+		}
+		if _, ok := c.setKeys[key]; !ok {
+			continue
+		}
+		env[key] = formatProcdEnvValue(value.Field(i))
+	}
+	return env
 }
 
 var (
@@ -162,6 +187,15 @@ func setProcdFieldValue(field reflect.Value, value string, key string) error {
 		return nil
 	}
 
+	if field.Type() == reflect.TypeOf(metav1.Duration{}) {
+		parsed, err := time.ParseDuration(value)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", key, err)
+		}
+		field.Set(reflect.ValueOf(metav1.Duration{Duration: parsed}))
+		return nil
+	}
+
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(value)
@@ -197,5 +231,29 @@ func setProcdFieldValue(field reflect.Value, value string, key string) error {
 		return nil
 	default:
 		return fmt.Errorf("unsupported field type for %s", key)
+	}
+}
+
+func formatProcdEnvValue(value reflect.Value) string {
+	if !value.IsValid() {
+		return ""
+	}
+	if value.Type() == reflect.TypeOf(metav1.Duration{}) {
+		duration := value.Interface().(metav1.Duration)
+		return duration.Duration.String()
+	}
+
+	switch value.Kind() {
+	case reflect.String:
+		return value.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if value.Type() == reflect.TypeOf(time.Duration(0)) {
+			return time.Duration(value.Int()).String()
+		}
+		return strconv.FormatInt(value.Int(), 10)
+	case reflect.Bool:
+		return strconv.FormatBool(value.Bool())
+	default:
+		return fmt.Sprint(value.Interface())
 	}
 }

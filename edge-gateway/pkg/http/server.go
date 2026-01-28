@@ -116,7 +116,7 @@ func NewServer(
 	builtinProvider := builtin.NewProvider(repo, &cfg.BuiltInAuth, cfg.DefaultTeamName)
 
 	// Initialize OIDC manager
-	oidcManager, err := oidc.NewManager(ctx, cfg, repo, logger)
+	oidcManager, err := oidc.NewManager(ctx, &cfg.GatewayConfig, repo, logger)
 	if err != nil {
 		logger.Warn("Failed to initialize OIDC manager", zap.Error(err))
 		// Continue without OIDC support

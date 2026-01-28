@@ -581,6 +581,8 @@ github.com/qiniu/dyn v1.3.0/go.mod h1:E8oERcm8TtwJiZvkQPbcAh0RL8jO1G0VXJMW3FAWdk
 github.com/qiniu/go-sdk/v7 v7.25.2 h1:URwgZpxySdiwu2yQpHk93X4LXWHyFRp1x3Vmlk/YWvo=
 github.com/qiniu/go-sdk/v7 v7.25.2/go.mod h1:dmKtJ2ahhPWFVi9o1D5GemmWoh/ctuB9peqTowyTO8o=
 github.com/qiniu/x v1.10.5/go.mod h1:03Ni9tj+N2h2aKnAz+6N0Xfl8FwMEDRC2PAlxekASDs=
+github.com/ramr/go-reaper v0.3.1 h1:rvMDXjaQf9hQFP4Zq2qneaBNizatCIMgPwIpFOsfdlI=
+github.com/ramr/go-reaper v0.3.1/go.mod h1:bgru3llkYWSj8qb6akpA0sh0pq468OQ5wqvFT3BFHsE=
 github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 h1:UVArwN/wkKjMVhh2EQGC0tEc1+FqiLlvYXY5mQ2f8Wg=
 github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93/go.mod h1:Nfe4efndBz4TibWycNE+lqyJZiMX4ycx+QKV8Ta0f/o=
 github.com/redis/go-redis/v9 v9.7.3 h1:YpPyAayJV+XErNsatSElgRZZVCwXX9QzkKYNvO7x0wM=
@@ -827,6 +829,7 @@ golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.8.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.16.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+golang.org/x/sys v0.26.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/sys v0.40.0 h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=
 golang.org/x/sys v0.40.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=

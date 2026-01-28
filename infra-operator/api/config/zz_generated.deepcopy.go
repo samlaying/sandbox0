@@ -295,7 +295,7 @@ func (in *ProcdConfig) DeepCopyInto(out *ProcdConfig) {
 	out.WebhookBaseBackoff = in.WebhookBaseBackoff
 	if in.setKeys != nil {
 		in, out := &in.setKeys, &out.setKeys
-		*out = make(map[string]string, len(*in))
+		*out = make(map[string]bool, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val
 		}

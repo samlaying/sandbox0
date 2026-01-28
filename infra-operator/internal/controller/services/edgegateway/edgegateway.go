@@ -229,7 +229,19 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
-		cfg.JWTSecret = common.GenerateRandomString(32)
+		jwtSecret, err := common.EnsureSecretValue(
+			ctx,
+			r.Resources.Client,
+			r.Resources.Scheme,
+			infra,
+			fmt.Sprintf("%s-edge-gateway-jwt", infra.Name),
+			"jwt_secret",
+			32,
+		)
+		if err != nil {
+			return nil, err
+		}
+		cfg.JWTSecret = jwtSecret
 	}
 
 	return cfg, nil

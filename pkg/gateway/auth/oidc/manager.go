@@ -38,7 +38,7 @@ type Manager struct {
 }
 
 // NewManager creates a new OIDC manager
-func NewManager(ctx context.Context, cfg *config.EdgeGatewayConfig, repo *db.Repository, logger *zap.Logger) (*Manager, error) {
+func NewManager(ctx context.Context, cfg *config.GatewayConfig, repo *db.Repository, logger *zap.Logger) (*Manager, error) {
 	m := &Manager{
 		providers:       make(map[string]*Provider),
 		repo:            repo,

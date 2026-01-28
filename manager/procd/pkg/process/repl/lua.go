@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -35,39 +31,16 @@ func (l *LuaREPL) Start() error {
 	config := l.GetConfig()
 
 	// Try Lua interpreters in order of preference
-	var cmd *exec.Cmd
-	luaCandidates := []string{"lua", "lua5.4", "lua5.3", "lua5.2", "lua5.1", "luajit"}
-
-	for _, candidate := range luaCandidates {
-		if path, err := exec.LookPath(candidate); err == nil {
-			cmd = exec.Command(path, "-i")
-			break
-		}
+	luaCandidates := []execCandidate{
+		{"lua", []string{"-i"}},
+		{"lua5.4", []string{"-i"}},
+		{"lua5.3", []string{"-i"}},
+		{"lua5.2", []string{"-i"}},
+		{"lua5.1", []string{"-i"}},
+		{"luajit", []string{"-i"}},
 	}
 
-	if cmd == nil {
-		l.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: no Lua interpreter found (tried: lua, lua5.4, lua5.3, lua5.2, lua5.1, luajit)", process.ErrProcessStartFailed)
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return l.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(l.BaseProcess, l.runner, config, luaCandidates, nil)
 }
 
 // Stop stops the Lua REPL process.

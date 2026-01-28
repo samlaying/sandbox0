@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -34,34 +30,10 @@ func (p *PHPREPL) Start() error {
 
 	config := p.GetConfig()
 
-	// Check for PHP
-	phpPath, err := exec.LookPath("php")
-	if err != nil {
-		p.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: php not found", process.ErrProcessStartFailed)
+	phpCandidates := []execCandidate{
+		{"php", []string{"-a"}},
 	}
-
-	// Use PHP interactive mode
-	cmd := exec.Command(phpPath, "-a")
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return p.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(p.BaseProcess, p.runner, config, phpCandidates, nil)
 }
 
 // Stop stops the PHP REPL process.

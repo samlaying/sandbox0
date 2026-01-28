@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -35,45 +31,12 @@ func (p *PerlREPL) Start() error {
 	config := p.GetConfig()
 
 	// Try Perl interpreters in order of preference
-	var cmd *exec.Cmd
-	perlCandidates := []struct {
-		name string
-		args []string
-	}{
+	perlCandidates := []execCandidate{
 		{"re.pl", []string{}},          // Perl REPL if installed via cpanm Devel::REPL
 		{"perl", []string{"-de", "0"}}, // Perl debugger as REPL
 	}
 
-	for _, candidate := range perlCandidates {
-		if path, err := exec.LookPath(candidate.name); err == nil {
-			cmd = exec.Command(path, candidate.args...)
-			break
-		}
-	}
-
-	if cmd == nil {
-		p.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: no Perl interpreter found (tried: re.pl, perl)", process.ErrProcessStartFailed)
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return p.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(p.BaseProcess, p.runner, config, perlCandidates, nil)
 }
 
 // Stop stops the Perl REPL process.

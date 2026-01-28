@@ -2,17 +2,26 @@ package internalgateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	gatewayhttp "github.com/sandbox0-ai/infra/internal-gateway/pkg/http"
+	"github.com/sandbox0-ai/infra/pkg/dbpool"
+	gatewaydb "github.com/sandbox0-ai/infra/pkg/gateway/db"
+	gatewaymigrations "github.com/sandbox0-ai/infra/pkg/gateway/migrations"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -66,6 +75,89 @@ func newGatewayTestEnv(t *testing.T, managerURL, storageProxyURL string, schedul
 		schedulerGen: schedulerGen,
 		publicKey:    keys.publicKey,
 	}
+}
+
+func newGatewayPublicTestEnv(t *testing.T, managerURL, storageProxyURL string, pool *pgxpool.Pool, jwtSecret, jwtIssuer string, keys gatewayKeyPair) *gatewayTestEnv {
+	t.Helper()
+
+	edgeGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
+		Caller:     "edge-gateway",
+		PrivateKey: keys.privateKey,
+		TTL:        time.Minute,
+	})
+	schedulerGen := internalauth.NewGenerator(internalauth.GeneratorConfig{
+		Caller:     "scheduler",
+		PrivateKey: keys.privateKey,
+		TTL:        time.Minute,
+	})
+
+	cfg := &config.InternalGatewayConfig{
+		AuthMode:                "public",
+		ManagerURL:              managerURL,
+		StorageProxyURL:         storageProxyURL,
+		GatewayConfig: config.GatewayConfig{
+			JWTSecret: jwtSecret,
+			JWTIssuer: jwtIssuer,
+		},
+		AllowedCallers:          []string{"edge-gateway", "scheduler"},
+		ProxyTimeout:            metav1.Duration{Duration: 2 * time.Second},
+		SchedulerPermissions:    []string{"*:*"},
+		ProcdStoragePermissions: []string{"sandboxvolume:read"},
+	}
+
+	server, err := gatewayhttp.NewServer(cfg, pool, zap.NewNop())
+	if err != nil {
+		t.Fatalf("create internal-gateway server: %v", err)
+	}
+
+	httpServer := httptest.NewServer(server.Handler())
+	t.Cleanup(httpServer.Close)
+
+	return &gatewayTestEnv{
+		server:       httpServer,
+		edgeGen:      edgeGen,
+		schedulerGen: schedulerGen,
+		publicKey:    keys.publicKey,
+	}
+}
+
+func requireTestDatabaseURL(t *testing.T) string {
+	t.Helper()
+
+	dbURL := os.Getenv("INTEGRATION_DATABASE_URL")
+	if dbURL == "" {
+		dbURL = os.Getenv("TEST_DATABASE_URL")
+	}
+	if dbURL == "" {
+		t.Skip("missing INTEGRATION_DATABASE_URL or TEST_DATABASE_URL")
+	}
+	return dbURL
+}
+
+func newGatewayTestDB(t *testing.T) (*pgxpool.Pool, *gatewaydb.Repository, string) {
+	t.Helper()
+
+	ctx := context.Background()
+	dbURL := requireTestDatabaseURL(t)
+	schema := fmt.Sprintf("eg_test_%s", strings.ReplaceAll(uuid.NewString(), "-", ""))
+
+	pool, err := dbpool.New(ctx, dbpool.Options{
+		DatabaseURL: dbURL,
+		Schema:      schema,
+	})
+	if err != nil {
+		t.Fatalf("connect test database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	if err := migrate.Up(ctx, pool, ".", migrate.WithBaseFS(gatewaymigrations.FS), migrate.WithSchema(schema)); err != nil {
+		t.Fatalf("migrate gateway schema: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schema))
+	})
+
+	return pool, gatewaydb.NewRepository(pool), schema
 }
 
 func writeInternalGatewayKeys(t *testing.T) (internalauth.PrivateKeyType, internalauth.PublicKeyType) {
@@ -146,6 +238,41 @@ func doGatewayRequest(t *testing.T, client *http.Client, method, url, token stri
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set(internalauth.DefaultTokenHeader, token)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+
+	return resp, respBody
+}
+
+func doGatewayRequestWithBearer(t *testing.T, client *http.Client, method, url, bearer string, body any) (*http.Response, []byte) {
+	t.Helper()
+
+	var payload io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+		payload = bytes.NewReader(encoded)
+	}
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
 
 	resp, err := client.Do(req)

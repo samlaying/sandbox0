@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -34,27 +30,11 @@ func (n *NodeREPL) Start() error {
 
 	config := n.GetConfig()
 
-	// Use node REPL
-	cmd := exec.Command("node", "--interactive")
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
+	nodeCandidates := []execCandidate{
+		{"node", []string{"--interactive"}},
+		{"nodejs", []string{"--interactive"}},
 	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return n.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(n.BaseProcess, n.runner, config, nodeCandidates, nil)
 }
 
 // Stop stops the Node.js REPL process.

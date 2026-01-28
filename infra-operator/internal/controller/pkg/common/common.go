@@ -520,6 +520,50 @@ func GenerateRandomString(length int) string {
 	return encoded
 }
 
+// EnsureSecretValue ensures a named secret contains a key, generating if needed.
+func EnsureSecretValue(ctx context.Context, client client.Client, scheme *runtime.Scheme, infra *infrav1alpha1.Sandbox0Infra, name, key string, length int) (string, error) {
+	secret := &corev1.Secret{}
+	err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, secret)
+	if err != nil && !errors.IsNotFound(err) {
+		return "", err
+	}
+
+	if errors.IsNotFound(err) {
+		value := GenerateRandomString(length)
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: infra.Namespace,
+			},
+			Type: corev1.SecretTypeOpaque,
+			StringData: map[string]string{
+				key: value,
+			},
+		}
+		if err := ctrl.SetControllerReference(infra, secret, scheme); err != nil {
+			return "", err
+		}
+		if err := client.Create(ctx, secret); err != nil {
+			return "", err
+		}
+		return value, nil
+	}
+
+	if value, ok := secret.Data[key]; ok && len(value) > 0 {
+		return string(value), nil
+	}
+
+	value := GenerateRandomString(length)
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[key] = []byte(value)
+	if err := client.Update(ctx, secret); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
 // GetSecretValue returns the value from a secret key reference.
 func GetSecretValue(ctx context.Context, client client.Client, namespace string, ref infrav1alpha1.SecretKeyRef) (string, error) {
 	if ref.Name == "" {

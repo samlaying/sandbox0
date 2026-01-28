@@ -1,10 +1,6 @@
 package repl
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -35,45 +31,12 @@ func (r *RREPL) Start() error {
 	config := r.GetConfig()
 
 	// Try R interpreters
-	var cmd *exec.Cmd
-	rCandidates := []struct {
-		name string
-		args []string
-	}{
+	rCandidates := []execCandidate{
 		{"R", []string{"--interactive", "--quiet", "--no-save", "--no-restore"}},
 		{"Rscript", []string{"--vanilla"}},
 	}
 
-	for _, candidate := range rCandidates {
-		if path, err := exec.LookPath(candidate.name); err == nil {
-			cmd = exec.Command(path, candidate.args...)
-			break
-		}
-	}
-
-	if cmd == nil {
-		r.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: no R interpreter found (tried: R, Rscript)", process.ErrProcessStartFailed)
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return r.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(r.BaseProcess, r.runner, config, rCandidates, nil)
 }
 
 // Stop stops the R REPL process.

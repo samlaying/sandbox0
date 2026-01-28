@@ -215,6 +215,7 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/qingstor/qingstor-sdk-go/v4 v4.4.0 // indirect
 	github.com/qiniu/go-sdk/v7 v7.25.2 // indirect
+	github.com/ramr/go-reaper v0.3.1 // indirect
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

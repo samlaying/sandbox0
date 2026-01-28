@@ -2,9 +2,6 @@ package repl
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -36,23 +33,9 @@ func (b *BashREPL) Start() error {
 
 	config := b.GetConfig()
 
-	// Start interactive bash
-	cmd := exec.Command("bash", "--norc", "--noprofile", "-i")
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	bashCandidates := []execCandidate{
+		{"bash", []string{"--norc", "--noprofile", "-i"}},
+		{"sh", []string{"-i"}},
 	}
 
 	// Set TERM
@@ -60,14 +43,12 @@ func (b *BashREPL) Start() error {
 	if term == "" {
 		term = "xterm-256color"
 	}
-	env = append(env, fmt.Sprintf("TERM=%s", term))
 
-	// Set custom prompt
-	env = append(env, fmt.Sprintf("PS1=%s", b.prompt))
-
-	cmd.Env = env
-
-	return b.runner.Start(cmd, config.PTYSize)
+	extraEnv := []string{
+		fmt.Sprintf("TERM=%s", term),
+		fmt.Sprintf("PS1=%s", b.prompt),
+	}
+	return startWithCandidates(b.BaseProcess, b.runner, config, bashCandidates, extraEnv)
 }
 
 // Stop stops the Bash REPL process.

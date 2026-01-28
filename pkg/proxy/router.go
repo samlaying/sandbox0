@@ -16,19 +16,23 @@ type Router struct {
 	targetUrl *url.URL
 	logger    *zap.Logger
 	timeout   time.Duration
+	// requestModifiers are applied before proxying.
+	requestModifiers []RequestModifier
 }
 
 // NewRouter creates a new router
-func NewRouter(targetUrl string, logger *zap.Logger, timeout time.Duration) (*Router, error) {
+func NewRouter(targetUrl string, logger *zap.Logger, timeout time.Duration, opts ...Option) (*Router, error) {
 	tu, err := url.Parse(targetUrl)
 	if err != nil {
 		return nil, fmt.Errorf("parse target URL: %w", err)
 	}
 
+	parsedOpts := collectOptions(opts...)
 	return &Router{
-		targetUrl: tu,
-		logger:    logger,
-		timeout:   timeout,
+		targetUrl:        tu,
+		logger:           logger,
+		timeout:          timeout,
+		requestModifiers: parsedOpts.requestModifiers,
 	}, nil
 }
 
@@ -44,6 +48,8 @@ func (r *Router) createReverseProxyDirector(target *url.URL) *httputil.ReversePr
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 		req.Host = target.Host
+
+		applyRequestModifiers(req, r.requestModifiers)
 
 		// Preserve the original path (don't rewrite it here)
 		// Path rewriting should be done by specific handlers if needed

@@ -2,9 +2,6 @@ package repl
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -36,39 +33,21 @@ func (z *ZshREPL) Start() error {
 
 	config := z.GetConfig()
 
-	// Check if zsh is available
-	zshPath, err := exec.LookPath("zsh")
-	if err != nil {
-		// Fall back to bash
-		zshPath = "bash"
-	}
-
-	cmd := exec.Command(zshPath, "--no-rcs", "-i")
-
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	zshCandidates := []execCandidate{
+		{"zsh", []string{"--no-rcs", "-i"}},
+		{"bash", []string{"--norc", "--noprofile", "-i"}},
+		{"sh", []string{"-i"}},
 	}
 
 	term := config.Term
 	if term == "" {
 		term = "xterm-256color"
 	}
-	env = append(env, fmt.Sprintf("TERM=%s", term))
-	env = append(env, fmt.Sprintf("PS1=%s", z.prompt))
-
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
+	extraEnv := []string{
+		fmt.Sprintf("TERM=%s", term),
+		fmt.Sprintf("PS1=%s", z.prompt),
 	}
-
-	return z.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(z.BaseProcess, z.runner, config, zshCandidates, extraEnv)
 }
 
 // Stop stops the Zsh REPL process.

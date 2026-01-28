@@ -165,7 +165,7 @@ func NewServer(
 
 		publicRepo = gatewaydb.NewRepository(pool)
 
-		edgeCfg := &config.EdgeGatewayConfig{
+		edgeCfg := &config.GatewayConfig{
 			DefaultTeamName:          cfg.DefaultTeamName,
 			OIDCProviders:            cfg.OIDCProviders,
 			OIDCStateTTL:             cfg.OIDCStateTTL,

@@ -750,7 +750,7 @@ paths:
       security:
         - bearerAuth: []
       x-upstream-service: manager
-      x-upstream-path: /api/v1/sandboxes/claim
+      x-upstream-path: /api/v1/sandboxes
       requestBody:
         required: true
         content:
@@ -2294,15 +2294,11 @@ components:
     ClaimRequest:
       type: object
       properties:
-        team_id:
-          type: string
-        user_id:
-          type: string
         template:
           type: string
         config:
           $ref: "#/components/schemas/SandboxConfig"
-      required: [team_id]
+      required: []
     SandboxConfig:
       type: object
       properties:
@@ -2331,8 +2327,6 @@ components:
           type: string
         status:
           type: string
-        procd_address:
-          type: string
         pod_name:
           type: string
         template:
@@ -2340,7 +2334,7 @@ components:
         cluster_id:
           type: string
           nullable: true
-      required: [sandbox_id, status, procd_address, pod_name, template]
+      required: [sandbox_id, status, pod_name, template]
     SuccessClaimResponse:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"
@@ -2359,8 +2353,6 @@ components:
           type: string
         user_id:
           type: string
-        procd_address:
-          type: string
         status:
           type: string
         pod_name:
@@ -2378,7 +2370,6 @@ components:
         - id
         - template_id
         - team_id
-        - procd_address
         - status
         - pod_name
         - expires_at
@@ -2403,8 +2394,6 @@ components:
         pod_name:
           type: string
         status:
-          type: string
-        procd_address:
           type: string
         claimed_at:
           type: string
@@ -3257,8 +3246,6 @@ components:
       type: object
       properties:
         sandboxId:
-          type: string
-        teamId:
           type: string
         egressRateLimit:
           $ref: "#/components/schemas/RateLimitSpec"

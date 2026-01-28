@@ -3,12 +3,8 @@ package repl
 
 import (
 	"bytes"
-	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
@@ -46,49 +42,13 @@ func (p *PythonREPL) Start() error {
 	// 2. python3 - modern Python 3.x
 	// 3. python - usually points to default Python
 	// 4. python2 - legacy Python 2.x (for compatibility)
-	var cmd *exec.Cmd
-	pythonCandidates := []struct {
-		name string
-		args []string
-	}{
+	pythonCandidates := []execCandidate{
 		{"ipython3", []string{"--simple-prompt", "-i", "--no-banner", "--colors=NoColor"}},
 		{"python3", []string{"-i", "-u"}},
 		{"python", []string{"-i", "-u"}},
 		{"python2", []string{"-i", "-u"}},
 	}
-
-	for _, candidate := range pythonCandidates {
-		if path, err := exec.LookPath(candidate.name); err == nil {
-			cmd = exec.Command(path, candidate.args...)
-			break
-		}
-	}
-
-	if cmd == nil {
-		p.SetState(process.ProcessStateCrashed)
-		return fmt.Errorf("%w: no Python interpreter found (tried: ipython3, python3, python, python2)", process.ErrProcessStartFailed)
-	}
-
-	// Set working directory
-	if config.CWD != "" {
-		cmd.Dir = config.CWD
-	}
-
-	// Set environment variables
-	env := os.Environ()
-	for k, v := range config.EnvVars {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	// Force unbuffered output
-	env = append(env, "PYTHONUNBUFFERED=1")
-	cmd.Env = env
-
-	// Create a new process group so we can send signals to all child processes
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
-
-	return p.runner.Start(cmd, config.PTYSize)
+	return startWithCandidates(p.BaseProcess, p.runner, config, pythonCandidates, []string{"PYTHONUNBUFFERED=1"})
 }
 
 // Stop stops the Python REPL process.
