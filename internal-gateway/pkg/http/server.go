@@ -314,6 +314,7 @@ func (s *Server) setupRoutes() {
 				contexts.DELETE("/:ctx_id", s.deleteContext)
 				contexts.POST("/:ctx_id/restart", s.restartContext)
 				contexts.POST("/:ctx_id/input", s.contextInput)
+				contexts.POST("/:ctx_id/exec", s.contextExec)
 				contexts.POST("/:ctx_id/resize", s.contextResize)
 				contexts.POST("/:ctx_id/signal", s.contextSignal)
 				contexts.GET("/:ctx_id/stats", s.contextStats)

@@ -1159,6 +1159,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessWrittenResponse"
+  /api/v1/sandboxes/{id}/contexts/{ctx_id}/exec:
+    post:
+      tags: [contexts]
+      summary: Execute context input (sync)
+      description: Sends input and blocks until the context completes or times out.
+      security:
+        - bearerAuth: []
+      x-upstream-service: procd
+      x-upstream-path: /api/v1/contexts/{ctx_id}/exec
+      parameters:
+        - $ref: "#/components/parameters/SandboxID"
+        - $ref: "#/components/parameters/ContextID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContextInputRequest"
+      responses:
+        "200":
+          description: Execution completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessContextExecResponse"
   /api/v1/sandboxes/{id}/contexts/{ctx_id}/resize:
     post:
       tags: [contexts]
@@ -2632,6 +2657,12 @@ components:
         data:
           type: string
       required: [data]
+    ContextExecResponse:
+      type: object
+      properties:
+        output:
+          type: string
+      required: [output]
     ResizeContextRequest:
       type: object
       properties:
@@ -2674,6 +2705,13 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/ContextStatsResponse"
+    SuccessContextExecResponse:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ContextExecResponse"
     FileInfo:
       type: object
       properties:

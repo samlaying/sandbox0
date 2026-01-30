@@ -140,6 +140,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/contexts/{id}", contextHandler.Delete).Methods("DELETE")
 	api.HandleFunc("/contexts/{id}/restart", contextHandler.Restart).Methods("POST")
 	api.HandleFunc("/contexts/{id}/input", contextHandler.WriteInput).Methods("POST")
+	api.HandleFunc("/contexts/{id}/exec", contextHandler.Exec).Methods("POST")
 	api.HandleFunc("/contexts/{id}/resize", contextHandler.ResizePTY).Methods("POST")
 	api.HandleFunc("/contexts/{id}/signal", contextHandler.SendSignal).Methods("POST")
 	api.HandleFunc("/contexts/{id}/stats", contextHandler.Stats).Methods("GET")

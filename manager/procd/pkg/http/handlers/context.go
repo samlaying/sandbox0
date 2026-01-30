@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -73,6 +74,16 @@ type ContextStatsResponse struct {
 	Usage     process.ResourceUsage `json:"usage"`
 }
 
+// ContextInputRequest is the request body for sending input to a context.
+type ContextInputRequest struct {
+	Data string `json:"data"`
+}
+
+// ContextExecResponse is the response body for synchronous execution.
+type ContextExecResponse struct {
+	Output string `json:"output"`
+}
+
 // ResizeContextRequest is the request body for resizing a PTY.
 type ResizeContextRequest struct {
 	Rows uint16 `json:"rows"`
@@ -92,6 +103,8 @@ type wsControlMessage struct {
 	Signal    string `json:"signal"`
 	RequestID string `json:"request_id"`
 }
+
+const execTimeout = 30 * time.Second
 
 // List lists all contexts.
 func (h *ContextHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -237,9 +250,7 @@ func (h *ContextHandler) WriteInput(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	var req struct {
-		Data string `json:"data"`
-	}
+	var req ContextInputRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -256,6 +267,87 @@ func (h *ContextHandler) WriteInput(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]bool{"written": true})
+}
+
+// Exec executes input synchronously and returns output when complete.
+func (h *ContextHandler) Exec(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req ContextInputRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if req.Data == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "data is required")
+		return
+	}
+
+	ctx, err := h.manager.GetContext(id)
+	if err != nil {
+		if err == ctxpkg.ErrContextNotFound {
+			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
+		return
+	}
+	if ctx.MainProcess == nil {
+		writeError(w, http.StatusConflict, "process_not_running", process.ErrProcessNotRunning.Error())
+		return
+	}
+	state := ctx.MainProcess.State()
+	if state == process.ProcessStateStopped || state == process.ProcessStateKilled || state == process.ProcessStateCrashed {
+		writeError(w, http.StatusConflict, "process_not_running", process.ErrProcessNotRunning.Error())
+		return
+	}
+
+	outputCh := ctx.MainProcess.ReadOutput()
+	drainOutput(outputCh)
+
+	if err := h.manager.WriteInput(id, []byte(req.Data)); err != nil {
+		if err == ctxpkg.ErrContextNotFound {
+			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
+			return
+		}
+		if errors.Is(err, process.ErrProcessNotRunning) {
+			writeError(w, http.StatusConflict, "process_not_running", err.Error())
+			return
+		}
+		if errors.Is(err, process.ErrInputBufferFull) {
+			writeError(w, http.StatusConflict, "input_buffer_full", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
+		return
+	}
+
+	timeout := time.NewTimer(execTimeout)
+	defer timeout.Stop()
+
+	var output bytes.Buffer
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-timeout.C:
+			writeError(w, http.StatusRequestTimeout, "exec_timeout", "execution timed out")
+			return
+		case msg, ok := <-outputCh:
+			if !ok {
+				writeJSON(w, http.StatusOK, ContextExecResponse{Output: output.String()})
+				return
+			}
+			if msg.Source == process.OutputSourcePrompt {
+				writeJSON(w, http.StatusOK, ContextExecResponse{Output: output.String()})
+				return
+			}
+			if len(msg.Data) > 0 {
+				_, _ = output.Write(msg.Data)
+			}
+		}
+	}
 }
 
 // Stats returns resource usage statistics for a context.
@@ -281,6 +373,19 @@ func (h *ContextHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		Paused:    usage.Paused,
 		Usage:     usage.Usage,
 	})
+}
+
+func drainOutput(ch <-chan process.ProcessOutput) {
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
 }
 
 // ResizePTY resizes a context's PTY.

@@ -9,6 +9,40 @@ import (
 	"github.com/sandbox0-ai/infra/manager/procd/pkg/process"
 )
 
+// ContextResourceUsage represents resource usage for a single context.
+type ContextResourceUsage struct {
+	ContextID string                `json:"context_id"`
+	Type      process.ProcessType   `json:"type"`
+	Language  string                `json:"language"`
+	Running   bool                  `json:"running"`
+	Paused    bool                  `json:"paused"`
+	Usage     process.ResourceUsage `json:"usage"`
+}
+
+// SandboxResourceUsage represents aggregated resource usage for the entire sandbox.
+type SandboxResourceUsage struct {
+	// Container-level stats (from cgroup)
+	ContainerMemoryUsage      int64 `json:"container_memory_usage"`
+	ContainerMemoryLimit      int64 `json:"container_memory_limit"`
+	ContainerMemoryWorkingSet int64 `json:"container_memory_working_set"`
+
+	// Aggregated process stats across all contexts
+	TotalMemoryRSS    int64 `json:"total_memory_rss"`
+	TotalMemoryVMS    int64 `json:"total_memory_vms"`
+	TotalOpenFiles    int   `json:"total_open_files"`
+	TotalThreadCount  int   `json:"total_thread_count"`
+	TotalIOReadBytes  int64 `json:"total_io_read_bytes"`
+	TotalIOWriteBytes int64 `json:"total_io_write_bytes"`
+
+	// Context count
+	ContextCount        int `json:"context_count"`
+	RunningContextCount int `json:"running_context_count"`
+	PausedContextCount  int `json:"paused_context_count"`
+
+	// Per-context breakdown
+	Contexts []ContextResourceUsage `json:"contexts"`
+}
+
 // Manager manages contexts in the sandbox.
 type Manager struct {
 	mu       sync.RWMutex
@@ -156,7 +190,6 @@ func (m *Manager) ResumeAll() error {
 			}
 		}
 	}
-
 	return errors.Join(errs...)
 }
 
@@ -170,7 +203,6 @@ func (m *Manager) WriteInput(contextID string, data []byte) error {
 	if ctx.MainProcess == nil {
 		return process.ErrProcessNotRunning
 	}
-
 	return ctx.MainProcess.WriteInput(data)
 }
 
@@ -218,40 +250,6 @@ func (m *Manager) Cleanup() {
 	}
 
 	m.contexts = make(map[string]*Context)
-}
-
-// ContextResourceUsage represents resource usage for a single context.
-type ContextResourceUsage struct {
-	ContextID string                `json:"context_id"`
-	Type      process.ProcessType   `json:"type"`
-	Language  string                `json:"language"`
-	Running   bool                  `json:"running"`
-	Paused    bool                  `json:"paused"`
-	Usage     process.ResourceUsage `json:"usage"`
-}
-
-// SandboxResourceUsage represents aggregated resource usage for the entire sandbox.
-type SandboxResourceUsage struct {
-	// Container-level stats (from cgroup)
-	ContainerMemoryUsage      int64 `json:"container_memory_usage"`
-	ContainerMemoryLimit      int64 `json:"container_memory_limit"`
-	ContainerMemoryWorkingSet int64 `json:"container_memory_working_set"`
-
-	// Aggregated process stats across all contexts
-	TotalMemoryRSS    int64 `json:"total_memory_rss"`
-	TotalMemoryVMS    int64 `json:"total_memory_vms"`
-	TotalOpenFiles    int   `json:"total_open_files"`
-	TotalThreadCount  int   `json:"total_thread_count"`
-	TotalIOReadBytes  int64 `json:"total_io_read_bytes"`
-	TotalIOWriteBytes int64 `json:"total_io_write_bytes"`
-
-	// Context count
-	ContextCount        int `json:"context_count"`
-	RunningContextCount int `json:"running_context_count"`
-	PausedContextCount  int `json:"paused_context_count"`
-
-	// Per-context breakdown
-	Contexts []ContextResourceUsage `json:"contexts"`
 }
 
 // GetResourceUsage returns resource usage for a specific context.

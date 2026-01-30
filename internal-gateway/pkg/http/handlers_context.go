@@ -124,6 +124,24 @@ func (s *Server) contextInput(c *gin.Context) {
 	s.proxyToProcd(c, procdURL)
 }
 
+// contextExec executes context input synchronously
+func (s *Server) contextExec(c *gin.Context) {
+	sandboxID := c.Param("id")
+	ctxID := c.Param("ctx_id")
+	if sandboxID == "" || ctxID == "" {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id and ctx_id are required")
+		return
+	}
+
+	procdURL, err := s.getProcdURL(c, sandboxID)
+	if err != nil {
+		return
+	}
+
+	c.Request.URL.Path = "/api/v1/contexts/" + ctxID + "/exec"
+	s.proxyToProcd(c, procdURL)
+}
+
 // contextResize resizes a context
 func (s *Server) contextResize(c *gin.Context) {
 	sandboxID := c.Param("id")
