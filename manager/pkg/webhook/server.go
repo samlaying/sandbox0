@@ -10,6 +10,8 @@ import (
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/pkg/naming"
+	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,10 +46,14 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/validate-sandboxtemplate", s.handleValidate)
 
+	handler := httpobs.ServerMiddleware(httpobs.ServerConfig{
+		Tracer: otel.Tracer("manager-webhook"),
+	})(mux)
+
 	addr := fmt.Sprintf(":%d", s.port)
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	s.logger.Info("Starting webhook server", zap.String("addr", addr))

@@ -39,7 +39,6 @@ func ExampleGenerator() {
 		"user-456",      // user ID
 		internalauth.GenerateOptions{ // options
 			Permissions: []string{"sandboxvolume:read", "sandboxvolume:write"},
-			RequestID:   "req-abc123",
 			UserID:      "user-456",
 		},
 	)

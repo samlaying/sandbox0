@@ -66,13 +66,6 @@ func (r *Router) createReverseProxyDirector(target *url.URL) *httputil.ReversePr
 		// Preserve the original path (don't rewrite it here)
 		// Path rewriting should be done by specific handlers if needed
 
-		// Forward auth headers and request ID
-		if req.Header.Get("X-Request-ID") == "" {
-			if reqID := req.Context().Value("request_id"); reqID != nil {
-				req.Header.Set("X-Request-ID", reqID.(string))
-			}
-		}
-
 		// Forward auth context
 		if authCtx := req.Context().Value("auth_context"); authCtx != nil {
 			// The upstream service can validate this header

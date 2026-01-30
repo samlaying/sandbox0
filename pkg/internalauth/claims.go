@@ -96,9 +96,6 @@ type Claims struct {
 
 	// Permissions is the list of granted permissions.
 	Permissions []string `json:"permissions,omitempty"`
-
-	// RequestID is the optional request ID for tracing.
-	RequestID string `json:"request_id,omitempty"`
 }
 
 // GetExpirationTime implements jwt.Claims interface.

@@ -10,6 +10,7 @@ import (
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/db"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/snapshot"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Server provides HTTP management API for health checks and metrics
@@ -65,13 +66,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.serve(wrapped, r)
 
-	s.logger.WithFields(logrus.Fields{
+	fields := logrus.Fields{
 		"method":   r.Method,
 		"path":     r.URL.Path,
 		"status":   wrapped.statusCode,
 		"duration": time.Since(start),
 		"remote":   r.RemoteAddr,
-	}).Info("HTTP request")
+	}
+
+	spanCtx := trace.SpanFromContext(r.Context()).SpanContext()
+	if spanCtx.IsValid() {
+		fields["trace_id"] = spanCtx.TraceID().String()
+		fields["span_id"] = spanCtx.SpanID().String()
+	}
+
+	s.logger.WithFields(fields).Info("HTTP request")
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {

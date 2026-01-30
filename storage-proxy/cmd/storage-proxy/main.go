@@ -17,6 +17,7 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/k8s"
 	"github.com/sandbox0-ai/infra/pkg/migrate"
 	"github.com/sandbox0-ai/infra/pkg/observability"
+	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
 	spmigrations "github.com/sandbox0-ai/infra/storage-proxy/migrations"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/auth"
 	"github.com/sandbox0-ai/infra/storage-proxy/pkg/coordinator"
@@ -273,9 +274,13 @@ func main() {
 		idleTimeout = 60 * time.Second
 	}
 
+	httpHandler := httpobs.ServerMiddleware(httpobs.ServerConfig{
+		Tracer: obsProvider.Tracer(),
+	})(httpSrv)
+
 	httpServer := &http.Server{
 		Addr:         httpAddr,
-		Handler:      httpSrv,
+		Handler:      httpHandler,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 		IdleTimeout:  idleTimeout,

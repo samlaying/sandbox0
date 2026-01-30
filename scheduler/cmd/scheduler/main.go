@@ -128,7 +128,7 @@ func main() {
 	rec := reconciler.NewReconciler(repo, igClient, cfg.ReconcileInterval.Duration, clk, cfg.PodsPerNode, logger)
 
 	// Create HTTP server
-	httpServer := httpserver.NewServer(cfg, repo, authValidator, internalAuthGen, rec, logger)
+	httpServer := httpserver.NewServer(cfg, repo, authValidator, internalAuthGen, rec, logger, obsProvider)
 
 	// Start template idle listener
 	if cfg.DatabaseURL != "" {

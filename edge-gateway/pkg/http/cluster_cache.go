@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/pkg/auth"
-	"github.com/sandbox0-ai/infra/pkg/gateway/middleware"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
@@ -50,7 +49,7 @@ func (s *Server) getInternalGatewayProxy(targetURL string) (*proxy.Router, error
 	return p, nil
 }
 
-func (s *Server) getInternalGatewayURLForCluster(ctx context.Context, clusterID string, authCtx *auth.AuthContext, requestID string) (string, error) {
+func (s *Server) getInternalGatewayURLForCluster(ctx context.Context, clusterID string, authCtx *auth.AuthContext) (string, error) {
 	if clusterID == "" {
 		return "", fmt.Errorf("cluster_id is required")
 	}
@@ -60,7 +59,7 @@ func (s *Server) getInternalGatewayURLForCluster(ctx context.Context, clusterID 
 	if url := s.getClusterFromCache(clusterID); url != "" {
 		return url, nil
 	}
-	if err := s.refreshClusterCache(ctx, authCtx, requestID); err != nil {
+	if err := s.refreshClusterCache(ctx, authCtx); err != nil {
 		return "", err
 	}
 	return s.getClusterFromCache(clusterID), nil
@@ -72,7 +71,7 @@ func (s *Server) getClusterFromCache(clusterID string) string {
 	return s.clusterCache[clusterID]
 }
 
-func (s *Server) refreshClusterCache(ctx context.Context, authCtx *auth.AuthContext, requestID string) error {
+func (s *Server) refreshClusterCache(ctx context.Context, authCtx *auth.AuthContext) error {
 	s.clusterCacheMu.RLock()
 	cacheAge := time.Since(s.clusterCacheAt)
 	s.clusterCacheMu.RUnlock()
@@ -100,7 +99,6 @@ func (s *Server) refreshClusterCache(ctx context.Context, authCtx *auth.AuthCont
 		authCtx.UserID,
 		internalauth.GenerateOptions{
 			Permissions: authCtx.Permissions,
-			RequestID:   requestID,
 		},
 	)
 	if err != nil {
@@ -173,7 +171,6 @@ func (s *Server) generateInternalToken(c *gin.Context, authCtx *auth.AuthContext
 		authCtx.UserID,
 		internalauth.GenerateOptions{
 			Permissions: authCtx.Permissions,
-			RequestID:   middleware.GetRequestID(c),
 		},
 	)
 }

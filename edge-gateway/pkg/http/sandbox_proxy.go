@@ -36,7 +36,7 @@ func (s *Server) proxySandbox(c *gin.Context) {
 		return
 	}
 
-	targetURL, err := s.getInternalGatewayURLForCluster(c.Request.Context(), parsed.ClusterID, authCtx, middleware.GetRequestID(c))
+	targetURL, err := s.getInternalGatewayURLForCluster(c.Request.Context(), parsed.ClusterID, authCtx)
 	if err != nil || targetURL == "" {
 		s.logger.Warn("Failed to resolve sandbox cluster, falling back to scheduler",
 			zap.String("sandbox_id", sandboxID),

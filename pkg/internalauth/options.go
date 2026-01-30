@@ -76,9 +76,6 @@ type GenerateOptions struct {
 	// UserID is the optional user ID for audit logging.
 	UserID string
 
-	// RequestID is the optional request ID for tracing.
-	RequestID string
-
 	// Permissions is the list of granted permissions.
 	// If empty, the token will have no specific permissions.
 	Permissions []string

@@ -12,8 +12,11 @@ import (
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/observability"
+	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -26,6 +29,7 @@ type Server struct {
 	internalAuthGen *internalauth.Generator
 	reconciler      Reconciler
 	logger          *zap.Logger
+	obsProvider     *observability.Provider
 
 	internalGatewayProxies   map[string]*proxy.Router
 	internalGatewayProxiesMu sync.RWMutex
@@ -50,12 +54,16 @@ func NewServer(
 	internalAuthGen *internalauth.Generator,
 	reconciler Reconciler,
 	logger *zap.Logger,
+	obsProvider *observability.Provider,
 ) *Server {
 	// Set gin mode
 	gin.SetMode(gin.ReleaseMode)
 
 	// Create router
 	router := gin.New()
+	router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
+		Tracer: obsProvider.Tracer(),
+	}))
 	router.Use(gin.Recovery())
 	router.Use(requestLogger(logger))
 
@@ -67,6 +75,7 @@ func NewServer(
 		internalAuthGen:        internalAuthGen,
 		reconciler:             reconciler,
 		logger:                 logger,
+		obsProvider:            obsProvider,
 		internalGatewayProxies: make(map[string]*proxy.Router),
 		clusterCache:           make(map[string]*db.Cluster),
 	}
@@ -234,13 +243,23 @@ func requestLogger(logger *zap.Logger) gin.HandlerFunc {
 		c.Next()
 
 		// Log request
-		logger.Info("HTTP request",
+		fields := []zap.Field{
 			zap.String("method", c.Request.Method),
 			zap.String("path", c.Request.URL.Path),
 			zap.Int("status", c.Writer.Status()),
 			zap.String("client_ip", c.ClientIP()),
 			zap.Duration("latency", time.Since(start)),
-		)
+		}
+
+		spanCtx := trace.SpanFromContext(c.Request.Context()).SpanContext()
+		if spanCtx.IsValid() {
+			fields = append(fields,
+				zap.String("trace_id", spanCtx.TraceID().String()),
+				zap.String("span_id", spanCtx.SpanID().String()),
+			)
+		}
+
+		logger.Info("HTTP request", fields...)
 	}
 }
 

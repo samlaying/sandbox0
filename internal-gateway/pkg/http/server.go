@@ -53,6 +53,7 @@ type Server struct {
 	procdAuthGen        *internalauth.Generator
 	internalAuthEnabled bool
 	sandboxAddrCache    *cache.Cache[string, *url.URL]
+	obsProvider         *observability.Provider
 }
 
 // NewServer creates a new HTTP server
@@ -237,6 +238,7 @@ func NewServer(
 		procdAuthGen:        procdAuthGen,
 		internalAuthEnabled: internalAuthEnabled,
 		sandboxAddrCache:    sandboxAddrCache,
+		obsProvider:         obsProvider,
 	}
 
 	server.setupRoutes()
@@ -252,6 +254,9 @@ func (s *Server) Handler() http.Handler {
 // setupRoutes configures all HTTP routes
 func (s *Server) setupRoutes() {
 	// Global middleware (order matters)
+	s.router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
+		Tracer: s.obsProvider.Tracer(),
+	}))
 	s.router.Use(middleware.Recovery(s.logger))
 	s.router.Use(s.requestLogger.Logger())
 

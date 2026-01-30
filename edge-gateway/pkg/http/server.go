@@ -38,6 +38,7 @@ type Server struct {
 	requestLogger   *middleware.RequestLogger
 	logger          *zap.Logger
 	internalAuthGen *internalauth.Generator
+	obsProvider     *observability.Provider
 
 	internalGatewayProxies   map[string]*proxy.Router
 	internalGatewayProxiesMu sync.RWMutex
@@ -151,6 +152,7 @@ func NewServer(
 		requestLogger:          requestLogger,
 		logger:                 logger,
 		internalAuthGen:        internalAuthGen,
+		obsProvider:            obsProvider,
 		internalGatewayProxies: make(map[string]*proxy.Router),
 		clusterCache:           make(map[string]string),
 
@@ -167,6 +169,9 @@ func NewServer(
 // setupRoutes configures all HTTP routes
 func (s *Server) setupRoutes() {
 	// Global middleware (order matters)
+	s.router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
+		Tracer: s.obsProvider.Tracer(),
+	}))
 	s.router.Use(middleware.Recovery(s.logger))
 	s.router.Use(s.requestLogger.Logger())
 
@@ -242,7 +247,6 @@ func (s *Server) injectInternalTokenForTarget(target string) gin.HandlerFunc {
 			authCtx.UserID,
 			internalauth.GenerateOptions{
 				Permissions: authCtx.Permissions,
-				RequestID:   middleware.GetRequestID(c),
 			},
 		)
 		if err != nil {

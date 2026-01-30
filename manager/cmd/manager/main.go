@@ -320,6 +320,7 @@ func main() {
 		authValidator,
 		logger,
 		cfg.HTTPPort,
+		obsProvider,
 	)
 
 	// Start metrics server

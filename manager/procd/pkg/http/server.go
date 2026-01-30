@@ -21,6 +21,8 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/observability"
+	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -56,6 +58,7 @@ type Server struct {
 	httpServer *http.Server
 	logger     *zap.Logger
 	cfg        *config.ProcdConfig
+	obsProvider *observability.Provider
 
 	// Managers
 	contextManager *ctxpkg.Manager
@@ -84,9 +87,6 @@ func NewServer(
 	logger *zap.Logger,
 	obsProvider *observability.Provider,
 ) *Server {
-	// obsProvider is passed for future use (e.g., instrumenting handlers)
-	_ = obsProvider
-
 	s := &Server{
 		router:            mux.NewRouter(),
 		cfg:               cfg,
@@ -97,6 +97,7 @@ func NewServer(
 		tokenProvider:     tokenProvider,
 		webhookDispatcher: webhookDispatcher,
 		logger:            logger,
+		obsProvider:       obsProvider,
 	}
 
 	s.setupRoutes()
@@ -105,6 +106,9 @@ func NewServer(
 
 func (s *Server) setupRoutes() {
 	// Global middleware (applied to all routes)
+	s.router.Use(httpobs.ServerMiddleware(httpobs.ServerConfig{
+		Tracer: s.obsProvider.Tracer(),
+	}))
 	s.router.Use(s.loggingMiddleware)
 	s.router.Use(s.recoveryMiddleware)
 
@@ -213,12 +217,22 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		s.logger.Info("HTTP request",
+		fields := []zap.Field{
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", wrapped.statusCode),
 			zap.Duration("duration", time.Since(start)),
-		)
+		}
+
+		spanCtx := trace.SpanFromContext(r.Context()).SpanContext()
+		if spanCtx.IsValid() {
+			fields = append(fields,
+				zap.String("trace_id", spanCtx.TraceID().String()),
+				zap.String("span_id", spanCtx.SpanID().String()),
+			)
+		}
+
+		s.logger.Info("HTTP request", fields...)
 	})
 }
 
@@ -226,10 +240,18 @@ func (s *Server) recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				s.logger.Error("Panic recovered",
+				fields := []zap.Field{
 					zap.Any("error", err),
 					zap.String("path", r.URL.Path),
-				)
+				}
+				spanCtx := trace.SpanFromContext(r.Context()).SpanContext()
+				if spanCtx.IsValid() {
+					fields = append(fields,
+						zap.String("trace_id", spanCtx.TraceID().String()),
+						zap.String("span_id", spanCtx.SpanID().String()),
+					)
+				}
+				s.logger.Error("Panic recovered", fields...)
 				_ = spec.WriteError(w, http.StatusInternalServerError, spec.CodeInternal, "internal server error")
 			}
 		}()

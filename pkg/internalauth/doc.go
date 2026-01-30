@@ -121,8 +121,7 @@
 //	  "target": "storage-proxy",      // Target service
 //	  "team_id": "team-123",          // Team ID
 //	  "user_id": "user-456",          // User ID (optional)
-//	  "permissions": ["..."],         // Granted permissions
-//	  "request_id": "req-abc"         // Request ID (optional)
+//	  "permissions": ["..."]          // Granted permissions
 //	}
 //
 // # Security Considerations

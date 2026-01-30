@@ -73,7 +73,6 @@ func (g *Generator) Generate(target, teamID, userID string, opts GenerateOptions
 		TeamID:      teamID,
 		UserID:      userID,
 		Permissions: opts.Permissions,
-		RequestID:   opts.RequestID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)

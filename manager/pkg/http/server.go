@@ -11,6 +11,9 @@ import (
 	"github.com/sandbox0-ai/infra/manager/pkg/service"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/observability"
+	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +26,7 @@ type Server struct {
 	authValidator   *internalauth.Validator
 	logger          *zap.Logger
 	port            int
+	obsProvider     *observability.Provider
 }
 
 // NewServer creates a new HTTP server
@@ -33,11 +37,15 @@ func NewServer(
 	authValidator *internalauth.Validator,
 	logger *zap.Logger,
 	port int,
+	obsProvider *observability.Provider,
 ) *Server {
 	// Set gin mode based on log level
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
+	router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
+		Tracer: obsProvider.Tracer(),
+	}))
 	router.Use(gin.Recovery())
 	router.Use(requestLogger(logger))
 
@@ -49,6 +57,7 @@ func NewServer(
 		authValidator:   authValidator,
 		logger:          logger,
 		port:            port,
+		obsProvider:     obsProvider,
 	}
 
 	server.setupRoutes()
@@ -169,12 +178,22 @@ func requestLogger(logger *zap.Logger) gin.HandlerFunc {
 		c.Next()
 
 		// Log request
-		logger.Info("HTTP request",
+		fields := []zap.Field{
 			zap.String("method", c.Request.Method),
 			zap.String("path", c.Request.URL.Path),
 			zap.Int("status", c.Writer.Status()),
 			zap.String("client_ip", c.ClientIP()),
-		)
+		}
+
+		spanCtx := trace.SpanFromContext(c.Request.Context()).SpanContext()
+		if spanCtx.IsValid() {
+			fields = append(fields,
+				zap.String("trace_id", spanCtx.TraceID().String()),
+				zap.String("span_id", spanCtx.SpanID().String()),
+			)
+		}
+
+		logger.Info("HTTP request", fields...)
 	}
 }
 

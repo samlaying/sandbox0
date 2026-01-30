@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -30,11 +30,6 @@ func (rl *RequestLogger) Logger() gin.HandlerFunc {
 			return
 		}
 
-		// Generate request ID
-		requestID := uuid.New().String()
-		c.Set("request_id", requestID)
-		c.Header("X-Request-ID", requestID)
-
 		// Record start time
 		start := time.Now()
 
@@ -49,13 +44,20 @@ func (rl *RequestLogger) Logger() gin.HandlerFunc {
 
 		// Log fields
 		fields := []zap.Field{
-			zap.String("request_id", requestID),
 			zap.String("method", c.Request.Method),
 			zap.String("path", c.Request.URL.Path),
 			zap.Int("status", c.Writer.Status()),
 			zap.Duration("latency", latency),
 			zap.String("client_ip", c.ClientIP()),
 			zap.String("user_agent", c.Request.UserAgent()),
+		}
+
+		spanCtx := trace.SpanFromContext(c.Request.Context()).SpanContext()
+		if spanCtx.IsValid() {
+			fields = append(fields,
+				zap.String("trace_id", spanCtx.TraceID().String()),
+				zap.String("span_id", spanCtx.SpanID().String()),
+			)
 		}
 
 		if authCtx != nil {
@@ -81,12 +83,4 @@ func (rl *RequestLogger) Logger() gin.HandlerFunc {
 			rl.logger.Info("HTTP request", fields...)
 		}
 	}
-}
-
-// GetRequestID extracts request ID from gin context
-func GetRequestID(c *gin.Context) string {
-	if v, exists := c.Get("request_id"); exists {
-		return v.(string)
-	}
-	return ""
 }

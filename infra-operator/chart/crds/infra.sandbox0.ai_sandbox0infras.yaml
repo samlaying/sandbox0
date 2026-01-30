@@ -1533,6 +1533,13 @@ spec:
                           metricsPort:
                             default: 9090
                             type: integer
+                          watchEventQueueSize:
+                            default: 256
+                            type: integer
+                          watchEventsEnabled:
+                            default: true
+                            description: Watch events
+                            type: boolean
                         type: object
                       enabled:
                         default: false
