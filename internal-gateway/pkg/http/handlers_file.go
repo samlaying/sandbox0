@@ -20,31 +20,22 @@ func (s *Server) handleFileOperation(c *gin.Context) {
 		return
 	}
 
+	if c.Request.Method == http.MethodGet && filePath == "/watch" {
+		s.handleFileWatch(c)
+		return
+	}
+
 	procdURL, err := s.getProcdURL(c, sandboxID)
 	if err != nil {
 		return // Error response already sent
 	}
 
-	c.Request.URL.Path = "/api/v1/files" + filePath
-
-	s.proxyToProcd(c, procdURL)
-}
-
-// handleFileMove handles file move operation.
-// Route: /api/v1/sandboxes/:id/files/move
-func (s *Server) handleFileMove(c *gin.Context) {
-	sandboxID := c.Param("id")
-	if sandboxID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id is required")
-		return
+	if c.Request.Method == http.MethodPost && filePath == "/move" {
+		c.Request.URL.Path = "/api/v1/files/move"
+	} else {
+		c.Request.URL.Path = "/api/v1/files" + filePath
 	}
 
-	procdURL, err := s.getProcdURL(c, sandboxID)
-	if err != nil {
-		return
-	}
-
-	c.Request.URL.Path = "/api/v1/files/move"
 	s.proxyToProcd(c, procdURL)
 }
 

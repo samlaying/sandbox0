@@ -409,7 +409,14 @@ func (h *ContextHandler) execInputSync(ctx *ctxpkg.Context, input string, reques
 	outputCh := ctx.MainProcess.ReadOutput()
 	drainOutput(outputCh)
 
-	err := h.manager.WriteInput(ctx.ID, []byte(input))
+	normalizedInput := input
+	if ctx.Type == process.ProcessTypeREPL {
+		if !strings.HasSuffix(normalizedInput, "\n") && !strings.HasSuffix(normalizedInput, "\r") {
+			normalizedInput += "\n"
+		}
+	}
+
+	err := h.manager.WriteInput(ctx.ID, []byte(normalizedInput))
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
 			return "", &execError{
@@ -443,6 +450,8 @@ func (h *ContextHandler) execInputSync(ctx *ctxpkg.Context, input string, reques
 	defer timeout.Stop()
 
 	var output bytes.Buffer
+	var promptTimer *time.Timer
+	var promptWait <-chan time.Time
 	for {
 		select {
 		case <-requestCtx.Done():
@@ -453,15 +462,39 @@ func (h *ContextHandler) execInputSync(ctx *ctxpkg.Context, input string, reques
 				code:    "exec_timeout",
 				message: "execution timed out",
 			}, false
+		case <-promptWait:
+			return output.String(), nil, false
 		case msg, ok := <-outputCh:
 			if !ok {
 				return output.String(), nil, false
 			}
 			if msg.Source == process.OutputSourcePrompt {
-				return output.String(), nil, false
+				if promptTimer == nil {
+					promptTimer = time.NewTimer(50 * time.Millisecond)
+				} else {
+					if !promptTimer.Stop() {
+						select {
+						case <-promptTimer.C:
+						default:
+						}
+					}
+					promptTimer.Reset(50 * time.Millisecond)
+				}
+				promptWait = promptTimer.C
+				continue
 			}
 			if len(msg.Data) > 0 {
 				_, _ = output.Write(msg.Data)
+			}
+			if promptTimer != nil {
+				if !promptTimer.Stop() {
+					select {
+					case <-promptTimer.C:
+					default:
+					}
+				}
+				promptTimer.Reset(50 * time.Millisecond)
+				promptWait = promptTimer.C
 			}
 		}
 	}

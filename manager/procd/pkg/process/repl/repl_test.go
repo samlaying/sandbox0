@@ -686,6 +686,52 @@ func TestREPL_OutputFiltering(t *testing.T) {
 	}
 }
 
+// TestREPL_OutputFiltering_PythonPrint ensures Python output isn't swallowed by prompt trimming.
+func TestREPL_OutputFiltering_PythonPrint(t *testing.T) {
+	config := process.ProcessConfig{
+		Type:     process.ProcessTypeREPL,
+		Language: "python",
+	}
+
+	repl, err := NewREPL("test-python-filter", config)
+	if err != nil {
+		t.Fatalf("NewREPL() failed = %v", err)
+	}
+
+	repl.SetLastInput(`print("hello world")`)
+
+	tests := []struct {
+		name     string
+		input    []byte
+		expected string
+	}{
+		{
+			name:     "ipython prompt and output in same chunk",
+			input:    []byte("In [1]: print(\"hello world\")\r\nhello world\r\nIn [2]: "),
+			expected: "hello world",
+		},
+		{
+			name:     "standard python prompt and output in same chunk",
+			input:    []byte(">>> print(\"hello world\")\r\nhello world\r\n>>> "),
+			expected: "hello world",
+		},
+		{
+			name:     "output with trailing prompt chunk",
+			input:    []byte("hello world\r\nIn [2]: "),
+			expected: "hello world",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _ := repl.filterOutput(tt.input)
+			if string(got) != tt.expected {
+				t.Errorf("filterOutput() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 // TestREPL_WriteInputTracksEcho tests that WriteInput tracks input for echo filtering.
 func TestREPL_WriteInputTracksEcho(t *testing.T) {
 	config := process.ProcessConfig{

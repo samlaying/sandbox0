@@ -2,6 +2,7 @@
 package process
 
 import (
+	"io"
 	"os"
 	"sync"
 	"testing"
@@ -385,6 +386,109 @@ func TestBaseProcess_WriteInputNoPTY(t *testing.T) {
 	if err != ErrProcessNotRunning {
 		t.Errorf("WriteInput() error = %v, want %v", err, ErrProcessNotRunning)
 	}
+}
+
+// TestBaseProcess_WriteInputBufferFull tests input buffer backpressure.
+func TestBaseProcess_WriteInputBufferFull(t *testing.T) {
+	config := ProcessConfig{
+		Type:       ProcessTypeREPL,
+		Language:   "python",
+		BufferSize: 1,
+	}
+
+	bp := NewBaseProcess("test-id", ProcessTypeREPL, config)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	bp.SetPTY(w)
+
+	if err := bp.WriteInput([]byte("first")); err != nil {
+		t.Fatalf("WriteInput(first) error = %v", err)
+	}
+	if err := bp.WriteInput([]byte("second")); err != ErrInputBufferFull {
+		t.Errorf("WriteInput(second) error = %v, want %v", err, ErrInputBufferFull)
+	}
+
+	bp.stopInputWriter()
+}
+
+// TestBaseProcess_InputReadyFlushesQueue tests queued input flush on prompt.
+func TestBaseProcess_InputReadyFlushesQueue(t *testing.T) {
+	config := ProcessConfig{
+		Type:       ProcessTypeREPL,
+		Language:   "python",
+		BufferSize: 2,
+	}
+
+	bp := NewBaseProcess("test-id", ProcessTypeREPL, config)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	bp.SetPTY(w)
+
+	if err := bp.WriteInput([]byte("one")); err != nil {
+		t.Fatalf("WriteInput(one) error = %v", err)
+	}
+	if err := bp.WriteInput([]byte("two")); err != nil {
+		t.Fatalf("WriteInput(two) error = %v", err)
+	}
+
+	bp.signalInputReady()
+
+	expected := "onetwo"
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, len(expected))
+		n, _ := io.ReadFull(r, buf)
+		done <- string(buf[:n])
+	}()
+
+	select {
+	case got := <-done:
+		if got != expected {
+			t.Errorf("input flush = %q, want %q", got, expected)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for input flush")
+	}
+
+	bp.stopInputWriter()
+}
+
+// TestBaseProcess_WriteInputFinished tests rejecting input on finished process.
+func TestBaseProcess_WriteInputFinished(t *testing.T) {
+	config := ProcessConfig{
+		Type:     ProcessTypeREPL,
+		Language: "python",
+	}
+
+	bp := NewBaseProcess("test-id", ProcessTypeREPL, config)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+
+	bp.SetPTY(w)
+	bp.SetState(ProcessStateStopped)
+
+	if err := bp.WriteInput([]byte("test")); err != ErrProcessFinished {
+		t.Errorf("WriteInput() error = %v, want %v", err, ErrProcessFinished)
+	}
+
+	bp.stopInputWriter()
 }
 
 // BenchmarkBaseProcess_StateRead benchmarks concurrent state reading.

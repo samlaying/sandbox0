@@ -403,14 +403,14 @@ func (bp *BaseProcess) WriteInput(data []byte) error {
 	pty := bp.pty
 	bp.mu.RUnlock()
 
+	if len(data) == 0 {
+		return nil
+	}
 	if pty == nil {
 		return ErrProcessNotRunning
 	}
 	if bp.IsFinished() {
 		return ErrProcessFinished
-	}
-	if len(data) == 0 {
-		return nil
 	}
 
 	payload := make([]byte, len(data))
