@@ -77,7 +77,6 @@ type EdgeGatewayConfig struct {
 	GatewayConfig `yaml:",inline" json:",inline"`
 }
 
-
 // LoadEdgeGatewayConfig returns the edge-gateway configuration.
 func LoadEdgeGatewayConfig() *EdgeGatewayConfig {
 	path := os.Getenv("CONFIG_PATH")

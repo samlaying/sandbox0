@@ -20,8 +20,7 @@ func NewInternalTokenGenerator(generator *internalauth.Generator) *InternalToken
 func (g *InternalTokenGenerator) GenerateToken(teamID, userID, sandboxID string) (string, error) {
 	// Note: sandboxID is passed for logging/tracing purposes but not embedded in the token
 	// The token authenticates the manager to call procd, procd will use the X-Sandbox-ID header
-	return g.generator.Generate("procd", teamID, userID, internalauth.GenerateOptions{
-	})
+	return g.generator.Generate("procd", teamID, userID, internalauth.GenerateOptions{})
 }
 
 // ProcdTokenGenerator generates tokens for procd to access storage-proxy.

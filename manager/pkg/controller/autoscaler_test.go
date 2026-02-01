@@ -233,8 +233,8 @@ func TestAutoScaler_ScaleDownOnNoTraffic(t *testing.T) {
 	// No active pods => treated as no traffic at least window size.
 	rsLister := newTestReplicaSetLister(t, &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        rsName,
-			Namespace:   template.Namespace,
+			Name:      rsName,
+			Namespace: template.Namespace,
 			Annotations: map[string]string{
 				annotationAutoscaleLastScaleTime: now.Add(-10 * time.Minute).Format(time.RFC3339),
 				annotationAutoscaleLastClaimTime: now.Add(-20 * time.Minute).Format(time.RFC3339),
@@ -301,8 +301,8 @@ func TestAutoScaler_ScaleUpCooldownRespected(t *testing.T) {
 
 	rsLister := newTestReplicaSetLister(t, &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        rsName,
-			Namespace:   template.Namespace,
+			Name:      rsName,
+			Namespace: template.Namespace,
 			Annotations: map[string]string{
 				annotationAutoscaleLastScaleTime: now.Add(-5 * time.Second).Format(time.RFC3339),
 			},

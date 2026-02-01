@@ -54,10 +54,10 @@ func (p *TokenProvider) SetInternalToken(token string) {
 
 // Server is the Procd HTTP server.
 type Server struct {
-	router     *mux.Router
-	httpServer *http.Server
-	logger     *zap.Logger
-	cfg        *config.ProcdConfig
+	router      *mux.Router
+	httpServer  *http.Server
+	logger      *zap.Logger
+	cfg         *config.ProcdConfig
 	obsProvider *observability.Provider
 
 	// Managers
@@ -170,7 +170,6 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/files/stat", fileHandler.Stat).Methods("GET")
 	api.HandleFunc("/files/list", fileHandler.List).Methods("GET")
 	api.HandleFunc("/files/binary", fileHandler.Binary).Methods("GET")
-
 }
 
 // Start starts the HTTP server.

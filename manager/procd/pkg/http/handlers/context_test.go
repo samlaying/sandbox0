@@ -18,26 +18,31 @@ type fakeProcess struct {
 	finished bool
 }
 
-func (f *fakeProcess) ID() string                                   { return "proc-test" }
-func (f *fakeProcess) Type() process.ProcessType                      { return process.ProcessTypeREPL }
-func (f *fakeProcess) PID() int                                       { return 1 }
-func (f *fakeProcess) Start() error                                   { return nil }
-func (f *fakeProcess) Stop() error                                    { return nil }
-func (f *fakeProcess) Restart() error                                 { return nil }
-func (f *fakeProcess) IsRunning() bool                                { return true }
-func (f *fakeProcess) IsFinished() bool                               { return f.finished }
-func (f *fakeProcess) State() process.ProcessState                    { return process.ProcessStateRunning }
-func (f *fakeProcess) AddStartHandler(process.StartHandler)           {}
-func (f *fakeProcess) AddExitHandler(process.ExitHandler)             {}
-func (f *fakeProcess) Pause() error                                   { return nil }
-func (f *fakeProcess) Resume() error                                  { return nil }
-func (f *fakeProcess) IsPaused() bool                                 { return false }
-func (f *fakeProcess) WriteInput(data []byte) error                   { if f.onWrite != nil { f.onWrite(data) }; return nil }
-func (f *fakeProcess) ReadOutput() <-chan process.ProcessOutput       { return f.outputCh }
-func (f *fakeProcess) ResizePTY(process.PTYSize) error                { return nil }
-func (f *fakeProcess) SendSignal(syscall.Signal) error                { return nil }
-func (f *fakeProcess) ExitCode() (int, error)                         { return 0, nil }
-func (f *fakeProcess) ResourceUsage() process.ResourceUsage           { return process.ResourceUsage{} }
+func (f *fakeProcess) ID() string                           { return "proc-test" }
+func (f *fakeProcess) Type() process.ProcessType            { return process.ProcessTypeREPL }
+func (f *fakeProcess) PID() int                             { return 1 }
+func (f *fakeProcess) Start() error                         { return nil }
+func (f *fakeProcess) Stop() error                          { return nil }
+func (f *fakeProcess) Restart() error                       { return nil }
+func (f *fakeProcess) IsRunning() bool                      { return true }
+func (f *fakeProcess) IsFinished() bool                     { return f.finished }
+func (f *fakeProcess) State() process.ProcessState          { return process.ProcessStateRunning }
+func (f *fakeProcess) AddStartHandler(process.StartHandler) {}
+func (f *fakeProcess) AddExitHandler(process.ExitHandler)   {}
+func (f *fakeProcess) Pause() error                         { return nil }
+func (f *fakeProcess) Resume() error                        { return nil }
+func (f *fakeProcess) IsPaused() bool                       { return false }
+func (f *fakeProcess) WriteInput(data []byte) error {
+	if f.onWrite != nil {
+		f.onWrite(data)
+	}
+	return nil
+}
+func (f *fakeProcess) ReadOutput() <-chan process.ProcessOutput { return f.outputCh }
+func (f *fakeProcess) ResizePTY(process.PTYSize) error          { return nil }
+func (f *fakeProcess) SendSignal(syscall.Signal) error          { return nil }
+func (f *fakeProcess) ExitCode() (int, error)                   { return 0, nil }
+func (f *fakeProcess) ResourceUsage() process.ResourceUsage     { return process.ResourceUsage{} }
 
 func attachContext(manager *ctxpkg.Manager, ctx *ctxpkg.Context) {
 	managerValue := reflect.ValueOf(manager).Elem()

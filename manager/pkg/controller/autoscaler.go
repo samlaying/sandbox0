@@ -24,10 +24,10 @@ const (
 )
 
 type AutoScaler struct {
-	k8sClient         kubernetes.Interface
-	podLister         corelisters.PodLister
-	replicaSetLister  appslisters.ReplicaSetLister
-	logger            *zap.Logger
+	k8sClient        kubernetes.Interface
+	podLister        corelisters.PodLister
+	replicaSetLister appslisters.ReplicaSetLister
+	logger           *zap.Logger
 }
 
 // NewAutoScaler creates a new AutoScaler.

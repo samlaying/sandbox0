@@ -158,10 +158,13 @@ func (r *REPL) filterOutput(data []byte) ([]byte, bool) {
 	if len(data) == 0 {
 		return data, false
 	}
-	if r.detectReadyToken(data) && r.markReady() {
-		return data, true
+	promptDetected := r.detectReadyToken(data)
+	if promptDetected {
+		// Mark input readiness once, but keep emitting prompt signals
+		// on every prompt token so sync exec can complete each run.
+		_ = r.markReady()
 	}
-	return data, false
+	return data, promptDetected
 }
 
 // Language returns the REPL language/name.

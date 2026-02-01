@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/pkg/auth"
-	gatewaydb "github.com/sandbox0-ai/infra/pkg/gateway/db"
 	gatewayjwt "github.com/sandbox0-ai/infra/pkg/gateway/auth/jwt"
+	gatewaydb "github.com/sandbox0-ai/infra/pkg/gateway/db"
 )
 
 func TestInternalGatewayIntegration_AuthRequired(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/sandbox0-ai/infra/pkg/apispec"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/sandbox0-ai/infra/pkg/apispec"
 )
 
 func (s *Session) Login(ctx context.Context, t ContractT, email, password string) error {

@@ -61,8 +61,8 @@ type CreateContextRequest struct {
 
 // CreateREPLContextRequest is the request body for creating a REPL context.
 type CreateREPLContextRequest struct {
-	Language   string          `json:"language"`              // python, node, bash, zsh, etc.
-	Input      string          `json:"input"`                 // code to execute
+	Language   string           `json:"language"`              // python, node, bash, zsh, etc.
+	Input      string           `json:"input"`                 // code to execute
 	ReplConfig *repl.REPLConfig `json:"repl_config,omitempty"` // custom config
 }
 

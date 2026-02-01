@@ -92,9 +92,9 @@ func newGatewayPublicTestEnv(t *testing.T, managerURL, storageProxyURL string, p
 	})
 
 	cfg := &config.InternalGatewayConfig{
-		AuthMode:                "public",
-		ManagerURL:              managerURL,
-		StorageProxyURL:         storageProxyURL,
+		AuthMode:        "public",
+		ManagerURL:      managerURL,
+		StorageProxyURL: storageProxyURL,
 		GatewayConfig: config.GatewayConfig{
 			JWTSecret: jwtSecret,
 			JWTIssuer: jwtIssuer,

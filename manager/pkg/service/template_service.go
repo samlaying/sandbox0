@@ -19,12 +19,12 @@ import (
 
 // TemplateService handles template operations
 type TemplateService struct {
-	k8sClient         kubernetes.Interface
-	crdClient         clientset.Interface
-	templateLister    controller.TemplateLister
-	namespaceLister   corelisters.NamespaceLister
-	logger            *zap.Logger
-	network           network.Provider
+	k8sClient       kubernetes.Interface
+	crdClient       clientset.Interface
+	templateLister  controller.TemplateLister
+	namespaceLister corelisters.NamespaceLister
+	logger          *zap.Logger
+	network         network.Provider
 }
 
 // NewTemplateService creates a new TemplateService
@@ -40,12 +40,12 @@ func NewTemplateService(
 		networkProvider = network.NewNoopProvider()
 	}
 	return &TemplateService{
-		k8sClient:         k8sClient,
-		crdClient:         crdClient,
-		templateLister:    templateLister,
-		namespaceLister:   namespaceLister,
-		logger:            logger,
-		network:           networkProvider,
+		k8sClient:       k8sClient,
+		crdClient:       crdClient,
+		templateLister:  templateLister,
+		namespaceLister: namespaceLister,
+		logger:          logger,
+		network:         networkProvider,
 	}
 }
 
