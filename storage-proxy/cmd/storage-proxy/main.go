@@ -250,7 +250,10 @@ func main() {
 	}()
 
 	// Create snapshot manager
-	snapshotMgr := snapshot.NewManager(repo, volMgr, cfg, logrusLogger)
+	snapshotMgr, err := snapshot.NewManager(repo, volMgr, cfg, logrusLogger)
+	if err != nil {
+		zapLogger.Fatal("Failed to initialize snapshot manager", zap.Error(err))
+	}
 
 	// Set coordinator for snapshot manager (for distributed flush)
 	if coord != nil {

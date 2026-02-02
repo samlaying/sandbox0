@@ -12,6 +12,7 @@ service FileSystem {
   rpc Read(ReadRequest) returns (ReadResponse);
   rpc Write(WriteRequest) returns (WriteResponse);
   rpc Create(CreateRequest) returns (NodeResponse);
+  rpc Mknod(MknodRequest) returns (NodeResponse);
   rpc Mkdir(MkdirRequest) returns (NodeResponse);
   rpc Unlink(UnlinkRequest) returns (Empty);
   rpc Rmdir(RmdirRequest) returns (Empty);
@@ -21,6 +22,8 @@ service FileSystem {
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);
   rpc Lookup(LookupRequest) returns (NodeResponse);
   rpc ReadDir(ReadDirRequest) returns (ReadDirResponse);
+  rpc OpenDir(OpenDirRequest) returns (OpenDirResponse);
+  rpc ReleaseDir(ReleaseDirRequest) returns (Empty);
   rpc StatFs(StatFsRequest) returns (StatFsResponse);
   rpc Access(AccessRequest) returns (Empty);
 
@@ -36,6 +39,12 @@ service FileSystem {
   rpc Open(OpenRequest) returns (OpenResponse);
   rpc Release(ReleaseRequest) returns (Empty);
   rpc Fallocate(FallocateRequest) returns (Empty);
+  rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
+  rpc GetLk(GetLkRequest) returns (GetLkResponse);
+  rpc SetLk(SetLkRequest) returns (Empty);
+  rpc SetLkw(SetLkRequest) returns (Empty);
+  rpc Flock(FlockRequest) returns (Empty);
+  rpc Ioctl(IoctlRequest) returns (IoctlResponse);
   
   // Extended attributes (xattr)
   rpc GetXattr(GetXattrRequest) returns (GetXattrResponse);
@@ -103,6 +112,7 @@ message CreateRequest {
   string name = 3;       // File name
   uint32 mode = 4;       // File mode (permissions)
   uint32 flags = 5;      // Open flags
+  uint32 umask = 6;      // Umask
 }
 
 // Create directory
@@ -111,6 +121,17 @@ message MkdirRequest {
   uint64 parent = 2;     // Parent directory inode
   string name = 3;       // Directory name
   uint32 mode = 4;       // Directory mode
+  uint32 umask = 5;      // Umask
+}
+
+// Create node (file/device)
+message MknodRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 parent = 2;     // Parent directory inode
+  string name = 3;       // Node name
+  uint32 mode = 4;       // Node mode (permissions + type)
+  uint32 rdev = 5;       // Device ID for special files
+  uint32 umask = 6;      // Umask
 }
 
 // Node response (for Create, Mkdir, Lookup)
@@ -150,6 +171,7 @@ message SetAttrRequest {
   uint64 inode = 2;          // Inode to modify
   uint32 valid = 3;          // Mask of fields to set
   GetAttrResponse attr = 4;  // Attributes to set
+  uint64 handle_id = 5;      // File handle when available
 }
 
 message SetAttrResponse {
@@ -169,11 +191,31 @@ message ReadDirRequest {
   uint64 inode = 2;      // Directory inode
   uint64 handle_id = 3;  // Directory handle
   int64 offset = 4;      // Read offset
+  uint32 size = 5;       // Max entries to read (approximate)
+  bool plus = 6;         // Include attributes if true
 }
 
 message ReadDirResponse {
   repeated DirEntry entries = 1;  // Directory entries
   bool eof = 2;                   // End of directory marker
+}
+
+// Open directory
+message OpenDirRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Directory inode
+  uint32 flags = 3;      // Open flags
+}
+
+message OpenDirResponse {
+  uint64 handle_id = 1;  // Directory handle
+}
+
+// Release directory handle
+message ReleaseDirRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Directory inode
+  uint64 handle_id = 3;  // Directory handle
 }
 
 message DirEntry {
@@ -334,6 +376,75 @@ message FallocateRequest {
   int64 offset = 4;      // Offset to start allocation
   int64 length = 5;      // Length to allocate
   uint64 handle_id = 6;  // File handle from Open
+}
+
+// Copy file range
+message CopyFileRangeRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode_in = 2;   // Source inode
+  uint64 handle_in = 3;  // Source handle
+  uint64 offset_in = 4;  // Source offset
+  uint64 inode_out = 5;  // Destination inode
+  uint64 handle_out = 6; // Destination handle
+  uint64 offset_out = 7; // Destination offset
+  uint64 length = 8;     // Length to copy
+  uint32 flags = 9;      // Copy flags
+}
+
+message CopyFileRangeResponse {
+  uint64 bytes_copied = 1;
+}
+
+// File lock state
+message FileLock {
+  uint64 start = 1;
+  uint64 end = 2;
+  uint32 typ = 3;
+  uint32 pid = 4;
+}
+
+message GetLkRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Inode identifier
+  uint64 handle_id = 3;  // File handle
+  uint64 owner = 4;      // Lock owner
+  FileLock lock = 5;     // Requested lock
+}
+
+message GetLkResponse {
+  FileLock lock = 1;
+}
+
+message SetLkRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Inode identifier
+  uint64 handle_id = 3;  // File handle
+  uint64 owner = 4;      // Lock owner
+  FileLock lock = 5;     // Lock to set
+  bool block = 6;        // Blocking lock
+}
+
+message FlockRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Inode identifier
+  uint64 handle_id = 3;  // File handle
+  uint64 owner = 4;      // Lock owner
+  uint32 typ = 5;        // Lock type
+  bool block = 6;        // Blocking lock
+}
+
+// Ioctl
+message IoctlRequest {
+  string volume_id = 1;  // Volume identifier
+  uint64 inode = 2;      // Inode identifier
+  uint32 cmd = 3;        // Ioctl command
+  uint64 arg = 4;        // Ioctl argument
+  bytes data_in = 5;     // Input buffer
+  uint32 data_out_size = 6; // Expected output size
+}
+
+message IoctlResponse {
+  bytes data_out = 1;    // Output buffer
 }
 
 // Extended attributes (xattr)

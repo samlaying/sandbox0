@@ -80,7 +80,7 @@ func NewManager(
 	volMgr volumeProvider,
 	cfg *config.StorageProxyConfig,
 	logger *logrus.Logger,
-) *Manager {
+) (*Manager, error) {
 	// Initialize independent JuiceFS meta client for snapshot operations.
 	// This allows snapshots to be created/restored/deleted without requiring the volume to be mounted.
 	metaConf := meta.DefaultConf()
@@ -91,6 +91,12 @@ func NewManager(
 	// Snapshot operations are read-only from the cache perspective
 	metaConf.ReadOnly = false
 	metaClient := meta.NewClient(cfg.MetaURL, metaConf)
+	if _, err := metaClient.Load(true); err != nil {
+		return nil, fmt.Errorf("load juicefs format: %w", err)
+	}
+	if err := metaClient.NewSession(false); err != nil {
+		return nil, fmt.Errorf("create meta session: %w", err)
+	}
 
 	return &Manager{
 		locks:      make(map[string]time.Time),
@@ -101,7 +107,7 @@ func NewManager(
 		clusterID:  cfg.DefaultClusterId,
 		podID:      uuid.New().String(), // Unique pod identifier
 		metaClient: metaClient,          // Independent meta client
-	}
+	}, nil
 }
 
 // SetFlushCoordinator sets the flush coordinator for distributed coordination.

@@ -1,610 +1,107 @@
-// Package volume provides unit tests for SandboxVolume management.
 package volume
 
 import (
-	"context"
-	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"strings"
-
-	"go.uber.org/zap/zaptest"
 )
 
-// mockTokenProvider is a mock implementation of TokenProvider.
-type mockTokenProvider struct {
-	token string
-}
-
-func (m *mockTokenProvider) GetInternalToken() string {
-	return m.token
-}
-
-// TestNewManager tests manager creation.
-func TestNewManager(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-
-	if m == nil {
-		t.Fatal("NewManager() returned nil")
-	}
-
-	if m.config != config {
-		t.Error("NewManager() config not set correctly")
-	}
-
-	if m.logger == nil {
-		t.Error("NewManager() logger not set")
-	}
-
-	if m.tokenProvider == nil {
-		t.Error("NewManager() tokenProvider not set")
-	}
-
-	if m.mounts == nil {
-		t.Error("NewManager() mounts map not initialized")
-	}
-
-	// Check initial state
-	status := m.GetStatus()
-	// GetStatus returns nil slice when empty (Go's var []T = nil)
-	// This is valid behavior - just check length
-	if status != nil && len(status) != 0 {
-		t.Errorf("GetStatus() returned %d items, want 0", len(status))
-	}
-}
-
-// TestManager_IsMounted tests IsMounted method.
-func TestManager_IsMounted(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-
-	tests := []struct {
-		name     string
-		volumeID string
-		want     bool
-	}{
-		{
-			name:     "non-existent volume",
-			volumeID: "vol-1",
-			want:     false,
-		},
-		{
-			name:     "empty volume ID",
-			volumeID: "",
-			want:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := m.IsMounted(tt.volumeID)
-			if got != tt.want {
-				t.Errorf("IsMounted() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestManager_MountValidation tests mount request validation.
-func TestManager_MountValidation(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-	ctx := context.Background()
-	tempDir, err := os.MkdirTemp("", "procd-mount-validate-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-	validMount := filepath.Join(tempDir, "vol-1")
-
-	tests := []struct {
-		name    string
-		req     *MountRequest
-		wantErr error
-	}{
-		{
-			name: "empty mount point",
-			req: &MountRequest{
-				SandboxVolumeID: "vol-1",
-				MountPoint:      "",
-			},
-			wantErr: ErrInvalidMountPoint,
-		},
-		{
-			name: "relative mount point",
-			req: &MountRequest{
-				SandboxVolumeID: "vol-1",
-				MountPoint:      "mnt/vol-1",
-			},
-			wantErr: ErrInvalidMountPoint,
-		},
-		{
-			name: "root mount point",
-			req: &MountRequest{
-				SandboxVolumeID: "vol-1",
-				MountPoint:      "/",
-			},
-			wantErr: ErrInvalidMountPoint,
-		},
-		{
-			name: "valid request but will fail on gRPC",
-			req: &MountRequest{
-				SandboxVolumeID: "vol-1",
-				MountPoint:      validMount,
-				VolumeConfig: &VolumeConfig{
-					CacheSize:  "100",
-					Prefetch:   3,
-					BufferSize: "300",
-					Writeback:  true,
-					ReadOnly:   false,
-				},
-			},
-			wantErr: nil, // Will fail on gRPC connection, which is expected
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := m.Mount(ctx, tt.req)
-			if tt.wantErr != nil {
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("Mount() error = %v, want %v", err, tt.wantErr)
-				}
-			}
-			// For valid requests, we expect gRPC connection errors
-			// which is fine - we're testing validation logic
-		})
-	}
-}
-
 func TestValidateMountPoint(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "procd-mount-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
+	manager := NewManager(&Config{}, nil, nil)
 
-	tests := []struct {
+	cases := []struct {
 		name      string
-		mountPath string
-		wantErr   bool
+		path      string
+		expectErr bool
 	}{
-		{
-			name:      "absolute path",
-			mountPath: tempDir,
-			wantErr:   false,
-		},
-		{
-			name:      "relative path",
-			mountPath: "mnt/data",
-			wantErr:   true,
-		},
-		{
-			name:      "root path",
-			mountPath: "/",
-			wantErr:   true,
-		},
+		{name: "empty", path: "", expectErr: true},
+		{name: "relative", path: "tmp/volume", expectErr: true},
+		{name: "root", path: "/", expectErr: true},
+		{name: "parent", path: "/tmp/../volume", expectErr: true},
+		{name: "valid", path: "/tmp/volume", expectErr: false},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := validateMountPoint(tt.mountPath)
-			if tt.wantErr && err == nil {
-				t.Fatalf("validateMountPoint() expected error")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := manager.validateMountPoint(tc.path)
+			if tc.expectErr && err == nil {
+				t.Fatalf("expected error")
 			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("validateMountPoint() unexpected error: %v", err)
+			if !tc.expectErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
 }
 
-// TestManager_UnmountNotMounted tests unmounting a volume that isn't mounted.
-func TestManager_UnmountNotMounted(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
+func TestMergeVolumeConfig(t *testing.T) {
+	manager := NewManager(&Config{
+		JuiceFSCacheSize:  "200",
+		JuiceFSPrefetch:   3,
+		JuiceFSBufferSize: "300",
+		JuiceFSWriteback:  true,
+	}, nil, nil)
 
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-	ctx := context.Background()
-
-	err := m.Unmount(ctx, "non-existent")
-	if err != ErrVolumeNotMounted {
-		t.Errorf("Unmount() error = %v, want %v", err, ErrVolumeNotMounted)
-	}
-}
-
-func TestManager_MountPointInUse(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-	ctx := context.Background()
-
-	tempDir, err := os.MkdirTemp("", "procd-mount-inuse-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	m.mounts["existing-vol"] = &MountContext{
-		SandboxVolumeID: "existing-vol",
-		MountPoint:      tempDir,
-		MountedAt:       time.Now(),
-	}
-
-	_, err = m.Mount(ctx, &MountRequest{
-		SandboxVolumeID: "new-vol",
-		MountPoint:      tempDir,
+	overridePrefetch := int32(10)
+	overrideWriteback := false
+	cfg := manager.mergeVolumeConfig(&VolumeConfig{
+		CacheSize: "500",
+		Prefetch:  &overridePrefetch,
+		Writeback: &overrideWriteback,
 	})
-	if err != ErrMountPointInUse {
-		t.Errorf("Mount() error = %v, want %v", err, ErrMountPointInUse)
+
+	if cfg.CacheSize != "500" {
+		t.Fatalf("expected cache size override, got %q", cfg.CacheSize)
+	}
+	if cfg.Prefetch != 10 {
+		t.Fatalf("expected prefetch override, got %d", cfg.Prefetch)
+	}
+	if cfg.BufferSize != "300" {
+		t.Fatalf("expected buffer size default, got %q", cfg.BufferSize)
+	}
+	if cfg.Writeback != false {
+		t.Fatalf("expected writeback override")
+	}
+	if cfg.ReadOnly {
+		t.Fatalf("expected read-only default false")
 	}
 }
 
-// TestManager_GetStatus tests GetStatus method.
-func TestManager_GetStatus(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
+func TestMergeVolumeConfigNilDefaults(t *testing.T) {
+	manager := NewManager(nil, nil, nil)
+	cfg := manager.mergeVolumeConfig(nil)
+	if cfg == nil {
+		t.Fatalf("expected config")
 	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-
-	// Empty status - GetStatus returns nil slice when empty
-	status := m.GetStatus()
-	if status != nil && len(status) != 0 {
-		t.Errorf("GetStatus() length = %d, want 0", len(status))
+	if cfg.CacheSize != "" || cfg.BufferSize != "" || cfg.Prefetch != 0 || cfg.Writeback {
+		t.Fatalf("expected zero defaults, got %+v", cfg)
 	}
 }
 
-// TestManager_Cleanup tests Cleanup method.
-func TestManager_Cleanup(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
+func TestJoinMountPath(t *testing.T) {
+	if joinMountPath("/mnt", "/dir/file.txt") != "/mnt/dir/file.txt" {
+		t.Fatalf("unexpected join result")
 	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-
-	// Cleanup empty manager - should not panic
-	m.Cleanup()
-
-	// Verify mounts are still empty
-	status := m.GetStatus()
-	if len(status) != 0 {
-		t.Errorf("After Cleanup(), GetStatus() length = %d, want 0", len(status))
+	if joinMountPath("/mnt", "dir/file.txt") != "/mnt/dir/file.txt" {
+		t.Fatalf("unexpected join result for relative path")
+	}
+	if joinMountPath("/mnt", "") != "" {
+		t.Fatalf("expected empty path")
 	}
 }
 
-// TestManager_ConcurrentAccess tests concurrent access to the manager.
-func TestManager_ConcurrentAccess(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-	ctx := context.Background()
-
-	// Concurrent IsMounted calls
-	done := make(chan struct{})
-	go func() {
-		for i := 0; i < 100; i++ {
-			m.IsMounted("vol-1")
-		}
-		close(done)
-	}()
-
-	go func() {
-		for i := 0; i < 100; i++ {
-			m.GetStatus()
-		}
-	}()
-
-	// Concurrent mount attempts (will fail but tests concurrent access)
-	for i := 0; i < 10; i++ {
-		go func(idx int) {
-			req := &MountRequest{
-				SandboxVolumeID: string(rune(idx)),
-				MountPoint:      "/mnt/test",
-			}
-			m.Mount(ctx, req)
-		}(i)
-	}
-
-	<-done
-
-	// Manager should still be functional
-	status := m.GetStatus()
-	// GetStatus may return nil when empty, just check it doesn't panic
-	_ = status
-}
-
-// TestManager_getStorageProxyAddress tests address generation with node affinity.
-func TestManager_getStorageProxyAddress(t *testing.T) {
-	tests := []struct {
-		name         string
-		nodeName     string
-		replicas     int
-		baseURL      string
-		wantContains string
-	}{
-		{
-			name:         "single replica",
-			nodeName:     "node-1",
-			replicas:     1,
-			baseURL:      "storage-proxy",
-			wantContains: "storage-proxy-0",
-		},
-		{
-			name:         "multiple replicas",
-			nodeName:     "node-1",
-			replicas:     3,
-			baseURL:      "storage-proxy",
-			wantContains: "storage-proxy-",
-		},
-		{
-			name:         "different node",
-			nodeName:     "node-2",
-			replicas:     3,
-			baseURL:      "storage-proxy",
-			wantContains: "storage-proxy-",
-		},
-		{
-			name:         "full base URL",
-			nodeName:     "node-1",
-			replicas:     2,
-			baseURL:      "storage-proxy.default.svc.cluster.local",
-			wantContains: "storage-proxy-",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			logger := zaptest.NewLogger(t)
-			config := &Config{
-				ProxyBaseURL: tt.baseURL,
-			}
-
-			m := NewManager(config, &mockTokenProvider{}, logger)
-
-			// Use unexported method via testing
-			addr := m.getStorageProxyAddress()
-
-			if addr == "" {
-				t.Error("getStorageProxyAddress() returned empty string")
-			}
-
-			// Verify it contains the base pattern
-			found := false
-			for i := 0; i < tt.replicas; i++ {
-				expected := "storage-proxy-0."
-				if addr == expected || strings.HasPrefix(addr, expected) {
-					found = true
-					break
-				}
-			}
-
-			if !found && tt.wantContains != "" {
-				// At least verify it has the prefix
-				if len(addr) < len(tt.wantContains) || addr[:len(tt.wantContains)] != tt.wantContains {
-					t.Logf("Address: %s", addr)
-				}
-			}
-		})
-	}
-}
-
-// TestMountContext tests MountContext struct.
-func TestMountContext(t *testing.T) {
-	ctx := &MountContext{
-		SandboxVolumeID: "vol-123",
-		MountPoint:      "/mnt/vol-123",
-		MountedAt:       time.Now(),
-	}
-
-	if ctx.SandboxVolumeID != "vol-123" {
-		t.Errorf("SandboxVolumeID = %s, want vol-123", ctx.SandboxVolumeID)
-	}
-
-	if ctx.MountPoint != "/mnt/vol-123" {
-		t.Errorf("MountPoint = %s, want /mnt/vol-123", ctx.MountPoint)
-	}
-
-	if ctx.MountedAt.IsZero() {
-		t.Error("MountedAt is zero")
-	}
-}
-
-// TestVolumeConfig tests VolumeConfig defaults.
-func TestVolumeConfig(t *testing.T) {
-	config := &VolumeConfig{
-		CacheSize:  "100",
-		Prefetch:   3,
-		BufferSize: "300",
-		Writeback:  true,
-		ReadOnly:   false,
-	}
-
-	if config.CacheSize != "100" {
-		t.Errorf("CacheSize = %s, want 100", config.CacheSize)
-	}
-
-	if config.Prefetch != 3 {
-		t.Errorf("Prefetch = %d, want 3", config.Prefetch)
-	}
-
-	if !config.Writeback {
-		t.Error("Writeback = false, want true")
-	}
-
-	if config.ReadOnly {
-		t.Error("ReadOnly = true, want false")
-	}
-}
-
-// TestErrorDefinitions tests that error variables are properly defined.
-func TestErrorDefinitions(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want string
-	}{
-		{
-			name: "ErrVolumeAlreadyMounted",
-			err:  ErrVolumeAlreadyMounted,
-			want: "sandboxvolume already mounted",
-		},
-		{
-			name: "ErrVolumeMountInProgress",
-			err:  ErrVolumeMountInProgress,
-			want: "sandboxvolume mount in progress",
-		},
-		{
-			name: "ErrVolumeNotMounted",
-			err:  ErrVolumeNotMounted,
-			want: "sandboxvolume not mounted",
-		},
-		{
-			name: "ErrInvalidMountPoint",
-			err:  ErrInvalidMountPoint,
-			want: "invalid mount point",
-		},
-		{
-			name: "ErrMountPointInUse",
-			err:  ErrMountPointInUse,
-			want: "mount point already in use",
-		},
-		{
-			name: "ErrMountTimeout",
-			err:  ErrMountTimeout,
-			want: "mount timeout",
-		},
-		{
-			name: "ErrUnmountFailed",
-			err:  ErrUnmountFailed,
-			want: "unmount failed",
-		},
-		{
-			name: "ErrConnectionFailed",
-			err:  ErrConnectionFailed,
-			want: "grpc connection failed",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.err == nil {
-				t.Fatal("Error variable is nil")
-			}
-			if tt.err.Error() != tt.want {
-				t.Errorf("Error() = %s, want %s", tt.err.Error(), tt.want)
-			}
-		})
-	}
-}
-
-// TestManager_ConcurrentMountUnmount tests concurrent mount/unmount operations.
-func TestManager_ConcurrentMountUnmount(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	config := &Config{
-		ProxyBaseURL: "storage-proxy.default.svc.cluster.local",
-	}
-
-	m := NewManager(config, &mockTokenProvider{token: "test-token"}, logger)
-	ctx := context.Background()
-
-	// This test verifies that concurrent operations don't cause data races
-	// The actual mount/unmount will fail (no gRPC server), but we're testing
-	// that the manager handles concurrent access safely
-
-	for i := 0; i < 10; i++ {
-		go func(idx int) {
-			volID := string(rune('a' + idx))
-			req := &MountRequest{
-				SandboxVolumeID: volID,
-				MountPoint:      "/mnt/" + volID,
-			}
-			m.Mount(ctx, req)
-		}(i)
-	}
-
-	for i := 0; i < 10; i++ {
-		go func(idx int) {
-			volID := string(rune('a' + idx))
-			m.Unmount(ctx, volID)
-		}(i)
-	}
-
-	// Give goroutines time to complete
-	time.Sleep(100 * time.Millisecond)
-
-	// Manager should still be functional
-	status := m.GetStatus()
-	// GetStatus may return nil when empty, just check it doesn't panic
-	_ = status
-}
-
-// TestMountStatus tests MountStatus struct.
-func TestMountStatus(t *testing.T) {
+func TestStatusDuration(t *testing.T) {
+	manager := NewManager(&Config{}, nil, nil)
 	now := time.Now()
-	status := MountStatus{
-		SandboxVolumeID:    "vol-123",
-		MountPoint:         "/mnt/vol-123",
-		MountedAt:          now.Format(time.RFC3339),
-		MountedDurationSec: 3600,
+	manager.mounts["vol-1"] = &mountInfo{
+		volumeID:   "vol-1",
+		mountPoint: "/mnt/vol-1",
+		mountedAt:  now.Add(-2 * time.Second),
 	}
-
-	if status.SandboxVolumeID != "vol-123" {
-		t.Errorf("SandboxVolumeID = %s, want vol-123", status.SandboxVolumeID)
+	status := manager.GetStatus()
+	if len(status) != 1 {
+		t.Fatalf("expected status entry")
 	}
-
-	if status.MountPoint != "/mnt/vol-123" {
-		t.Errorf("MountPoint = %s, want /mnt/vol-123", status.MountPoint)
-	}
-
-	if status.MountedDurationSec != 3600 {
-		t.Errorf("MountedDurationSec = %d, want 3600", status.MountedDurationSec)
-	}
-}
-
-// TestConfigValidation tests Config field defaults.
-func TestConfigValidation(t *testing.T) {
-	config := &Config{
-		ProxyBaseURL:  "storage-proxy",
-		CacheMaxBytes: 1024 * 1024 * 100,
-		CacheTTL:      5 * time.Minute,
-	}
-
-	if config.ProxyBaseURL != "storage-proxy" {
-		t.Errorf("ProxyBaseURL = %s", config.ProxyBaseURL)
-	}
-
-	if config.CacheMaxBytes != 1024*1024*100 {
-		t.Errorf("CacheMaxBytes = %d", config.CacheMaxBytes)
-	}
-
-	if config.CacheTTL != 5*time.Minute {
-		t.Errorf("CacheTTL = %v", config.CacheTTL)
+	if status[0].MountedDurationSecs < 1 {
+		t.Fatalf("expected mounted duration")
 	}
 }

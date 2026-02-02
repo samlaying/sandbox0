@@ -1,114 +1,69 @@
-// Package volume provides SandboxVolume management via FUSE and gRPC.
 package volume
 
 import (
-	"errors"
-	"sync"
 	"time"
 
-	"github.com/hanwen/go-fuse/v2/fuse"
-	"google.golang.org/grpc"
-
-	pb "github.com/sandbox0-ai/infra/storage-proxy/proto/fs"
+	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
 )
 
-var (
-	// ErrVolumeAlreadyMounted is returned when a volume is already mounted.
-	ErrVolumeAlreadyMounted = errors.New("sandboxvolume already mounted")
+// Config holds configuration for the volume manager.
+type Config struct {
+	ProxyBaseURL   string
+	ProxyPort      int
+	CacheMaxBytes  int64
+	CacheTTL       time.Duration
+	GRPCMaxMsgSize int
 
-	// ErrVolumeMountInProgress is returned when a volume is already mounting.
-	ErrVolumeMountInProgress = errors.New("sandboxvolume mount in progress")
+	// Default JuiceFS cache config for mounted volumes.
+	JuiceFSCacheSize  string
+	JuiceFSPrefetch   int
+	JuiceFSBufferSize string
+	JuiceFSWriteback  bool
+}
 
-	// ErrVolumeNotMounted is returned when a volume is not mounted.
-	ErrVolumeNotMounted = errors.New("sandboxvolume not mounted")
+// VolumeConfig holds the config for a single mount request.
+type VolumeConfig struct {
+	CacheSize  string `json:"cache_size,omitempty"`
+	Prefetch   *int32 `json:"prefetch,omitempty"`
+	BufferSize string `json:"buffer_size,omitempty"`
+	Writeback  *bool  `json:"writeback,omitempty"`
+	ReadOnly   *bool  `json:"read_only,omitempty"`
+}
 
-	// ErrInvalidMountPoint is returned when the mount point is invalid.
-	ErrInvalidMountPoint = errors.New("invalid mount point")
-
-	// ErrMountPointInUse is returned when a mount point is already in use.
-	ErrMountPointInUse = errors.New("mount point already in use")
-
-	// ErrMountTimeout is returned when mount times out.
-	ErrMountTimeout = errors.New("mount timeout")
-
-	// ErrUnmountFailed is returned when unmount fails.
-	ErrUnmountFailed = errors.New("unmount failed")
-
-	// ErrConnectionFailed is returned when gRPC connection fails.
-	ErrConnectionFailed = errors.New("grpc connection failed")
-)
-
-// MountRequest represents a request to mount a SandboxVolume.
+// MountRequest represents a request to mount a sandbox volume.
 type MountRequest struct {
 	SandboxVolumeID string        `json:"sandboxvolume_id"`
-	SandboxID       string        `json:"sandbox_id"`
+	SandboxID       string        `json:"sandbox_id,omitempty"`
 	MountPoint      string        `json:"mount_point"`
 	VolumeConfig    *VolumeConfig `json:"volume_config,omitempty"`
 }
 
-// VolumeConfig represents JuiceFS volume configuration.
-type VolumeConfig struct {
-	CacheSize  string `json:"cache_size"`
-	Prefetch   int32  `json:"prefetch"`
-	BufferSize string `json:"buffer_size"`
-	Writeback  bool   `json:"writeback"`
-	ReadOnly   bool   `json:"read_only"`
-}
-
-// MountResponse represents the response for a mount request.
+// MountResponse represents a mount response.
 type MountResponse struct {
 	SandboxVolumeID string `json:"sandboxvolume_id"`
 	MountPoint      string `json:"mount_point"`
 	MountedAt       string `json:"mounted_at"`
 }
 
-// UnmountRequest represents a request to unmount a SandboxVolume.
+// UnmountRequest represents a request to unmount a sandbox volume.
 type UnmountRequest struct {
 	SandboxVolumeID string `json:"sandboxvolume_id"`
 }
 
-// MountStatus represents the status of a mount.
+// MountStatus represents the current status of a mount.
 type MountStatus struct {
-	SandboxVolumeID    string `json:"sandboxvolume_id"`
-	MountPoint         string `json:"mount_point"`
-	MountedAt          string `json:"mounted_at"`
-	MountedDurationSec int64  `json:"mounted_duration_sec"`
+	SandboxVolumeID     string `json:"sandboxvolume_id"`
+	MountPoint          string `json:"mount_point"`
+	MountedAt           string `json:"mounted_at"`
+	MountedDurationSecs int64  `json:"mounted_duration_sec"`
 }
 
-// MountContext represents an active mount.
-type MountContext struct {
-	SandboxVolumeID string
-	MountPoint      string
-	SandboxID       string
-
-	// gRPC connection and client
-	GrpcConn   *grpc.ClientConn
-	GrpcClient pb.FileSystemClient
-
-	// FUSE server
-	FuseServer *fuse.Server
-
-	// Remote watch cancellation
-	WatchCancel func()
-
-	MountedAt time.Time
-
-	mu sync.RWMutex
+// TokenProvider supplies the internal token for storage-proxy gRPC calls.
+type TokenProvider interface {
+	GetInternalToken() string
 }
 
-// Config holds SandboxVolume manager configuration.
-type Config struct {
-	ProxyBaseURL  string
-	ProxyPort     int
-	CacheMaxBytes int64
-	CacheTTL      time.Duration
-
-	// JuiceFS defaults
-	JuiceFSCacheSize  string
-	JuiceFSPrefetch   int
-	JuiceFSBufferSize string
-	JuiceFSWriteback  bool
-
-	// gRPC settings
-	GRPCMaxMsgSize int
+// EventSink receives volume watch events for file watchers.
+type EventSink interface {
+	Emit(event file.WatchEvent)
 }

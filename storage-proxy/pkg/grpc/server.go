@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"strings"
 	"syscall"
 	"time"
 
@@ -135,21 +136,19 @@ func (s *FileSystemServer) GetAttr(ctx context.Context, req *pb.GetAttrRequest) 
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Get attributes from JuiceFS
-	var attr meta.Attr
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.GetAttr(vfsCtx, inode, &attr)
+	entry, st := volCtx.VFS.GetAttr(vfsCtx, inode, 0)
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
 			"inode":     req.Inode,
 			"error":     st,
 		}).Error("GetAttr failed")
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	return convertAttr(&attr), nil
+	return convertAttr(meta.Ino(req.Inode), entry.Attr), nil
 }
 
 // Lookup implements FUSE lookup
@@ -160,23 +159,20 @@ func (s *FileSystemServer) Lookup(ctx context.Context, req *pb.LookupRequest) (*
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Lookup entry in JuiceFS
-	var inode meta.Ino
-	var attr meta.Attr
-	parent := meta.Ino(req.Parent)
+	parent := mapInode(volCtx, req.Parent)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Lookup(vfsCtx, parent, req.Name, &inode, &attr, true)
+	entry, st := volCtx.VFS.Lookup(vfsCtx, parent, req.Name)
 	if st != 0 {
 		if st == syscall.ENOENT {
 			return nil, status.Error(codes.NotFound, "entry not found")
 		}
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
 	return &pb.NodeResponse{
-		Inode:      uint64(inode),
+		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(&attr),
+		Attr:       convertAttr(entry.Inode, entry.Attr),
 	}, nil
 }
 
@@ -188,7 +184,7 @@ func (s *FileSystemServer) Open(ctx context.Context, req *pb.OpenRequest) (*pb.O
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 
 	// Open file using VFS (which creates proper handle with reader/writer)
 	vfsCtx := vfs.NewLogContext(meta.Background())
@@ -225,7 +221,7 @@ func (s *FileSystemServer) Read(ctx context.Context, req *pb.ReadRequest) (*pb.R
 	vfsCtx := vfs.NewLogContext(meta.Background())
 
 	// Read from JuiceFS VFS (convert offset to uint64)
-	n, errno := volCtx.VFS.Read(vfsCtx, meta.Ino(req.Inode), buf, uint64(req.Offset), req.HandleId)
+	n, errno := volCtx.VFS.Read(vfsCtx, mapInode(volCtx, req.Inode), buf, uint64(req.Offset), req.HandleId)
 	if errno != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
@@ -264,7 +260,7 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 	vfsCtx := vfs.NewLogContext(meta.Background())
 
 	// Write to JuiceFS VFS (convert offset to uint64)
-	errno := volCtx.VFS.Write(vfsCtx, meta.Ino(req.Inode), req.Data, uint64(req.Offset), req.HandleId)
+	errno := volCtx.VFS.Write(vfsCtx, mapInode(volCtx, req.Inode), req.Data, uint64(req.Offset), req.HandleId)
 	if errno != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
@@ -278,7 +274,7 @@ func (s *FileSystemServer) Write(ctx context.Context, req *pb.WriteRequest) (*pb
 		return nil, status.Error(codes.Internal, syscall.Errno(errno).Error())
 	}
 
-	path := resolveInodePath(volCtx, req.Inode)
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.Inode)))
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_WRITE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -304,11 +300,11 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 	}
 
 	// Create file using VFS (which creates proper handle with reader/writer)
-	parent := meta.Ino(req.Parent)
+	parent := mapInode(volCtx, req.Parent)
 	vfsCtx := vfs.NewLogContext(meta.Background())
 
 	// VFS.Create returns (Entry, handleID, errno)
-	entry, handleID, errno := volCtx.VFS.Create(vfsCtx, parent, req.Name, uint16(req.Mode), 0, req.Flags)
+	entry, handleID, errno := volCtx.VFS.Create(vfsCtx, parent, req.Name, uint16(req.Mode), uint16(req.Umask), req.Flags)
 	if errno != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
@@ -320,7 +316,7 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 		return nil, status.Error(mapErrnoToCode(syscall.Errno(errno)), syscall.Errno(errno).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.Parent, req.Name)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CREATE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -335,7 +331,7 @@ func (s *FileSystemServer) Create(ctx context.Context, req *pb.CreateRequest) (*
 	return &pb.NodeResponse{
 		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(entry.Attr),
+		Attr:       convertAttr(entry.Inode, entry.Attr),
 		HandleId:   handleID,
 	}, nil
 }
@@ -348,18 +344,14 @@ func (s *FileSystemServer) Mkdir(ctx context.Context, req *pb.MkdirRequest) (*pb
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Create directory in JuiceFS
-	parent := meta.Ino(req.Parent)
-	var inode meta.Ino
-	var attr meta.Attr
-
+	parent := mapInode(volCtx, req.Parent)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Mkdir(vfsCtx, parent, req.Name, uint16(req.Mode), 0, 0, &inode, &attr)
+	entry, st := volCtx.VFS.Mkdir(vfsCtx, parent, req.Name, uint16(req.Mode), uint16(req.Umask))
 	if st != 0 {
 		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.Parent, req.Name)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CREATE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -368,13 +360,46 @@ func (s *FileSystemServer) Mkdir(ctx context.Context, req *pb.MkdirRequest) (*pb
 		VolumeId:  req.VolumeId,
 		EventType: eventType,
 		Path:      path,
-		Inode:     uint64(inode),
+		Inode:     uint64(entry.Inode),
 	})
 
 	return &pb.NodeResponse{
-		Inode:      uint64(inode),
+		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(&attr),
+		Attr:       convertAttr(entry.Inode, entry.Attr),
+	}, nil
+}
+
+// Mknod implements FUSE mknod
+func (s *FileSystemServer) Mknod(ctx context.Context, req *pb.MknodRequest) (*pb.NodeResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	parent := mapInode(volCtx, req.Parent)
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	entry, st := volCtx.VFS.Mknod(vfsCtx, parent, req.Name, uint16(req.Mode), uint16(req.Umask), uint32(req.Rdev))
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
+	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CREATE
+	if path == "" {
+		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
+	}
+	s.publishEvent(ctx, &pb.WatchEvent{
+		VolumeId:  req.VolumeId,
+		EventType: eventType,
+		Path:      path,
+		Inode:     uint64(entry.Inode),
+	})
+
+	return &pb.NodeResponse{
+		Inode:      uint64(entry.Inode),
+		Generation: 0,
+		Attr:       convertAttr(entry.Inode, entry.Attr),
 	}, nil
 }
 
@@ -404,14 +429,14 @@ func (s *FileSystemServer) Unlink(ctx context.Context, req *pb.UnlinkRequest) (*
 	}
 
 	// Unlink file in JuiceFS
-	parent := meta.Ino(req.Parent)
+	parent := mapInode(volCtx, req.Parent)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Unlink(vfsCtx, parent, req.Name)
+	st := volCtx.VFS.Unlink(vfsCtx, parent, req.Name)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.Parent, req.Name)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_REMOVE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -433,24 +458,29 @@ func (s *FileSystemServer) ReadDir(ctx context.Context, req *pb.ReadDirRequest) 
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	// Read directory from JuiceFS
-	inode := meta.Ino(req.Inode)
-	var entries []*meta.Entry
+	inode := mapInode(volCtx, req.Inode)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Readdir(vfsCtx, inode, 1, &entries)
+	size := req.Size
+	if size == 0 {
+		size = 1024
+	}
+	entries, _, st := volCtx.VFS.Readdir(vfsCtx, inode, size, int(req.Offset), req.HandleId, req.Plus)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	// Convert entries
 	var result []*pb.DirEntry
 	for _, e := range entries {
+		entryType := uint32(0)
+		if e.Attr != nil {
+			entryType = uint32(e.Attr.Typ)
+		}
 		result = append(result, &pb.DirEntry{
 			Inode:  uint64(e.Inode),
 			Offset: 0,
 			Name:   string(e.Name),
-			Type:   uint32(e.Attr.Typ),
-			Attr:   convertAttr(e.Attr),
+			Type:   entryType,
+			Attr:   convertAttr(e.Inode, e.Attr),
 		})
 	}
 
@@ -458,6 +488,38 @@ func (s *FileSystemServer) ReadDir(ctx context.Context, req *pb.ReadDirRequest) 
 		Entries: result,
 		Eof:     false,
 	}, nil
+}
+
+// OpenDir implements FUSE opendir
+func (s *FileSystemServer) OpenDir(ctx context.Context, req *pb.OpenDirRequest) (*pb.OpenDirResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	inode := mapInode(volCtx, req.Inode)
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	fh, st := volCtx.VFS.Opendir(vfsCtx, inode, req.Flags)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+
+	return &pb.OpenDirResponse{
+		HandleId: fh,
+	}, nil
+}
+
+// ReleaseDir implements FUSE releasedir
+func (s *FileSystemServer) ReleaseDir(ctx context.Context, req *pb.ReleaseDirRequest) (*pb.Empty, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	inode := mapInode(volCtx, req.Inode)
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	_ = volCtx.VFS.Releasedir(vfsCtx, inode, req.HandleId)
+	return &pb.Empty{}, nil
 }
 
 // Rename implements FUSE rename
@@ -469,19 +531,17 @@ func (s *FileSystemServer) Rename(ctx context.Context, req *pb.RenameRequest) (*
 	}
 
 	// Rename in JuiceFS
-	oldParent := meta.Ino(req.OldParent)
-	newParent := meta.Ino(req.NewParent)
-	var inode meta.Ino
-	var attr meta.Attr
+	oldParent := mapInode(volCtx, req.OldParent)
+	newParent := mapInode(volCtx, req.NewParent)
 
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Rename(vfsCtx, oldParent, req.OldName, newParent, req.NewName, req.Flags, &inode, &attr)
+	st := volCtx.VFS.Rename(vfsCtx, oldParent, req.OldName, newParent, req.NewName, req.Flags)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	oldPath := resolveChildPath(volCtx, req.OldParent, req.OldName)
-	newPath := resolveChildPath(volCtx, req.NewParent, req.NewName)
+	oldPath := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.OldParent)), req.OldName)
+	newPath := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.NewParent)), req.NewName)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_RENAME
 	if oldPath == "" && newPath == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -491,7 +551,6 @@ func (s *FileSystemServer) Rename(ctx context.Context, req *pb.RenameRequest) (*
 		EventType: eventType,
 		Path:      newPath,
 		OldPath:   oldPath,
-		Inode:     uint64(inode),
 	})
 
 	return &pb.Empty{}, nil
@@ -505,17 +564,33 @@ func (s *FileSystemServer) SetAttr(ctx context.Context, req *pb.SetAttrRequest) 
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	inode := meta.Ino(req.Inode)
-	var attr meta.Attr
+	inode := mapInode(volCtx, req.Inode)
+	attr := req.Attr
+	if attr == nil {
+		attr = &pb.GetAttrResponse{}
+	}
 
 	// Set attributes in JuiceFS
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.SetAttr(vfsCtx, inode, uint16(req.Valid), 0, &attr)
+	entry, st := volCtx.VFS.SetAttr(
+		vfsCtx,
+		inode,
+		int(req.Valid),
+		req.HandleId,
+		attr.Mode,
+		attr.Uid,
+		attr.Gid,
+		attr.AtimeSec,
+		attr.MtimeSec,
+		uint32(attr.AtimeNsec),
+		uint32(attr.MtimeNsec),
+		attr.Size,
+	)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveInodePath(volCtx, req.Inode)
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.Inode)))
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
 	if req.Valid&uint32(meta.SetAttrMode) != 0 {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_CHMOD
@@ -533,7 +608,7 @@ func (s *FileSystemServer) SetAttr(ctx context.Context, req *pb.SetAttrRequest) 
 	})
 
 	return &pb.SetAttrResponse{
-		Attr: convertAttr(&attr),
+		Attr: convertAttr(entry.Inode, entry.Attr),
 	}, nil
 }
 
@@ -558,7 +633,7 @@ func (s *FileSystemServer) Release(ctx context.Context, req *pb.ReleaseRequest) 
 
 	// Release the file handle in VFS
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	volCtx.VFS.Release(vfsCtx, meta.Ino(req.Inode), req.HandleId)
+	volCtx.VFS.Release(vfsCtx, mapInode(volCtx, req.Inode), req.HandleId)
 
 	s.logger.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
@@ -577,17 +652,17 @@ func (s *FileSystemServer) Rmdir(ctx context.Context, req *pb.RmdirRequest) (*pb
 	}
 
 	// Remove directory in JuiceFS
-	parent := meta.Ino(req.Parent)
+	parent := mapInode(volCtx, req.Parent)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Rmdir(vfsCtx, parent, req.Name)
+	st := volCtx.VFS.Rmdir(vfsCtx, parent, req.Name)
 	if st != 0 {
 		if st == syscall.ENOTEMPTY {
 			return nil, status.Error(codes.FailedPrecondition, "directory not empty")
 		}
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.Parent, req.Name)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_REMOVE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -644,17 +719,15 @@ func (s *FileSystemServer) Symlink(ctx context.Context, req *pb.SymlinkRequest) 
 	}
 
 	// Create symbolic link in JuiceFS
-	parent := meta.Ino(req.Parent)
-	var inode meta.Ino
-	var attr meta.Attr
+	parent := mapInode(volCtx, req.Parent)
 
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Symlink(vfsCtx, parent, req.Name, req.Target, &inode, &attr)
+	entry, st := volCtx.VFS.Symlink(vfsCtx, req.Target, parent, req.Name)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.Parent, req.Name)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.Parent)), req.Name)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CREATE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -663,13 +736,13 @@ func (s *FileSystemServer) Symlink(ctx context.Context, req *pb.SymlinkRequest) 
 		VolumeId:  req.VolumeId,
 		EventType: eventType,
 		Path:      path,
-		Inode:     uint64(inode),
+		Inode:     uint64(entry.Inode),
 	})
 
 	return &pb.NodeResponse{
-		Inode:      uint64(inode),
+		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(&attr),
+		Attr:       convertAttr(entry.Inode, entry.Attr),
 	}, nil
 }
 
@@ -681,13 +754,11 @@ func (s *FileSystemServer) Readlink(ctx context.Context, req *pb.ReadlinkRequest
 	}
 
 	// Read symbolic link from JuiceFS
-	inode := meta.Ino(req.Inode)
-	var target []byte
-
+	inode := mapInode(volCtx, req.Inode)
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.ReadLink(vfsCtx, inode, &target)
+	target, st := volCtx.VFS.Readlink(vfsCtx, inode)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
 	return &pb.ReadlinkResponse{
@@ -703,17 +774,16 @@ func (s *FileSystemServer) Link(ctx context.Context, req *pb.LinkRequest) (*pb.N
 	}
 
 	// Create hard link in JuiceFS
-	inode := meta.Ino(req.Inode)
-	newParent := meta.Ino(req.NewParent)
-	var attr meta.Attr
+	inode := mapInode(volCtx, req.Inode)
+	newParent := mapInode(volCtx, req.NewParent)
 
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	st := volCtx.Meta.Link(vfsCtx, inode, newParent, req.NewName, &attr)
+	entry, st := volCtx.VFS.Link(vfsCtx, inode, newParent, req.NewName)
 	if st != 0 {
-		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
 	}
 
-	path := resolveChildPath(volCtx, req.NewParent, req.NewName)
+	path := resolveChildPath(volCtx, uint64(mapInode(volCtx, req.NewParent)), req.NewName)
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CREATE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -722,13 +792,13 @@ func (s *FileSystemServer) Link(ctx context.Context, req *pb.LinkRequest) (*pb.N
 		VolumeId:  req.VolumeId,
 		EventType: eventType,
 		Path:      path,
-		Inode:     req.Inode,
+		Inode:     uint64(entry.Inode),
 	})
 
 	return &pb.NodeResponse{
-		Inode:      uint64(inode),
+		Inode:      uint64(entry.Inode),
 		Generation: 0,
-		Attr:       convertAttr(&attr),
+		Attr:       convertAttr(entry.Inode, entry.Attr),
 	}, nil
 }
 
@@ -740,7 +810,7 @@ func (s *FileSystemServer) Access(ctx context.Context, req *pb.AccessRequest) (*
 	}
 
 	// Create JuiceFS context with caller's uid/gid for permission checking
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 
 	// Default to root user if no uid/gid provided (backward compatibility)
 	uid := req.Uid
@@ -752,13 +822,8 @@ func (s *FileSystemServer) Access(ctx context.Context, req *pb.AccessRequest) (*
 	// Create context with user credentials
 	vfsCtx := vfs.NewLogContext(meta.NewContext(0, uid, gids))
 
-	// Use JuiceFS's Access method which implements full POSIX permission checking
-	// This checks:
-	// - Root user (uid=0) always has access
-	// - Owner/group/other permission bits
-	// - ACL rules if present
-	// - Sticky bit for directories
-	st := volCtx.Meta.Access(vfsCtx, inode, uint8(req.Mask), nil)
+	// Use JuiceFS VFS Access which implements full POSIX permission checking.
+	st := volCtx.VFS.Access(vfsCtx, inode, int(req.Mask))
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
 			"volume_id": req.VolumeId,
@@ -783,7 +848,7 @@ func (s *FileSystemServer) Fallocate(ctx context.Context, req *pb.FallocateReque
 
 	// Call JuiceFS VFS Fallocate
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	st := volCtx.VFS.Fallocate(vfsCtx, inode, uint8(req.Mode), req.Offset, req.Length, req.HandleId)
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
@@ -805,7 +870,7 @@ func (s *FileSystemServer) Fallocate(ctx context.Context, req *pb.FallocateReque
 		"length":    req.Length,
 	}).Debug("Fallocate succeeded")
 
-	path := resolveInodePath(volCtx, req.Inode)
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.Inode)))
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_WRITE
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -820,6 +885,154 @@ func (s *FileSystemServer) Fallocate(ctx context.Context, req *pb.FallocateReque
 	return &pb.Empty{}, nil
 }
 
+// CopyFileRange implements FUSE copy_file_range
+func (s *FileSystemServer) CopyFileRange(ctx context.Context, req *pb.CopyFileRangeRequest) (*pb.CopyFileRangeResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	copied, st := volCtx.VFS.CopyFileRange(
+		vfsCtx,
+		mapInode(volCtx, req.InodeIn),
+		req.HandleIn,
+		req.OffsetIn,
+		mapInode(volCtx, req.InodeOut),
+		req.HandleOut,
+		req.OffsetOut,
+		req.Length,
+		req.Flags,
+	)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.InodeOut)))
+	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_WRITE
+	if path == "" {
+		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
+	}
+	s.publishEvent(ctx, &pb.WatchEvent{
+		VolumeId:  req.VolumeId,
+		EventType: eventType,
+		Path:      path,
+		Inode:     req.InodeOut,
+	})
+
+	return &pb.CopyFileRangeResponse{
+		BytesCopied: copied,
+	}, nil
+}
+
+// GetLk implements FUSE getlk
+func (s *FileSystemServer) GetLk(ctx context.Context, req *pb.GetLkRequest) (*pb.GetLkResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if req.Lock == nil {
+		return nil, status.Error(codes.InvalidArgument, "lock is required")
+	}
+
+	start := req.Lock.Start
+	end := req.Lock.End
+	typ := req.Lock.Typ
+	pid := req.Lock.Pid
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.VFS.Getlk(vfsCtx, mapInode(volCtx, req.Inode), req.HandleId, req.Owner, &start, &end, &typ, &pid)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+
+	return &pb.GetLkResponse{
+		Lock: &pb.FileLock{
+			Start: start,
+			End:   end,
+			Typ:   typ,
+			Pid:   pid,
+		},
+	}, nil
+}
+
+// SetLk implements FUSE setlk/setlkw
+func (s *FileSystemServer) SetLk(ctx context.Context, req *pb.SetLkRequest) (*pb.Empty, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	if req.Lock == nil {
+		return nil, status.Error(codes.InvalidArgument, "lock is required")
+	}
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.VFS.Setlk(
+		vfsCtx,
+		mapInode(volCtx, req.Inode),
+		req.HandleId,
+		req.Owner,
+		req.Lock.Start,
+		req.Lock.End,
+		req.Lock.Typ,
+		req.Lock.Pid,
+		req.Block,
+	)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+	return &pb.Empty{}, nil
+}
+
+// SetLkw implements FUSE setlkw (blocking)
+func (s *FileSystemServer) SetLkw(ctx context.Context, req *pb.SetLkRequest) (*pb.Empty, error) {
+	if req != nil {
+		req.Block = true
+	}
+	return s.SetLk(ctx, req)
+}
+
+// Flock implements FUSE flock
+func (s *FileSystemServer) Flock(ctx context.Context, req *pb.FlockRequest) (*pb.Empty, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.VFS.Flock(
+		vfsCtx,
+		mapInode(volCtx, req.Inode),
+		req.HandleId,
+		req.Owner,
+		req.Typ,
+		req.Block,
+	)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+	return &pb.Empty{}, nil
+}
+
+// Ioctl implements FUSE ioctl
+func (s *FileSystemServer) Ioctl(ctx context.Context, req *pb.IoctlRequest) (*pb.IoctlResponse, error) {
+	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+
+	bufOut := make([]byte, req.DataOutSize)
+	vfsCtx := vfs.NewLogContext(meta.Background())
+	st := volCtx.VFS.Ioctl(vfsCtx, mapInode(volCtx, req.Inode), req.Cmd, req.Arg, req.DataIn, bufOut)
+	if st != 0 {
+		return nil, status.Error(mapErrnoToCode(syscall.Errno(st)), syscall.Errno(st).Error())
+	}
+
+	return &pb.IoctlResponse{
+		DataOut: bufOut,
+	}, nil
+}
+
 // GetXattr gets an extended attribute
 func (s *FileSystemServer) GetXattr(ctx context.Context, req *pb.GetXattrRequest) (*pb.GetXattrResponse, error) {
 	volCtx, err := s.volMgr.GetVolume(req.VolumeId)
@@ -829,7 +1042,7 @@ func (s *FileSystemServer) GetXattr(ctx context.Context, req *pb.GetXattrRequest
 
 	// Call JuiceFS VFS GetXattr
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	value, st := volCtx.VFS.GetXattr(vfsCtx, inode, req.Name, req.Size)
 	if st != 0 {
 		// ENODATA/ENOATTR is not an error, just means attribute doesn't exist
@@ -859,7 +1072,7 @@ func (s *FileSystemServer) SetXattr(ctx context.Context, req *pb.SetXattrRequest
 
 	// Call JuiceFS VFS SetXattr
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	st := volCtx.VFS.SetXattr(vfsCtx, inode, req.Name, req.Value, req.Flags)
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
@@ -872,7 +1085,7 @@ func (s *FileSystemServer) SetXattr(ctx context.Context, req *pb.SetXattrRequest
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	path := resolveInodePath(volCtx, req.Inode)
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.Inode)))
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CHMOD
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -896,7 +1109,7 @@ func (s *FileSystemServer) ListXattr(ctx context.Context, req *pb.ListXattrReque
 
 	// Call JuiceFS VFS ListXattr
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	data, st := volCtx.VFS.ListXattr(vfsCtx, inode, int(req.Size))
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
@@ -921,7 +1134,7 @@ func (s *FileSystemServer) RemoveXattr(ctx context.Context, req *pb.RemoveXattrR
 
 	// Call JuiceFS VFS RemoveXattr
 	vfsCtx := vfs.NewLogContext(meta.Background())
-	inode := meta.Ino(req.Inode)
+	inode := mapInode(volCtx, req.Inode)
 	st := volCtx.VFS.RemoveXattr(vfsCtx, inode, req.Name)
 	if st != 0 {
 		s.logger.WithFields(logrus.Fields{
@@ -933,7 +1146,7 @@ func (s *FileSystemServer) RemoveXattr(ctx context.Context, req *pb.RemoveXattrR
 		return nil, status.Error(codes.Internal, syscall.Errno(st).Error())
 	}
 
-	path := resolveInodePath(volCtx, req.Inode)
+	path := resolveInodePath(volCtx, uint64(mapInode(volCtx, req.Inode)))
 	eventType := pb.WatchEventType_WATCH_EVENT_TYPE_CHMOD
 	if path == "" {
 		eventType = pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE
@@ -956,7 +1169,7 @@ func resolveInodePath(volCtx *volume.VolumeContext, inode uint64) string {
 	if len(paths) == 0 {
 		return ""
 	}
-	return paths[0]
+	return trimVolumeRoot(volCtx, paths[0])
 }
 
 func resolveChildPath(volCtx *volume.VolumeContext, parent uint64, name string) string {
@@ -967,24 +1180,64 @@ func resolveChildPath(volCtx *volume.VolumeContext, parent uint64, name string) 
 	if len(parentPaths) == 0 {
 		return ""
 	}
-	parentPath := parentPaths[0]
+	parentPath := trimVolumeRoot(volCtx, parentPaths[0])
 	if parentPath == "/" {
 		return "/" + name
 	}
 	return parentPath + "/" + name
 }
 
+func trimVolumeRoot(volCtx *volume.VolumeContext, path string) string {
+	if volCtx == nil || volCtx.RootPath == "" {
+		return path
+	}
+	if path == volCtx.RootPath {
+		return "/"
+	}
+	if strings.HasPrefix(path, volCtx.RootPath+"/") {
+		return strings.TrimPrefix(path, volCtx.RootPath)
+	}
+	return path
+}
+
+func volumeRootInode(volCtx *volume.VolumeContext) meta.Ino {
+	if volCtx == nil || volCtx.RootInode == 0 {
+		return meta.RootInode
+	}
+	return volCtx.RootInode
+}
+
+func mapInode(volCtx *volume.VolumeContext, inode uint64) meta.Ino {
+	if inode == uint64(meta.RootInode) {
+		return volumeRootInode(volCtx)
+	}
+	return meta.Ino(inode)
+}
+
 // Helper: convert meta.Attr to protobuf GetAttrResponse
-func convertAttr(attr *meta.Attr) *pb.GetAttrResponse {
+func convertAttr(inode meta.Ino, attr *meta.Attr) *pb.GetAttrResponse {
+	if attr == nil {
+		return &pb.GetAttrResponse{
+			Ino: uint64(inode),
+		}
+	}
+
+	size := uint64(0)
+	blocks := uint64(0)
+	if attr.Typ == meta.TypeFile || attr.Typ == meta.TypeDirectory || attr.Typ == meta.TypeSymlink {
+		size = attr.Length
+		blocks = (size + 511) / 512
+	}
+
 	return &pb.GetAttrResponse{
-		Ino:       uint64(meta.RootInode), // Would need proper inode tracking
-		Mode:      uint32(attr.Mode),
+		Ino:       uint64(inode),
+		Mode:      attr.SMode(),
 		Nlink:     attr.Nlink,
 		Uid:       attr.Uid,
 		Gid:       attr.Gid,
 		Rdev:      uint64(attr.Rdev),
-		Size:      attr.Length,
-		Blocks:    0,
+		Size:      size,
+		Blocks:    blocks,
 		AtimeSec:  attr.Atime,
 		AtimeNsec: int64(attr.Atimensec),
 		MtimeSec:  attr.Mtime,

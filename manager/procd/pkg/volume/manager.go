@@ -2,514 +2,464 @@ package volume
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/sandbox0-ai/infra/manager/procd/pkg/file"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	pb "github.com/sandbox0-ai/infra/storage-proxy/proto/fs"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
-// TokenProvider provides internal token for gRPC authentication.
-type TokenProvider interface {
-	GetInternalToken() string
+type mountInfo struct {
+	volumeID    string
+	mountPoint  string
+	mountedAt   time.Time
+	fuseServer  *fuse.Server
+	fs          *grpcFS
+	cancelWatch context.CancelFunc
+	watchDone   chan struct{}
 }
 
-// Manager manages SandboxVolume mounts.
+// Manager manages sandbox volume mounts in a sandbox.
 type Manager struct {
-	mu             sync.RWMutex
-	mounts         map[string]*MountContext
-	mountsInFlight map[string]struct{}
-
-	config        *Config
-	logger        *zap.Logger
+	cfg           *Config
 	tokenProvider TokenProvider
-	eventSink     EventSink
+	logger        *zap.Logger
+
+	mu          sync.RWMutex
+	mounts      map[string]*mountInfo
+	mountPoints map[string]string
+	mounting    map[string]struct{}
+
+	eventSink EventSink
+
+	conn   *grpc.ClientConn
+	client pb.FileSystemClient
 }
 
-// NewManager creates a new SandboxVolume manager.
-func NewManager(config *Config, tokenProvider TokenProvider, logger *zap.Logger) *Manager {
+// NewManager creates a new volume manager.
+func NewManager(cfg *Config, tokenProvider TokenProvider, logger *zap.Logger) *Manager {
 	return &Manager{
-		mounts:         make(map[string]*MountContext),
-		mountsInFlight: make(map[string]struct{}),
-		config:         config,
-		tokenProvider:  tokenProvider,
-		logger:         logger,
+		cfg:           cfg,
+		tokenProvider: tokenProvider,
+		logger:        logger,
+		mounts:        make(map[string]*mountInfo),
+		mountPoints:   make(map[string]string),
+		mounting:      make(map[string]struct{}),
 	}
 }
 
-// EventSink receives translated watch events for mounted volumes.
-type EventSink interface {
-	Emit(event file.WatchEvent)
-}
-
-// SetEventSink sets the event sink for watch events.
+// SetEventSink sets the sink for volume watch events.
 func (m *Manager) SetEventSink(sink EventSink) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.eventSink = sink
 }
 
-func validateMountPoint(mountPoint string) (string, error) {
-	if mountPoint == "" {
-		return "", ErrInvalidMountPoint
-	}
-
-	clean := filepath.Clean(mountPoint)
-	if !filepath.IsAbs(clean) {
-		return "", ErrInvalidMountPoint
-	}
-	if clean == "/" {
-		return "", ErrInvalidMountPoint
-	}
-
-	return clean, nil
-}
-
-// Mount mounts a SandboxVolume.
+// Mount mounts a sandbox volume at the specified mount point.
 func (m *Manager) Mount(ctx context.Context, req *MountRequest) (*MountResponse, error) {
-	mountPoint, err := validateMountPoint(req.MountPoint)
-	if err != nil {
+	if req == nil {
+		return nil, fmt.Errorf("missing request")
+	}
+	if err := m.validateMountPoint(req.MountPoint); err != nil {
+		return nil, err
+	}
+	mountPoint := filepath.Clean(req.MountPoint)
+
+	if err := m.ensureMountPoint(mountPoint); err != nil {
 		return nil, err
 	}
 
 	m.mu.Lock()
-	// Check if already mounted or mounting
-	if _, exists := m.mounts[req.SandboxVolumeID]; exists {
+	if _, ok := m.mounts[req.SandboxVolumeID]; ok {
 		m.mu.Unlock()
 		return nil, ErrVolumeAlreadyMounted
 	}
-	if _, inFlight := m.mountsInFlight[req.SandboxVolumeID]; inFlight {
+	if _, ok := m.mounting[req.SandboxVolumeID]; ok {
 		m.mu.Unlock()
 		return nil, ErrVolumeMountInProgress
 	}
-	for _, mountCtx := range m.mounts {
-		if mountCtx.MountPoint == mountPoint {
-			m.mu.Unlock()
-			return nil, ErrMountPointInUse
-		}
-	}
-	m.mountsInFlight[req.SandboxVolumeID] = struct{}{}
-	m.mu.Unlock()
-
-	inFlight := true
-	defer func() {
-		if inFlight {
-			m.mu.Lock()
-			delete(m.mountsInFlight, req.SandboxVolumeID)
-			m.mu.Unlock()
-		}
-	}()
-
-	// Ensure mount point directory exists and is a directory
-	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return nil, fmt.Errorf("create mount point: %w", err)
-	}
-	if info, err := os.Stat(mountPoint); err != nil || !info.IsDir() {
-		if err != nil {
-			return nil, fmt.Errorf("stat mount point: %w", err)
-		}
-		return nil, ErrInvalidMountPoint
-	}
-
-	// Get preferred Storage Proxy address using node affinity
-	proxyAddr := m.getStorageProxyAddress()
-
-	m.logger.Info("Creating gRPC connection to Storage Proxy",
-		zap.String("sandboxvolume_id", req.SandboxVolumeID),
-		zap.String("proxy_address", proxyAddr),
-	)
-
-	// Create gRPC connection to storage-proxy
-	conn, err := m.createGRPCConnection(ctx, proxyAddr)
-	if err != nil {
-		return nil, fmt.Errorf("create grpc connection: %w", err)
-	}
-
-	// Create FileSystem client
-	client := pb.NewFileSystemClient(conn)
-
-	// Call storage-proxy to mount the volume in JuiceFS
-	// This initializes the JuiceFS mount on the storage-proxy side
-	volumeConfig := req.VolumeConfig
-	if volumeConfig == nil {
-		// Use default config from manager if not provided
-		volumeConfig = &VolumeConfig{
-			CacheSize:  m.config.JuiceFSCacheSize,
-			Prefetch:   int32(m.config.JuiceFSPrefetch),
-			BufferSize: m.config.JuiceFSBufferSize,
-			Writeback:  m.config.JuiceFSWriteback,
-			ReadOnly:   false,
-		}
-	}
-
-	mountReq := &pb.MountVolumeRequest{
-		VolumeId: req.SandboxVolumeID,
-		Config: &pb.VolumeConfig{
-			CacheSize:  volumeConfig.CacheSize,
-			Prefetch:   volumeConfig.Prefetch,
-			BufferSize: volumeConfig.BufferSize,
-			Writeback:  volumeConfig.Writeback,
-			ReadOnly:   volumeConfig.ReadOnly,
-		},
-	}
-
-	mountResp, err := client.MountVolume(ctx, mountReq)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("call storage-proxy MountVolume: %w", err)
-	}
-
-	m.logger.Info("Storage Proxy mounted volume",
-		zap.String("sandboxvolume_id", req.SandboxVolumeID),
-		zap.Int64("mounted_at", mountResp.MountedAt),
-	)
-
-	// Cleanup any stale FUSE mounts
-	if err := CleanupStaleMounts(mountPoint, m.logger); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("cleanup stale mounts: %w", err)
-	}
-
-	// Create RemoteFS and mount FUSE
-	remoteFS := NewRemoteFS(client, req.SandboxVolumeID, m.logger)
-	fuseServer, err := MountFUSE(mountPoint, remoteFS, m.logger)
-	if err != nil {
-		// Cleanup: unmount from storage-proxy and close connection
-		unmountReq := &pb.UnmountVolumeRequest{VolumeId: req.SandboxVolumeID}
-		_, _ = client.UnmountVolume(ctx, unmountReq)
-		conn.Close()
-		return nil, fmt.Errorf("mount fuse: %w", err)
-	}
-
-	// Start FUSE server in background
-	go func() {
-		fuseServer.Wait()
-		m.logger.Info("FUSE server stopped",
-			zap.String("sandboxvolume_id", req.SandboxVolumeID),
-		)
-	}()
-
-	// Store mount context
-	mountCtx := &MountContext{
-		SandboxVolumeID: req.SandboxVolumeID,
-		MountPoint:      mountPoint,
-		SandboxID:       req.SandboxID,
-		GrpcConn:        conn,
-		GrpcClient:      client,
-		FuseServer:      fuseServer,
-		MountedAt:       time.Now(),
-	}
-	m.mu.Lock()
-	if _, exists := m.mounts[req.SandboxVolumeID]; exists {
+	if existing, ok := m.mountPoints[mountPoint]; ok && existing != req.SandboxVolumeID {
 		m.mu.Unlock()
-		_ = UnmountFUSE(fuseServer, mountPoint)
-		_, _ = client.UnmountVolume(ctx, &pb.UnmountVolumeRequest{VolumeId: req.SandboxVolumeID})
-		_ = conn.Close()
-		return nil, ErrVolumeAlreadyMounted
+		return nil, ErrMountPointInUse
 	}
-	m.mounts[req.SandboxVolumeID] = mountCtx
-	delete(m.mountsInFlight, req.SandboxVolumeID)
-	inFlight = false
+	m.mounting[req.SandboxVolumeID] = struct{}{}
 	m.mu.Unlock()
 
-	m.logger.Info("Mounted SandboxVolume with FUSE",
-		zap.String("sandboxvolume_id", req.SandboxVolumeID),
-		zap.String("mount_point", mountPoint),
-	)
+	defer func() {
+		m.mu.Lock()
+		delete(m.mounting, req.SandboxVolumeID)
+		m.mu.Unlock()
+	}()
 
-	m.startRemoteWatch(mountCtx)
+	client, err := m.getClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	volumeConfig := m.mergeVolumeConfig(req.VolumeConfig)
+	if err := m.mountVolumeRemote(ctx, client, req.SandboxVolumeID, volumeConfig); err != nil {
+		return nil, err
+	}
+
+	fs := newGrpcFS(req.SandboxVolumeID, client, m.tokenProvider, m.cfg.CacheTTL, m.logger)
+	server, err := m.mountFuse(fs, mountPoint)
+	if err != nil {
+		_ = m.unmountVolumeRemote(ctx, client, req.SandboxVolumeID)
+		return nil, err
+	}
+
+	info := &mountInfo{
+		volumeID:   req.SandboxVolumeID,
+		mountPoint: mountPoint,
+		mountedAt:  time.Now(),
+		fuseServer: server,
+		fs:         fs,
+		watchDone:  make(chan struct{}),
+	}
+	m.startWatch(info, req)
+
+	m.mu.Lock()
+	m.mounts[req.SandboxVolumeID] = info
+	m.mountPoints[mountPoint] = req.SandboxVolumeID
+	m.mu.Unlock()
 
 	return &MountResponse{
 		SandboxVolumeID: req.SandboxVolumeID,
 		MountPoint:      mountPoint,
-		MountedAt:       time.Now().Format(time.RFC3339),
+		MountedAt:       info.mountedAt.Format(time.RFC3339),
 	}, nil
 }
 
-// Unmount unmounts a SandboxVolume.
-func (m *Manager) Unmount(ctx context.Context, sandboxvolumeID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// Unmount unmounts a sandbox volume.
+func (m *Manager) Unmount(ctx context.Context, volumeID string) error {
+	if volumeID == "" {
+		return fmt.Errorf("missing volume id")
+	}
 
-	mountCtx, exists := m.mounts[sandboxvolumeID]
-	if !exists {
+	m.mu.RLock()
+	info, ok := m.mounts[volumeID]
+	m.mu.RUnlock()
+	if !ok {
 		return ErrVolumeNotMounted
 	}
 
-	// Unmount FUSE first
-	if mountCtx.FuseServer != nil {
-		if err := UnmountFUSE(mountCtx.FuseServer, mountCtx.MountPoint); err != nil {
-			m.logger.Warn("Failed to unmount FUSE",
-				zap.String("sandboxvolume_id", sandboxvolumeID),
-				zap.Error(err),
-			)
+	if info.cancelWatch != nil {
+		info.cancelWatch()
+		<-info.watchDone
+	}
+
+	if info.fuseServer != nil {
+		if err := info.fuseServer.Unmount(); err != nil {
+			m.logger.Warn("Failed to unmount fuse server", zap.Error(err))
 		}
 	}
 
-	// Call storage-proxy to unmount the volume
-	if mountCtx.GrpcClient != nil {
-		unmountReq := &pb.UnmountVolumeRequest{
-			VolumeId: sandboxvolumeID,
-		}
-
-		_, err := mountCtx.GrpcClient.UnmountVolume(ctx, unmountReq)
-		if err != nil {
-			m.logger.Warn("Failed to unmount volume on storage-proxy",
-				zap.String("sandboxvolume_id", sandboxvolumeID),
-				zap.Error(err),
-			)
-			// Continue with cleanup even if storage-proxy unmount fails
-		} else {
-			m.logger.Info("Storage Proxy unmounted volume",
-				zap.String("sandboxvolume_id", sandboxvolumeID),
-			)
-		}
+	client, err := m.getClient(ctx)
+	if err != nil {
+		return err
+	}
+	if err := m.unmountVolumeRemote(ctx, client, volumeID); err != nil {
+		return err
 	}
 
-	if mountCtx.WatchCancel != nil {
-		mountCtx.WatchCancel()
-	}
-
-	// Close gRPC connection
-	if mountCtx.GrpcConn != nil {
-		if err := mountCtx.GrpcConn.Close(); err != nil {
-			m.logger.Warn("Failed to close gRPC connection",
-				zap.String("sandboxvolume_id", sandboxvolumeID),
-				zap.Error(err),
-			)
-		}
-	}
-
-	delete(m.mounts, sandboxvolumeID)
-
-	m.logger.Info("Unmounted SandboxVolume",
-		zap.String("sandboxvolume_id", sandboxvolumeID),
-	)
+	m.mu.Lock()
+	delete(m.mounts, volumeID)
+	delete(m.mountPoints, info.mountPoint)
+	m.mu.Unlock()
 
 	return nil
 }
 
-// GetStatus returns the status of all mounts.
+// GetStatus returns mount statuses.
 func (m *Manager) GetStatus() []MountStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var result []MountStatus
-	for _, mountCtx := range m.mounts {
-		result = append(result, MountStatus{
-			SandboxVolumeID:    mountCtx.SandboxVolumeID,
-			MountPoint:         mountCtx.MountPoint,
-			MountedAt:          mountCtx.MountedAt.Format(time.RFC3339),
-			MountedDurationSec: int64(time.Since(mountCtx.MountedAt).Seconds()),
+	status := make([]MountStatus, 0, len(m.mounts))
+	now := time.Now()
+	for _, info := range m.mounts {
+		status = append(status, MountStatus{
+			SandboxVolumeID:     info.volumeID,
+			MountPoint:          info.mountPoint,
+			MountedAt:           info.mountedAt.Format(time.RFC3339),
+			MountedDurationSecs: int64(now.Sub(info.mountedAt).Seconds()),
 		})
 	}
-
-	return result
-}
-
-// IsMounted checks if a volume is mounted.
-func (m *Manager) IsMounted(sandboxvolumeID string) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	_, exists := m.mounts[sandboxvolumeID]
-	return exists
-}
-
-func (m *Manager) getStorageProxyAddress() string {
-	if m.config.ProxyPort == 0 {
-		return m.config.ProxyBaseURL
-	}
-	return fmt.Sprintf("%s:%d", m.config.ProxyBaseURL, m.config.ProxyPort)
+	return status
 }
 
 // Cleanup unmounts all volumes.
 func (m *Manager) Cleanup() {
+	m.mu.RLock()
+	volumes := make([]string, 0, len(m.mounts))
+	for volumeID := range m.mounts {
+		volumes = append(volumes, volumeID)
+	}
+	m.mu.RUnlock()
+
+	for _, volumeID := range volumes {
+		if err := m.Unmount(context.Background(), volumeID); err != nil {
+			m.logger.Warn("Failed to unmount volume during cleanup",
+				zap.String("volume_id", volumeID),
+				zap.Error(err),
+			)
+		}
+	}
+}
+
+func (m *Manager) validateMountPoint(path string) error {
+	if path == "" {
+		return ErrInvalidMountPoint
+	}
+	clean := filepath.Clean(path)
+	if !filepath.IsAbs(clean) || clean == string(filepath.Separator) {
+		return ErrInvalidMountPoint
+	}
+	if strings.Contains(clean, "..") {
+		return ErrInvalidMountPoint
+	}
+	return nil
+}
+
+func (m *Manager) ensureMountPoint(path string) error {
+	info, err := os.Stat(path)
+	if err == nil {
+		if !info.IsDir() {
+			return ErrInvalidMountPoint
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("stat mount point: %w", err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return fmt.Errorf("create mount point: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) getClient(ctx context.Context) (pb.FileSystemClient, error) {
+	m.mu.RLock()
+	if m.client != nil {
+		client := m.client
+		m.mu.RUnlock()
+		return client, nil
+	}
+	m.mu.RUnlock()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	ctx := context.Background()
-
-	for id, mountCtx := range m.mounts {
-		// Unmount FUSE first
-		if mountCtx.FuseServer != nil {
-			_ = UnmountFUSE(mountCtx.FuseServer, mountCtx.MountPoint)
-		}
-
-		// Call storage-proxy to unmount
-		if mountCtx.GrpcClient != nil {
-			unmountReq := &pb.UnmountVolumeRequest{
-				VolumeId: id,
-			}
-			_, _ = mountCtx.GrpcClient.UnmountVolume(ctx, unmountReq)
-		}
-
-		// Close gRPC connection
-		if mountCtx.GrpcConn != nil {
-			_ = mountCtx.GrpcConn.Close()
-		}
-
-		if mountCtx.WatchCancel != nil {
-			mountCtx.WatchCancel()
-		}
-
-		delete(m.mounts, id)
-	}
-	for id := range m.mountsInFlight {
-		delete(m.mountsInFlight, id)
+	if m.client != nil {
+		return m.client, nil
 	}
 
-	m.logger.Info("All volumes unmounted")
-}
-
-// createGRPCConnection creates a gRPC connection with auth.
-func (m *Manager) createGRPCConnection(ctx context.Context, proxyAddr string) (*grpc.ClientConn, error) {
-	maxMsgSize := m.config.GRPCMaxMsgSize
-	if maxMsgSize == 0 {
-		maxMsgSize = 100 * 1024 * 1024 // 100MB default
+	if m.cfg == nil || strings.TrimSpace(m.cfg.ProxyBaseURL) == "" || m.cfg.ProxyPort <= 0 {
+		return nil, ErrStorageProxyUnavailable
 	}
 
-	conn, err := grpc.NewClient(proxyAddr,
+	addr := fmt.Sprintf("%s:%d", strings.TrimSpace(m.cfg.ProxyBaseURL), m.cfg.ProxyPort)
+	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		dialCtx,
+		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(maxMsgSize),
-			grpc.MaxCallSendMsgSize(maxMsgSize),
+			grpc.MaxCallRecvMsgSize(m.cfg.GRPCMaxMsgSize),
+			grpc.MaxCallSendMsgSize(m.cfg.GRPCMaxMsgSize),
 		),
-		grpc.WithUnaryInterceptor(m.authInterceptor()),
-		grpc.WithStreamInterceptor(m.streamAuthInterceptor()),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("grpc dial: %w", err)
+		return nil, fmt.Errorf("dial storage-proxy: %w", err)
 	}
 
-	return conn, nil
+	m.conn = conn
+	m.client = pb.NewFileSystemClient(conn)
+	return m.client, nil
 }
 
-func (m *Manager) startRemoteWatch(mountCtx *MountContext) {
-	m.mu.RLock()
-	sink := m.eventSink
-	m.mu.RUnlock()
-	if sink == nil || mountCtx == nil || mountCtx.GrpcClient == nil {
+func (m *Manager) withToken(ctx context.Context) (context.Context, error) {
+	if m.tokenProvider == nil {
+		return nil, ErrMissingInternalToken
+	}
+	token := strings.TrimSpace(m.tokenProvider.GetInternalToken())
+	if token == "" {
+		return nil, ErrMissingInternalToken
+	}
+	return metadata.AppendToOutgoingContext(ctx, "x-internal-token", token), nil
+}
+
+func (m *Manager) mergeVolumeConfig(override *VolumeConfig) *pb.VolumeConfig {
+	cacheSize := ""
+	prefetch := int32(0)
+	bufferSize := ""
+	writeback := false
+	readOnly := false
+
+	if m.cfg != nil {
+		cacheSize = m.cfg.JuiceFSCacheSize
+		prefetch = int32(m.cfg.JuiceFSPrefetch)
+		bufferSize = m.cfg.JuiceFSBufferSize
+		writeback = m.cfg.JuiceFSWriteback
+	}
+
+	if override != nil {
+		if override.CacheSize != "" {
+			cacheSize = override.CacheSize
+		}
+		if override.Prefetch != nil {
+			prefetch = *override.Prefetch
+		}
+		if override.BufferSize != "" {
+			bufferSize = override.BufferSize
+		}
+		if override.Writeback != nil {
+			writeback = *override.Writeback
+		}
+		if override.ReadOnly != nil {
+			readOnly = *override.ReadOnly
+		}
+	}
+
+	return &pb.VolumeConfig{
+		CacheSize:  cacheSize,
+		Prefetch:   prefetch,
+		BufferSize: bufferSize,
+		Writeback:  writeback,
+		ReadOnly:   readOnly,
+	}
+}
+
+func (m *Manager) mountVolumeRemote(ctx context.Context, client pb.FileSystemClient, volumeID string, cfg *pb.VolumeConfig) error {
+	callCtx, err := m.withToken(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = client.MountVolume(callCtx, &pb.MountVolumeRequest{
+		VolumeId: volumeID,
+		Config:   cfg,
+	})
+	if err != nil {
+		return fmt.Errorf("mount volume via storage-proxy: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) unmountVolumeRemote(ctx context.Context, client pb.FileSystemClient, volumeID string) error {
+	callCtx, err := m.withToken(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = client.UnmountVolume(callCtx, &pb.UnmountVolumeRequest{
+		VolumeId: volumeID,
+	})
+	if err != nil {
+		return fmt.Errorf("unmount volume via storage-proxy: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) mountFuse(fs *grpcFS, mountPoint string) (*fuse.Server, error) {
+	opt := &fuse.MountOptions{
+		FsName:        "sandbox0-volume",
+		Name:          "sandbox0-volume",
+		MaxBackground: 64,
+		EnableLocks:   true,
+		AllowOther:    os.Getuid() == 0,
+		DirectMount:   true,
+		MaxWrite:      128 * 1024,
+	}
+
+	server, err := fuse.NewServer(fs, mountPoint, opt)
+	if err != nil {
+		return nil, fmt.Errorf("mount fuse: %w", err)
+	}
+
+	go server.Serve()
+	if err := server.WaitMount(); err != nil {
+		_ = server.Unmount()
+		return nil, fmt.Errorf("wait for fuse mount: %w", err)
+	}
+	return server, nil
+}
+
+func (m *Manager) startWatch(info *mountInfo, req *MountRequest) {
+	client := info.fs.client
+	if client == nil {
+		close(info.watchDone)
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	mountCtx.WatchCancel = cancel
-
-	req := &pb.WatchRequest{
-		VolumeId:    mountCtx.SandboxVolumeID,
-		PathPrefix:  "/",
+	watchReq := &pb.WatchRequest{
+		VolumeId:    req.SandboxVolumeID,
+		PathPrefix:  "",
 		Recursive:   true,
-		IncludeSelf: true,
-		SandboxId:   mountCtx.SandboxID,
+		IncludeSelf: req.SandboxID == "",
+		SandboxId:   req.SandboxID,
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	info.cancelWatch = cancel
+
 	go func() {
-		stream, err := mountCtx.GrpcClient.WatchVolumeEvents(ctx, req)
+		defer close(info.watchDone)
+
+		callCtx, err := m.withToken(ctx)
 		if err != nil {
-			m.logger.Warn("Failed to start watch stream",
-				zap.String("sandboxvolume_id", mountCtx.SandboxVolumeID),
-				zap.Error(err),
-			)
+			m.logger.Warn("Missing storage-proxy token for watch", zap.Error(err))
+			return
+		}
+		stream, err := client.WatchVolumeEvents(callCtx, watchReq)
+		if err != nil {
+			m.logger.Warn("Failed to watch volume events", zap.Error(err))
 			return
 		}
 
 		for {
 			event, err := stream.Recv()
 			if err != nil {
-				if err == io.EOF || status.Code(err) == codes.Canceled || errors.Is(err, context.Canceled) {
-					return
-				}
-				m.logger.Warn("Watch stream error",
-					zap.String("sandboxvolume_id", mountCtx.SandboxVolumeID),
-					zap.Error(err),
-				)
 				return
 			}
-			sink.Emit(translateWatchEvent(mountCtx, event))
+			m.emitWatchEvent(info, event)
 		}
 	}()
 }
 
-func translateWatchEvent(mountCtx *MountContext, event *pb.WatchEvent) file.WatchEvent {
-	return file.WatchEvent{
-		Type:    mapWatchEventType(event.GetEventType()),
-		Path:    mapWatchEventPath(mountCtx.MountPoint, event.GetPath()),
-		OldPath: mapWatchEventPath(mountCtx.MountPoint, event.GetOldPath()),
+func (m *Manager) emitWatchEvent(info *mountInfo, event *pb.WatchEvent) {
+	if event == nil {
+		return
 	}
+
+	m.mu.RLock()
+	sink := m.eventSink
+	m.mu.RUnlock()
+	if sink == nil {
+		return
+	}
+
+	eventType := mapWatchEventType(event.EventType)
+	path := joinMountPath(info.mountPoint, event.Path)
+	oldPath := joinMountPath(info.mountPoint, event.OldPath)
+	if path == "" && oldPath == "" {
+		return
+	}
+
+	sink.Emit(fileWatchEvent(eventType, path, oldPath))
 }
 
-func mapWatchEventType(eventType pb.WatchEventType) file.EventType {
-	switch eventType {
-	case pb.WatchEventType_WATCH_EVENT_TYPE_CREATE:
-		return file.EventCreate
-	case pb.WatchEventType_WATCH_EVENT_TYPE_WRITE:
-		return file.EventWrite
-	case pb.WatchEventType_WATCH_EVENT_TYPE_REMOVE:
-		return file.EventRemove
-	case pb.WatchEventType_WATCH_EVENT_TYPE_RENAME:
-		return file.EventRename
-	case pb.WatchEventType_WATCH_EVENT_TYPE_CHMOD:
-		return file.EventChmod
-	case pb.WatchEventType_WATCH_EVENT_TYPE_INVALIDATE:
-		return file.EventInvalidate
-	default:
-		return file.EventInvalidate
+func joinMountPath(mountPoint, path string) string {
+	if path == "" {
+		return ""
 	}
-}
-
-func mapWatchEventPath(mountPoint, eventPath string) string {
-	if mountPoint == "" {
-		return eventPath
-	}
-	if eventPath == "" || eventPath == "/" {
-		return mountPoint
-	}
-	trimmed := strings.TrimPrefix(eventPath, "/")
+	trimmed := strings.TrimPrefix(path, "/")
 	return filepath.Join(mountPoint, trimmed)
-}
-
-// authInterceptor returns a unary interceptor that adds auth token to requests.
-func (m *Manager) authInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply any,
-		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		ctx = m.addAuthMetadata(ctx)
-		return invoker(ctx, method, req, reply, cc, opts...)
-	}
-}
-
-// streamAuthInterceptor returns a stream interceptor that adds auth token to requests.
-func (m *Manager) streamAuthInterceptor() grpc.StreamClientInterceptor {
-	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn,
-		method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		ctx = m.addAuthMetadata(ctx)
-		return streamer(ctx, desc, cc, method, opts...)
-	}
-}
-
-// addAuthMetadata adds authentication token to context metadata.
-func (m *Manager) addAuthMetadata(ctx context.Context) context.Context {
-	if m.tokenProvider == nil {
-		return ctx
-	}
-
-	token := m.tokenProvider.GetInternalToken()
-	if token == "" {
-		return ctx
-	}
-
-	md := metadata.Pairs("x-internal-token", token)
-	return metadata.NewOutgoingContext(ctx, md)
 }

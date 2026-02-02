@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/juicedata/juicefs/pkg/chunk"
@@ -14,6 +15,7 @@ import (
 	"github.com/juicedata/juicefs/pkg/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sirupsen/logrus"
 )
 
@@ -40,6 +42,8 @@ type VolumeContext struct {
 	VFS       *vfs.VFS
 	Config    *VolumeConfig
 	MountedAt time.Time
+	RootInode meta.Ino
+	RootPath  string
 }
 
 // Manager manages JuiceFS volumes
@@ -158,7 +162,17 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	}
 	vfsInst := vfs.NewVFS(vfsConf, metaClient, store, registry, registry)
 
-	// 5. Store volume context
+	// 5. Ensure per-volume root directory exists in JuiceFS namespace
+	rootPath, err := naming.JuiceFSVolumePath(volumeID)
+	if err != nil {
+		return fmt.Errorf("volume path: %w", err)
+	}
+	rootInode, err := ensureVolumeRoot(metaClient, rootPath)
+	if err != nil {
+		return fmt.Errorf("ensure volume root: %w", err)
+	}
+
+	// 6. Store volume context
 	m.volumes[volumeID] = &VolumeContext{
 		VolumeID:  volumeID,
 		Meta:      metaClient,
@@ -166,9 +180,11 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 		VFS:       vfsInst,
 		Config:    config,
 		MountedAt: time.Now(),
+		RootInode: rootInode,
+		RootPath:  rootPath,
 	}
 
-	// 6. Register mount for distributed coordination (if registrar is set)
+	// 7. Register mount for distributed coordination (if registrar is set)
 	if m.registrar != nil {
 		if err := m.registrar.RegisterMount(ctx, volumeID); err != nil {
 			m.logger.WithError(err).Warn("Failed to register mount for coordination")
@@ -183,6 +199,47 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID string, co
 	}).Info("Volume mounted successfully")
 
 	return nil
+}
+
+// Use meta client directly to create the internal root path.
+// This avoids FUSE/VFS semantics (handles/permissions) and keeps it
+// consistent with snapshot operations which also use meta clients.
+func ensureVolumeRoot(metaClient meta.Meta, path string) (meta.Ino, error) {
+	if metaClient == nil {
+		return 0, fmt.Errorf("meta client is nil")
+	}
+
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return meta.RootInode, nil
+	}
+
+	parts := strings.Split(trimmed, "/")
+	current := meta.RootInode
+	var attr meta.Attr
+	jfsCtx := meta.Background()
+
+	for _, part := range parts {
+		var next meta.Ino
+		errno := metaClient.Lookup(jfsCtx, current, part, &next, &attr, false)
+		if errno == syscall.ENOENT {
+			errno = metaClient.Mkdir(jfsCtx, current, part, 0o755, 0, 0, &next, &attr)
+			if errno != 0 && errno != syscall.EEXIST {
+				return 0, fmt.Errorf("mkdir %s: %s", part, errno.Error())
+			}
+			if errno == syscall.EEXIST {
+				errno = metaClient.Lookup(jfsCtx, current, part, &next, &attr, false)
+				if errno != 0 {
+					return 0, fmt.Errorf("lookup after mkdir %s: %s", part, errno.Error())
+				}
+			}
+		} else if errno != 0 {
+			return 0, fmt.Errorf("lookup %s: %s", part, errno.Error())
+		}
+		current = next
+	}
+
+	return current, nil
 }
 
 // UnmountVolume unmounts a volume
