@@ -103,7 +103,7 @@ func (r *Reconciler) ReconcileNetdRBAC(ctx context.Context, infra *infrav1alpha1
 	rules := []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{""},
-			Resources: []string{"pods", "pods/status", "nodes"},
+			Resources: []string{"pods", "pods/status", "nodes", "services", "endpoints"},
 			Verbs:     []string{"get", "list", "watch", "patch"},
 		},
 	}

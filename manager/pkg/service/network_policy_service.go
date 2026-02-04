@@ -52,7 +52,6 @@ func (s *NetworkPolicyService) BuildNetworkPolicySpec(req *BuildNetworkPolicyReq
 		TeamID:    req.TeamID,
 		Mode:      mergedSpec.Mode,
 		Egress:    v1alpha1.BuildEgressSpec(mergedSpec),
-		Ingress:   v1alpha1.BuildIngressSpec(mergedSpec),
 	}
 }
 
@@ -150,16 +149,6 @@ func (s *NetworkPolicyService) mergeNetworkPolicies(
 			merged.Egress.DeniedDomains = append(merged.Egress.DeniedDomains, request.Egress.DeniedDomains...)
 			merged.Egress.AllowedPorts = append(merged.Egress.AllowedPorts, request.Egress.AllowedPorts...)
 			merged.Egress.DeniedPorts = append(merged.Egress.DeniedPorts, request.Egress.DeniedPorts...)
-		}
-	}
-
-	// Merge ingress
-	if request.Ingress != nil {
-		if merged.Ingress == nil {
-			merged.Ingress = request.Ingress
-		} else {
-			merged.Ingress.AllowedCIDRs = append(merged.Ingress.AllowedCIDRs, request.Ingress.AllowedCIDRs...)
-			merged.Ingress.DeniedCIDRs = append(merged.Ingress.DeniedCIDRs, request.Ingress.DeniedCIDRs...)
 		}
 	}
 

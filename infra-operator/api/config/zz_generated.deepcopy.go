@@ -226,15 +226,27 @@ func (in *NetdConfig) DeepCopyInto(out *NetdConfig) {
 		*out = new(bool)
 		**out = **in
 	}
-	out.ProxyUpstreamTimeout = in.ProxyUpstreamTimeout
-	out.ProxyDNSTimeout = in.ProxyDNSTimeout
-	out.ProxyResponseHeaderTimeout = in.ProxyResponseHeaderTimeout
-	out.ProxyIdleConnTimeout = in.ProxyIdleConnTimeout
-	if in.DNSResolvers != nil {
-		in, out := &in.DNSResolvers, &out.DNSResolvers
+	if in.PlatformAllowedCIDRs != nil {
+		in, out := &in.PlatformAllowedCIDRs, &out.PlatformAllowedCIDRs
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.PlatformDeniedCIDRs != nil {
+		in, out := &in.PlatformDeniedCIDRs, &out.PlatformDeniedCIDRs
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.PlatformAllowedDomains != nil {
+		in, out := &in.PlatformAllowedDomains, &out.PlatformAllowedDomains
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.PlatformDeniedDomains != nil {
+		in, out := &in.PlatformDeniedDomains, &out.PlatformDeniedDomains
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	out.ProxyUpstreamTimeout = in.ProxyUpstreamTimeout
 	out.EDTHorizon = in.EDTHorizon
 	out.MetricsReportInterval = in.MetricsReportInterval
 	out.ShutdownDelay = in.ShutdownDelay

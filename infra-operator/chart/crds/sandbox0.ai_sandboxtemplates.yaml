@@ -200,18 +200,6 @@ spec:
                           type: object
                         type: array
                     type: object
-                  ingress:
-                    description: NetworkIngressPolicy defines ingress policy
-                    properties:
-                      allowedCidrs:
-                        items:
-                          type: string
-                        type: array
-                      deniedCidrs:
-                        items:
-                          type: string
-                        type: array
-                    type: object
                   mode:
                     description: NetworkPolicyMode defines network policy mode
                     type: string

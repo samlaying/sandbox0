@@ -4,6 +4,7 @@
 # Ignore subproject bin dirs but allow top-level bin for Dockerfile.local
 **/bin/*
 !bin/
+!bin/**
 tests/
 Makefile
 Dockerfile

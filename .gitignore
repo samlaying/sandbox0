@@ -35,7 +35,6 @@ vendor/
 logs/
 
 # Cache
-cache/
 tmp/
 .cache
 
@@ -47,8 +46,5 @@ tmp/
 .env.local
 secrets/
 
-helm/charts/edge-gateway
-helm/charts/internal-gateway
-helm/charts/manager
-helm/charts/storage-proxy
-helm/charts/scheduler
+# tools
+fswatch-sh.sh

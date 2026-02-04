@@ -330,15 +330,3 @@ func BuildEgressSpec(policy *TplSandboxNetworkPolicy) *NetworkEgressPolicy {
 		DeniedPorts:    policy.Egress.DeniedPorts,
 	}
 }
-
-// BuildIngressSpec builds NetworkIngressPolicy from SandboxNetworkPolicy
-func BuildIngressSpec(policy *TplSandboxNetworkPolicy) *NetworkIngressPolicy {
-	if policy == nil || policy.Ingress == nil {
-		return nil
-	}
-
-	return &NetworkIngressPolicy{
-		AllowedCIDRs: policy.Ingress.AllowedCIDRs,
-		DeniedCIDRs:  policy.Ingress.DeniedCIDRs,
-	}
-}

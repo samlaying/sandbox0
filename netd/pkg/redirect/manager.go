@@ -1,0 +1,263 @@
+//go:build linux
+
+package redirect
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+
+	"github.com/coreos/go-iptables/iptables"
+	"github.com/vishvananda/netlink"
+	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
+)
+
+const (
+	chainName       = "NETD_PREROUTING"
+	tproxyMark      = "0x1/0x1"
+	ruleTableID     = 100
+	defaultLoopback = "127.0.0.0/8"
+)
+
+type iptablesManager struct {
+	cfg    Config
+	logger *zap.Logger
+	ipt    *iptables.IPTables
+}
+
+func NewManager(cfg Config, logger *zap.Logger) Manager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
+	if err != nil {
+		logger.Error("Failed to initialize iptables", zap.Error(err))
+	}
+	return &iptablesManager{
+		cfg:    cfg,
+		logger: logger,
+		ipt:    ipt,
+	}
+}
+
+func (m *iptablesManager) Sync(ctx context.Context, sandboxIPs []string, bypassCIDRs []string) error {
+	if m.cfg.ProxyHTTPPort == 0 || m.cfg.ProxyHTTPSPort == 0 {
+		return fmt.Errorf("proxy ports are not configured")
+	}
+	if m.ipt == nil {
+		return fmt.Errorf("iptables is not initialized")
+	}
+	m.logger.Info(
+		"Iptables sync start",
+		zap.Int("sandbox_ips", len(sandboxIPs)),
+		zap.Int("bypass_cidrs", len(bypassCIDRs)),
+	)
+	if err := m.ensurePolicyRouting(ctx); err != nil {
+		return err
+	}
+	if err := m.ensureChain(ctx); err != nil {
+		return err
+	}
+	if err := m.ensureJump(ctx); err != nil {
+		return err
+	}
+	if err := m.flushChain(ctx); err != nil {
+		return err
+	}
+
+	bypass := append([]string{defaultLoopback}, bypassCIDRs...)
+	for _, cidr := range normalizeCIDRs(bypass) {
+		if err := m.appendRule(ctx, "-d", cidr, "-j", "RETURN"); err != nil {
+			return err
+		}
+	}
+
+	for _, ip := range normalizeIPs(sandboxIPs) {
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "443", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "853", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "443", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "853", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+	}
+
+	m.logger.Info("Iptables sync complete")
+	return nil
+}
+
+func (m *iptablesManager) Cleanup(ctx context.Context) error {
+	if err := m.flushChain(ctx); err != nil {
+		return err
+	}
+	_ = m.ipt.DeleteIfExists("mangle", "PREROUTING", "-j", chainName)
+	_ = m.ipt.DeleteChain("mangle", chainName)
+	return nil
+}
+
+func (m *iptablesManager) ensurePolicyRouting(ctx context.Context) error {
+	_ = ctx
+	rules, err := netlink.RuleList(netlink.FAMILY_V4)
+	if err != nil {
+		return err
+	}
+	if !ruleExists(rules, uint32(1), uint32(1), ruleTableID) {
+		rule := netlink.NewRule()
+		rule.Mark = 1
+		mask := uint32(1)
+		rule.Mask = &mask
+		rule.Table = ruleTableID
+		if err := netlink.RuleAdd(rule); err != nil && !isExist(err) {
+			return err
+		}
+	}
+
+	filter := &netlink.Route{Table: ruleTableID}
+	routes, err := netlink.RouteListFiltered(netlink.FAMILY_V4, filter, netlink.RT_FILTER_TABLE)
+	if err != nil {
+		return err
+	}
+	if !localRouteExists(routes) {
+		_, dst, err := net.ParseCIDR("0.0.0.0/0")
+		if err != nil {
+			return err
+		}
+		lo, err := netlink.LinkByName("lo")
+		if err != nil {
+			return err
+		}
+		route := netlink.Route{
+			LinkIndex: lo.Attrs().Index,
+			Dst:       dst,
+			Table:     ruleTableID,
+			Scope:     netlink.SCOPE_HOST,
+			Type:      unix.RTN_LOCAL,
+		}
+		if err := netlink.RouteAdd(&route); err != nil && !isExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *iptablesManager) ensureChain(ctx context.Context) error {
+	_ = ctx
+	exists, err := m.ipt.ChainExists("mangle", chainName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return m.ipt.NewChain("mangle", chainName)
+}
+
+func (m *iptablesManager) ensureJump(ctx context.Context) error {
+	_ = ctx
+	exists, err := m.ipt.Exists("mangle", "PREROUTING", "-j", chainName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return m.ipt.Append("mangle", "PREROUTING", "-j", chainName)
+}
+
+func (m *iptablesManager) flushChain(ctx context.Context) error {
+	_ = ctx
+	return m.ipt.ClearChain("mangle", chainName)
+}
+
+func (m *iptablesManager) appendRule(ctx context.Context, args ...string) error {
+	_ = ctx
+	return m.ipt.Append("mangle", chainName, args...)
+}
+
+func normalizeIPs(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func normalizeCIDRs(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func ruleExists(rules []netlink.Rule, mark, mask uint32, table int) bool {
+	for _, rule := range rules {
+		if rule.Table != table || rule.Mark != mark {
+			continue
+		}
+		if rule.Mask == nil {
+			continue
+		}
+		if *rule.Mask == mask {
+			return true
+		}
+	}
+	return false
+}
+
+func localRouteExists(routes []netlink.Route) bool {
+	for _, route := range routes {
+		if route.Dst == nil {
+			continue
+		}
+		if route.Dst.String() == "0.0.0.0/0" && route.Type == unix.RTN_LOCAL {
+			return true
+		}
+	}
+	return false
+}
+
+func isExist(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "exists")
+}

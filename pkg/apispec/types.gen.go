@@ -632,12 +632,6 @@ type NetworkEgressPolicy struct {
 	DeniedPorts    *[]PortSpec `json:"deniedPorts,omitempty"`
 }
 
-// NetworkIngressPolicy defines model for NetworkIngressPolicy.
-type NetworkIngressPolicy struct {
-	AllowedCidrs *[]string `json:"allowedCidrs,omitempty"`
-	DeniedCidrs  *[]string `json:"deniedCidrs,omitempty"`
-}
-
 // NodeAffinity defines model for NodeAffinity.
 type NodeAffinity struct {
 	PreferredDuringSchedulingIgnoredDuringExecution *[]PreferredSchedulingTerm `json:"preferredDuringSchedulingIgnoredDuringExecution,omitempty"`
@@ -1432,9 +1426,8 @@ type Toleration struct {
 
 // TplSandboxNetworkPolicy defines model for TplSandboxNetworkPolicy.
 type TplSandboxNetworkPolicy struct {
-	Egress  *NetworkEgressPolicy        `json:"egress,omitempty"`
-	Ingress *NetworkIngressPolicy       `json:"ingress,omitempty"`
-	Mode    TplSandboxNetworkPolicyMode `json:"mode"`
+	Egress *NetworkEgressPolicy        `json:"egress,omitempty"`
+	Mode   TplSandboxNetworkPolicyMode `json:"mode"`
 }
 
 // TplSandboxNetworkPolicyMode defines model for TplSandboxNetworkPolicy.Mode.

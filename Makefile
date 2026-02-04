@@ -11,6 +11,8 @@ CONTROLLER_TOOLS_VERSION ?= v0.20.0
 OAPI_CODEGEN ?= $(LOCALBIN)/oapi-codegen
 OAPI_CODEGEN_VERSION ?= v2.4.1
 
+PROTOC ?= protoc
+
 SERVICES := edge-gateway internal-gateway manager scheduler storage-proxy k8s-plugin procd netd infra-operator
 
 # Default version
@@ -187,10 +189,10 @@ app-configs:
 	@printf "$(CYAN)Generating default Helm configs...$(RESET)\n"
 	@CONFIG_PATH=/dev/null go run ./tools/configdump
 
-proto:
+proto: protoc
 	@printf "$(CYAN)Generating storage-proxy protobufs...$(RESET)\n"
 	@mkdir -p storage-proxy/proto/fs
-	@protoc --go_out=. --go_opt=paths=source_relative \
+	@PATH="$(LOCALBIN):$(PATH)" $(PROTOC) --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		storage-proxy/proto/filesystem.proto
 	@mv storage-proxy/proto/*.pb.go storage-proxy/proto/fs/
@@ -210,6 +212,35 @@ controller-gen: $(CONTROLLER_GEN)
 $(CONTROLLER_GEN): $(LOCALBIN)
 	@test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+
+.PHONY: protoc install-protoc
+protoc:
+	@command -v $(PROTOC) >/dev/null 2>&1 || $(MAKE) install-protoc
+	@if ! PATH="$(LOCALBIN):$(PATH)" command -v protoc-gen-go >/dev/null 2>&1; then \
+		GOBIN=$(LOCALBIN) go install google.golang.org/protobuf/cmd/protoc-gen-go@latest; \
+	fi
+	@if ! PATH="$(LOCALBIN):$(PATH)" command -v protoc-gen-go-grpc >/dev/null 2>&1; then \
+		GOBIN=$(LOCALBIN) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest; \
+	fi
+
+install-protoc: $(LOCALBIN)
+	@printf "$(CYAN)Installing protoc...$(RESET)\n"
+	@set -e; \
+	if command -v apt-get >/dev/null 2>&1; then \
+		apt-get update -y >/dev/null; \
+		apt-get install -y protobuf-compiler; \
+	elif command -v yum >/dev/null 2>&1; then \
+		yum install -y protobuf-compiler; \
+	elif command -v dnf >/dev/null 2>&1; then \
+		dnf install -y protobuf-compiler; \
+	elif command -v apk >/dev/null 2>&1; then \
+		apk add --no-cache protobuf; \
+	elif command -v brew >/dev/null 2>&1; then \
+		brew install protobuf; \
+	else \
+		echo "Error: protoc not found and no supported package manager detected."; \
+		exit 1; \
+	fi
 
 manifests: controller-gen
 	@printf "$(CYAN)Generating manager CRDs...$(RESET)\n"

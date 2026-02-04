@@ -1225,12 +1225,22 @@ spec:
                           burstRatio:
                             default: "0.125"
                             type: string
-                          clusterDnsCidr:
-                            type: string
                           dnsPort:
                             default: 53
                             type: integer
-                          dnsResolvers:
+                          platformAllowedCidrs:
+                            items:
+                              type: string
+                            type: array
+                          platformAllowedDomains:
+                            items:
+                              type: string
+                            type: array
+                          platformDeniedCidrs:
+                            items:
+                              type: string
+                            type: array
+                          platformDeniedDomains:
                             items:
                               type: string
                             type: array
@@ -1243,8 +1253,6 @@ spec:
                           healthPort:
                             default: 8081
                             type: integer
-                          kubeConfig:
-                            type: string
                           logLevel:
                             default: info
                             type: string
@@ -1259,13 +1267,6 @@ spec:
                           preferNft:
                             default: true
                             type: boolean
-                          procdPort:
-                            default: 49983
-                            description: Ports and CIDRs
-                            type: integer
-                          proxyDnsTimeout:
-                            default: 5s
-                            type: string
                           proxyHeaderLimit:
                             format: int64
                             type: integer
@@ -1275,21 +1276,9 @@ spec:
                           proxyHttpsPort:
                             default: 18443
                             type: integer
-                          proxyIdleConnTimeout:
-                            default: 90s
-                            type: string
                           proxyListenAddr:
                             default: 0.0.0.0
                             description: Proxy settings
-                            type: string
-                          proxyMaxIdleConns:
-                            default: 1000
-                            type: integer
-                          proxyMaxIdleConnsPerHost:
-                            default: 100
-                            type: integer
-                          proxyResponseHeaderTimeout:
-                            default: 10s
                             type: string
                           proxyUpstreamTimeout:
                             default: 30s

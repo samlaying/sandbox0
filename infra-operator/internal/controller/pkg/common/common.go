@@ -103,10 +103,12 @@ func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav
 		defaultResources = *def.Resources
 	}
 
+	desiredLabels := EnsureManagedLabels(labels, name)
 	desiredDeploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: infra.Namespace,
+			Labels:    desiredLabels,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -115,7 +117,7 @@ func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels: desiredLabels,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: def.ServiceAccountName,
@@ -149,6 +151,7 @@ func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav
 	}
 
 	deploy.Spec = desiredDeploy.Spec
+	deploy.Labels = desiredLabels
 	return r.Client.Update(ctx, deploy)
 }
 
@@ -198,10 +201,12 @@ func (r *ResourceManager) ReconcileDaemonSet(ctx context.Context, infra *infrav1
 		defaultResources = *def.Resources
 	}
 
+	desiredLabels := EnsureManagedLabels(labels, name)
 	desiredDs := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: infra.Namespace,
+			Labels:    desiredLabels,
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
@@ -209,7 +214,7 @@ func (r *ResourceManager) ReconcileDaemonSet(ctx context.Context, infra *infrav1
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels: desiredLabels,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: def.ServiceAccountName,
@@ -250,6 +255,7 @@ func (r *ResourceManager) ReconcileDaemonSet(ctx context.Context, infra *infrav1
 	}
 
 	ds.Spec = desiredDs.Spec
+	ds.Labels = desiredLabels
 	return r.Client.Update(ctx, ds)
 }
 
@@ -311,10 +317,12 @@ func (r *ResourceManager) ReconcileServicePorts(ctx context.Context, infra *infr
 		return err
 	}
 
+	desiredLabels := EnsureManagedLabels(labels, name)
 	desiredSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: infra.Namespace,
+			Labels:    desiredLabels,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     serviceType,
@@ -332,6 +340,7 @@ func (r *ResourceManager) ReconcileServicePorts(ctx context.Context, infra *infr
 	}
 
 	svc.Spec = desiredSvc.Spec
+	svc.Labels = desiredLabels
 	return r.Client.Update(ctx, svc)
 }
 
@@ -342,6 +351,29 @@ func BuildServicePort(name string, port, targetPort int32) corev1.ServicePort {
 		Port:       port,
 		TargetPort: intstr.FromInt(int(targetPort)),
 	}
+}
+
+// EnsureManagedLabels merges standard managed labels without overriding existing values.
+func EnsureManagedLabels(labels map[string]string, fallbackName string) map[string]string {
+	out := MergeLabels(labels, map[string]string{
+		"app.kubernetes.io/managed-by": "sandbox0infra-operator",
+	})
+	if out["app.kubernetes.io/name"] == "" {
+		out["app.kubernetes.io/name"] = fallbackName
+	}
+	return out
+}
+
+// MergeLabels returns a copy of base with overrides applied.
+func MergeLabels(base map[string]string, overrides map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(overrides))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range overrides {
+		out[key] = value
+	}
+	return out
 }
 
 // DeleteServiceIfExists removes a service when present.
@@ -368,10 +400,12 @@ func (r *ResourceManager) ReconcileIngress(ctx context.Context, infra *infrav1al
 	}
 
 	pathType := networkingv1.PathTypePrefix
+	desiredLabels := EnsureManagedLabels(ingress.Labels, ingressName)
 	desiredIngress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ingressName,
 			Namespace: infra.Namespace,
+			Labels:    desiredLabels,
 		},
 		Spec: networkingv1.IngressSpec{
 			IngressClassName: &config.ClassName,
@@ -419,6 +453,7 @@ func (r *ResourceManager) ReconcileIngress(ctx context.Context, infra *infrav1al
 	}
 
 	ingress.Spec = desiredIngress.Spec
+	ingress.Labels = desiredLabels
 	return r.Client.Update(ctx, ingress)
 }
 
@@ -433,11 +468,12 @@ func (r *ResourceManager) ReconcileServiceConfigMap(ctx context.Context, infra *
 		return fmt.Errorf("marshal config for %s: %w", name, err)
 	}
 
+	desiredLabels := EnsureManagedLabels(labels, name)
 	desired := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: infra.Namespace,
-			Labels:    labels,
+			Labels:    desiredLabels,
 		},
 		Data: map[string]string{
 			"config.yaml": string(payload),

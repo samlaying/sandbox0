@@ -20,9 +20,6 @@ type NetdConfig struct {
 	NodeName string `yaml:"node_name" json:"nodeName"`
 
 	// +optional
-	KubeConfig string `yaml:"kube_config" json:"kubeConfig"`
-
-	// +optional
 	// +kubebuilder:default="30s"
 	ResyncPeriod metav1.Duration `yaml:"resync_period" json:"resyncPeriod"`
 
@@ -59,35 +56,28 @@ type NetdConfig struct {
 	// +optional
 	ProxyHeaderLimit int64 `yaml:"proxy_header_limit" json:"proxyHeaderLimit"`
 	// +optional
-	// +kubebuilder:default=1000
-	ProxyMaxIdleConns int `yaml:"proxy_max_idle_conns" json:"proxyMaxIdleConns"`
-	// +optional
-	// +kubebuilder:default=100
-	ProxyMaxIdleConnsPerHost int `yaml:"proxy_max_idle_conns_per_host" json:"proxyMaxIdleConnsPerHost"`
-	// +optional
 	// +kubebuilder:default="30s"
 	ProxyUpstreamTimeout metav1.Duration `yaml:"proxy_upstream_timeout" json:"proxyUpstreamTimeout"`
-	// +optional
-	// +kubebuilder:default="5s"
-	ProxyDNSTimeout metav1.Duration `yaml:"proxy_dns_timeout" json:"proxyDnsTimeout"`
-	// +optional
-	// +kubebuilder:default="10s"
-	ProxyResponseHeaderTimeout metav1.Duration `yaml:"proxy_response_header_timeout" json:"proxyResponseHeaderTimeout"`
-	// +optional
-	// +kubebuilder:default="90s"
-	ProxyIdleConnTimeout metav1.Duration `yaml:"proxy_idle_conn_timeout" json:"proxyIdleConnTimeout"`
-	// +optional
-	DNSResolvers []string `yaml:"dns_resolvers" json:"dnsResolvers"`
 
 	// Ports and CIDRs
 	// +optional
 	// +kubebuilder:default=49983
-	ProcdPort int `yaml:"procd_port" json:"procdPort"`
+	ProcdPort int `yaml:"procd_port" json:"-"`
 	// +optional
 	// +kubebuilder:default=53
 	DNSPort int `yaml:"dns_port" json:"dnsPort"`
 	// +optional
-	ClusterDNSCIDR string `yaml:"cluster_dns_cidr" json:"clusterDnsCidr"`
+	ClusterDNSCIDR string `yaml:"cluster_dns_cidr" json:"-"`
+
+	// Platform allow/deny lists (override user policy)
+	// +optional
+	PlatformAllowedCIDRs []string `yaml:"platform_allowed_cidrs" json:"platformAllowedCidrs"`
+	// +optional
+	PlatformDeniedCIDRs []string `yaml:"platform_denied_cidrs" json:"platformDeniedCidrs"`
+	// +optional
+	PlatformAllowedDomains []string `yaml:"platform_allowed_domains" json:"platformAllowedDomains"`
+	// +optional
+	PlatformDeniedDomains []string `yaml:"platform_denied_domains" json:"platformDeniedDomains"`
 
 	// eBPF and tc
 	// +optional
@@ -184,23 +174,8 @@ func applyNetdDefaults(cfg *NetdConfig) {
 	if cfg.ProxyUpstreamTimeout.Duration == 0 {
 		cfg.ProxyUpstreamTimeout = metav1.Duration{Duration: 30 * time.Second}
 	}
-	if cfg.ProxyDNSTimeout.Duration == 0 {
-		cfg.ProxyDNSTimeout = metav1.Duration{Duration: 5 * time.Second}
-	}
-	if cfg.ProxyResponseHeaderTimeout.Duration == 0 {
-		cfg.ProxyResponseHeaderTimeout = metav1.Duration{Duration: 10 * time.Second}
-	}
-	if cfg.ProxyIdleConnTimeout.Duration == 0 {
-		cfg.ProxyIdleConnTimeout = metav1.Duration{Duration: 90 * time.Second}
-	}
 	if cfg.ProxyHeaderLimit == 0 {
 		cfg.ProxyHeaderLimit = 64 * 1024
-	}
-	if cfg.ProxyMaxIdleConns == 0 {
-		cfg.ProxyMaxIdleConns = 1000
-	}
-	if cfg.ProxyMaxIdleConnsPerHost == 0 {
-		cfg.ProxyMaxIdleConnsPerHost = 100
 	}
 	if cfg.ProcdPort == 0 {
 		cfg.ProcdPort = 49983

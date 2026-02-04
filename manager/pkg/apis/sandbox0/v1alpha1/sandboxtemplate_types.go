@@ -198,7 +198,6 @@ type PoolStrategy struct {
 type TplSandboxNetworkPolicy struct {
 	Mode    NetworkPolicyMode     `json:"mode"`
 	Egress  *NetworkEgressPolicy  `json:"egress,omitempty"`
-	Ingress *NetworkIngressPolicy `json:"ingress,omitempty"`
 }
 
 // NetworkPolicyMode defines network policy mode
@@ -217,12 +216,6 @@ type NetworkEgressPolicy struct {
 	DeniedDomains  []string   `json:"deniedDomains,omitempty"`
 	AllowedPorts   []PortSpec `json:"allowedPorts,omitempty"`
 	DeniedPorts    []PortSpec `json:"deniedPorts,omitempty"`
-}
-
-// NetworkIngressPolicy defines ingress policy
-type NetworkIngressPolicy struct {
-	AllowedCIDRs []string `json:"allowedCidrs,omitempty"`
-	DeniedCIDRs  []string `json:"deniedCidrs,omitempty"`
 }
 
 // LifecyclePolicy defines lifecycle policy

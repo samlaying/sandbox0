@@ -3,7 +3,9 @@ package netd
 import (
 	"context"
 	"fmt"
+	"net"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -11,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	apiconfig "github.com/sandbox0-ai/infra/infra-operator/api/config"
@@ -57,6 +60,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	}
 	if config.HealthPort == 0 {
 		config.HealthPort = 8081
+	}
+	if config.ClusterDNSCIDR == "" {
+		cidr, err := resolveClusterDNSCIDR(ctx, r.Resources.Client, logger)
+		if err != nil {
+			return err
+		}
+		config.ClusterDNSCIDR = cidr
 	}
 
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, name, labels, config); err != nil {
@@ -214,4 +224,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 
 	ds.Spec = desired.Spec
 	return r.Resources.Client.Update(ctx, ds)
+}
+
+func resolveClusterDNSCIDR(ctx context.Context, client ctrlclient.Client, logger logr.Logger) (string, error) {
+	if client == nil {
+		return "", fmt.Errorf("client is nil")
+	}
+	serviceNames := []string{"kube-dns", "coredns"}
+	for _, name := range serviceNames {
+		svc := &corev1.Service{}
+		if err := client.Get(ctx, types.NamespacedName{Name: name, Namespace: "kube-system"}, svc); err != nil {
+			continue
+		}
+		if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+			continue
+		}
+		ip := net.ParseIP(svc.Spec.ClusterIP)
+		if ip == nil {
+			continue
+		}
+		if ip.To4() != nil {
+			return ip.String() + "/32", nil
+		}
+		return ip.String() + "/128", nil
+	}
+	return "", fmt.Errorf("failed to resolve cluster DNS CIDR from kube-dns/coredns, please specify it in the netd config")
 }

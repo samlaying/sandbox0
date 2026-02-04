@@ -1044,13 +1044,6 @@ func networkPolicyFromSpec(spec *v1alpha1.NetworkPolicySpec) *v1alpha1.TplSandbo
 		egressDeniedPorts = append(egressDeniedPorts, spec.Egress.DeniedPorts...)
 	}
 
-	var ingressAllowedCIDRs []string
-	var ingressDeniedCIDRs []string
-	if spec.Ingress != nil {
-		ingressAllowedCIDRs = append(ingressAllowedCIDRs, spec.Ingress.AllowedCIDRs...)
-		ingressDeniedCIDRs = append(ingressDeniedCIDRs, spec.Ingress.DeniedCIDRs...)
-	}
-
 	mode := v1alpha1.NetworkModeBlockAll
 	if spec.Mode != "" {
 		mode = spec.Mode
@@ -1067,12 +1060,6 @@ func networkPolicyFromSpec(spec *v1alpha1.NetworkPolicySpec) *v1alpha1.TplSandbo
 			DeniedDomains:  egressDeniedDomains,
 			AllowedPorts:   egressAllowedPorts,
 			DeniedPorts:    egressDeniedPorts,
-		}
-	}
-	if len(ingressAllowedCIDRs)+len(ingressDeniedCIDRs) > 0 {
-		policy.Ingress = &v1alpha1.NetworkIngressPolicy{
-			AllowedCIDRs: ingressAllowedCIDRs,
-			DeniedCIDRs:  ingressDeniedCIDRs,
 		}
 	}
 

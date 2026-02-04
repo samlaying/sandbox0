@@ -16,9 +16,6 @@ type NetworkPolicySpec struct {
 
 	// Egress defines outbound traffic rules
 	Egress *NetworkEgressPolicy `json:"egress,omitempty"`
-
-	// Ingress defines inbound traffic rules
-	Ingress *NetworkIngressPolicy `json:"ingress,omitempty"`
 }
 
 // PortSpec defines a port specification
@@ -76,14 +73,3 @@ type AccountingSpec struct {
 	ReportIntervalSeconds int32 `json:"reportIntervalSeconds,omitempty"`
 }
 
-// Default platform-enforced deny CIDRs
-var PlatformDeniedCIDRs = []string{
-	"10.0.0.0/8",         // RFC1918 private
-	"172.16.0.0/12",      // RFC1918 private
-	"192.168.0.0/16",     // RFC1918 private
-	"127.0.0.0/8",        // Loopback
-	"169.254.0.0/16",     // Link-local
-	"169.254.169.254/32", // Cloud metadata service
-	"fc00::/7",           // IPv6 unique local
-	"fe80::/10",          // IPv6 link-local
-}
