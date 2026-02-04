@@ -65,13 +65,17 @@ func (p *Patcher) SyncAppliedHashes(ctx context.Context, sandboxes []*watcher.Sa
 			p.logger.Warn("Failed to patch applied hashes",
 				zap.String("namespace", sandbox.Namespace),
 				zap.String("pod", sandbox.Name),
+				zap.String("pod_ip", sandbox.PodIP),
 				zap.Error(err),
 			)
 			continue
 		}
-		p.logger.Debug("Applied hashes patched",
+		p.logger.Info("Applied hashes patched",
 			zap.String("namespace", sandbox.Namespace),
 			zap.String("pod", sandbox.Name),
+			zap.String("pod_ip", sandbox.PodIP),
+			zap.String("network_policy_applied_hash", annotations[controller.AnnotationNetworkPolicyAppliedHash]),
+			zap.String("bandwidth_applied_hash", annotations[controller.AnnotationBandwidthPolicyAppliedHash]),
 		)
 	}
 	return nil

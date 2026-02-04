@@ -53,7 +53,9 @@ func (m *iptablesManager) Sync(ctx context.Context, sandboxIPs []string, bypassC
 	m.logger.Info(
 		"Iptables sync start",
 		zap.Int("sandbox_ips", len(sandboxIPs)),
+		zap.Strings("sandbox_ips", sandboxIPs),
 		zap.Int("bypass_cidrs", len(bypassCIDRs)),
+		zap.Strings("bypass_cidrs", bypassCIDRs),
 	)
 	if err := m.ensurePolicyRouting(ctx); err != nil {
 		return err
@@ -76,27 +78,62 @@ func (m *iptablesManager) Sync(ctx context.Context, sandboxIPs []string, bypassC
 	}
 
 	for _, ip := range normalizeIPs(sandboxIPs) {
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "443", "-j", "TPROXY",
+		// TCP 443
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "443", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "853", "-j", "TPROXY",
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "443", "-m", "socket", "--transparent", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "443", "-j", "TPROXY",
+
+		// TCP 853
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "853", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "853", "-j", "TPROXY",
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "--dport", "853", "-m", "socket", "--transparent", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "-j", "TPROXY",
+
+		// UDP 443
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "443", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "443", "-m", "socket", "--transparent", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+
+		// UDP 853
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "853", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "--dport", "853", "-m", "socket", "--transparent", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPSPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+
+		// TCP All
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}
-		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "-j", "TPROXY",
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "tcp", "-m", "socket", "--transparent", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+
+		// UDP All
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "-m", "conntrack", "--ctstate", "NEW", "-j", "TPROXY",
+			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
+			return err
+		}
+		if err := m.appendRule(ctx, "-s", ip+"/32", "-p", "udp", "-m", "socket", "--transparent", "-j", "TPROXY",
 			"--on-port", strconv.Itoa(m.cfg.ProxyHTTPPort), "--tproxy-mark", tproxyMark); err != nil {
 			return err
 		}

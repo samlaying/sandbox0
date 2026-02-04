@@ -92,17 +92,31 @@ func (d *Daemon) runNetd(ctx context.Context) error {
 	}
 
 	netdWatcher.SetSandboxHandlers(func(info *watcher.SandboxInfo) {
-		changed, _ := policyStore.UpsertFromSandbox(info)
-		if changed && info != nil && info.PodIP != "" {
+		if info == nil {
+			return
+		}
+		changed, prevHash := policyStore.UpsertFromSandbox(info)
+		if changed && info.PodIP != "" {
 			flows := tracker.PopBySrc(info.PodIP)
 			conntrackManager.CleanupFlows(ctx, flows)
 		}
+		d.logger.Info("Sandbox policy handler triggered",
+			zap.String("sandbox", info.Namespace+"/"+info.Name),
+			zap.String("pod_ip", info.PodIP),
+			zap.Bool("policy_changed", changed),
+			zap.String("policy_hash", info.NetworkPolicyHash),
+			zap.String("prev_hash", prevHash),
+		)
 		triggerSync()
 	}, func(info *watcher.SandboxInfo) {
 		if info != nil {
 			policyStore.DeleteByKey(info.Namespace, info.Name)
 			flows := tracker.PopBySrc(info.PodIP)
 			conntrackManager.CleanupFlows(ctx, flows)
+			d.logger.Info("Sandbox delete handler triggered",
+				zap.String("sandbox", info.Namespace+"/"+info.Name),
+				zap.String("pod_ip", info.PodIP),
+			)
 		}
 		triggerSync()
 	})
@@ -184,20 +198,34 @@ func (d *Daemon) syncRedirect(
 	if d.cfg.ClusterDNSCIDR != "" {
 		bypassCIDRs = append(bypassCIDRs, d.cfg.ClusterDNSCIDR)
 	}
+	if len(d.cfg.PlatformAllowedCIDRs) > 0 {
+		bypassCIDRs = append(bypassCIDRs, d.cfg.PlatformAllowedCIDRs...)
+	}
 
 	d.logger.Info(
 		"Syncing redirect rules",
 		zap.Int("sandboxes_total", len(sandboxes)),
 		zap.Int("sandbox_ips", len(sandboxIPs)),
+		zap.Strings("sandbox_ips", sandboxIPs),
 		zap.Strings("bypass_cidrs", bypassCIDRs),
 	)
 	if err := redirectManager.Sync(ctx, sandboxIPs, bypassCIDRs); err != nil {
 		return err
 	}
+	patchedCount := 0
 	if err := patcher.SyncAppliedHashes(ctx, sandboxes, policyStore); err != nil {
-		return err
+		d.logger.Warn("Failed to sync applied hashes", zap.Error(err))
+	} else {
+		for _, sandbox := range sandboxes {
+			if sandbox.NetworkPolicyHash != "" && sandbox.NetworkPolicyHash == sandbox.NetworkAppliedHash {
+				patchedCount++
+			}
+		}
 	}
-	d.logger.Info("Redirect rules synced")
+	d.logger.Info("Redirect rules synced",
+		zap.Int("sandboxes_patched", patchedCount),
+		zap.Int("sandboxes_total", len(sandboxes)),
+	)
 	return nil
 }
 

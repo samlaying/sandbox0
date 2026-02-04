@@ -131,10 +131,11 @@ func (s *Server) handleHTTPConn(conn net.Conn) {
 	srcIP := remoteIP(conn.RemoteAddr())
 	p := s.store.GetByIP(srcIP)
 	if !policy.AllowEgressL4(p, origIP, origPort, "tcp") {
-		s.logger.Debug("HTTP L4 denied",
+		s.logger.Info("HTTP L4 denied",
 			zap.String("src_ip", srcIP),
 			zap.String("dst_ip", origIP.String()),
 			zap.Int("dst_port", origPort),
+			zap.Bool("policy_exists", p != nil),
 		)
 		return
 	}
@@ -147,7 +148,12 @@ func (s *Server) handleHTTPConn(conn net.Conn) {
 	}
 	host := normalizeHost(req.Host)
 	if !policy.AllowEgressDomain(p, host) {
-		s.logger.Debug("HTTP L7 denied", zap.String("host", host))
+		s.logger.Info("HTTP L7 denied",
+			zap.String("src_ip", srcIP),
+			zap.String("host", host),
+			zap.String("dst_ip", origIP.String()),
+			zap.Int("dst_port", origPort),
+		)
 		return
 	}
 	s.recordFlow(srcIP, origIP, origPort, "tcp", remotePort(conn.RemoteAddr()))
@@ -178,10 +184,11 @@ func (s *Server) handleHTTPSConn(conn net.Conn) {
 	srcIP := remoteIP(conn.RemoteAddr())
 	p := s.store.GetByIP(srcIP)
 	if !policy.AllowEgressL4(p, origIP, origPort, "tcp") {
-		s.logger.Debug("TLS L4 denied",
+		s.logger.Info("TLS L4 denied",
 			zap.String("src_ip", srcIP),
 			zap.String("dst_ip", origIP.String()),
 			zap.Int("dst_port", origPort),
+			zap.Bool("policy_exists", p != nil),
 		)
 		return
 	}
@@ -193,7 +200,12 @@ func (s *Server) handleHTTPSConn(conn net.Conn) {
 	}
 	host := normalizeHost(clientHello.ServerName)
 	if !policy.AllowEgressDomain(p, host) {
-		s.logger.Debug("TLS L7 denied", zap.String("host", host))
+		s.logger.Info("TLS L7 denied",
+			zap.String("src_ip", srcIP),
+			zap.String("host", host),
+			zap.String("dst_ip", origIP.String()),
+			zap.Int("dst_port", origPort),
+		)
 		return
 	}
 	s.recordFlow(srcIP, origIP, origPort, "tcp", remotePort(conn.RemoteAddr()))
@@ -252,28 +264,38 @@ func (s *Server) handleUDPDatagram(src *net.UDPAddr, payload []byte, destIP net.
 	p := s.store.GetByIP(srcIP)
 	if destIP == nil {
 		if s.cfg.FailClosed {
-			s.logger.Debug("UDP L4 denied: missing original dst",
+			s.logger.Info("UDP L4 denied: missing original dst",
 				zap.String("src_ip", srcIP),
 				zap.Int("dst_port", destPort),
 			)
 			return
 		}
 	} else if !policy.AllowEgressL4(p, destIP, destPort, "udp") {
-		s.logger.Debug("UDP L4 denied",
+		s.logger.Info("UDP L4 denied",
 			zap.String("src_ip", srcIP),
 			zap.String("dst_ip", destIP.String()),
 			zap.Int("dst_port", destPort),
+			zap.Bool("policy_exists", p != nil),
 		)
 		return
 	}
 	if policy.HasDomainRules(p) {
 		sni := s.reassembler.ParseSNI(payload, srcIP, destIP.String())
 		if sni == "" {
-			s.logger.Debug("UDP L7 denied: missing SNI", zap.String("src_ip", srcIP))
+			s.logger.Info("UDP L7 denied: missing SNI",
+				zap.String("src_ip", srcIP),
+				zap.String("dst_ip", destIP.String()),
+				zap.Int("dst_port", destPort),
+			)
 			return
 		}
 		if !policy.AllowEgressDomain(p, sni) {
-			s.logger.Debug("UDP L7 denied", zap.String("host", sni))
+			s.logger.Info("UDP L7 denied",
+				zap.String("src_ip", srcIP),
+				zap.String("host", sni),
+				zap.String("dst_ip", destIP.String()),
+				zap.Int("dst_port", destPort),
+			)
 			return
 		}
 	}

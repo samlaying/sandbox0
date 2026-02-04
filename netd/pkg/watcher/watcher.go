@@ -226,6 +226,15 @@ func (w *Watcher) handlePodUpsert(obj any) {
 	w.sandboxes[key] = info
 	w.mu.Unlock()
 
+	w.logger.Info("Sandbox pod detected",
+		zap.String("sandbox", key),
+		zap.String("sandbox_id", info.SandboxID),
+		zap.String("pod_ip", info.PodIP),
+		zap.String("node_name", info.NodeName),
+		zap.String("network_policy_hash", info.NetworkPolicyHash),
+		zap.String("bandwidth_hash", info.BandwidthHash),
+	)
+
 	if w.onSandboxUpsert != nil {
 		w.onSandboxUpsert(cloneSandboxInfo(info))
 	}
@@ -250,6 +259,12 @@ func (w *Watcher) handlePodDelete(obj any) {
 	w.mu.Lock()
 	delete(w.sandboxes, key)
 	w.mu.Unlock()
+
+	w.logger.Info("Sandbox pod removed",
+		zap.String("sandbox", key),
+		zap.String("sandbox_id", info.SandboxID),
+		zap.String("pod_ip", info.PodIP),
+	)
 
 	if w.onSandboxDelete != nil {
 		w.onSandboxDelete(cloneSandboxInfo(info))
