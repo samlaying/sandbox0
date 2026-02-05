@@ -65,6 +65,16 @@ type StorageProxyConfig struct {
 	// +optional
 	// +kubebuilder:default=20
 	JuiceFSMaxUpload int `yaml:"juicefs_max_upload" json:"juicefsMaxUpload"`
+	// +optional
+	// +kubebuilder:default=false
+	JuiceFSEncryptionEnabled bool `yaml:"juicefs_encryption_enabled" json:"juicefsEncryptionEnabled"`
+	// +optional
+	JuiceFSEncryptionKeyPath string `yaml:"juicefs_encryption_key_path" json:"juicefsEncryptionKeyPath,omitempty"`
+	// +optional
+	JuiceFSEncryptionPassphrase string `yaml:"juicefs_encryption_passphrase" json:"juicefsEncryptionPassphrase,omitempty"`
+	// +optional
+	// +kubebuilder:default="aes256gcm-rsa"
+	JuiceFSEncryptionAlgo string `yaml:"juicefs_encryption_algo" json:"juicefsEncryptionAlgo"`
 
 	// +optional
 	// +kubebuilder:default="1s"
@@ -187,6 +197,9 @@ func loadStorageProxyConfig(path string) (*StorageProxyConfig, error) {
 
 // Validate validates the configuration.
 func (c *StorageProxyConfig) Validate() error {
+	if c.JuiceFSEncryptionEnabled && c.JuiceFSEncryptionKeyPath == "" {
+		return &ConfigError{Message: "juicefs encryption enabled but juicefs_encryption_key_path is empty"}
+	}
 	return nil
 }
 

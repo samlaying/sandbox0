@@ -455,6 +455,10 @@ func initializeJuiceFS(cfg *config.StorageProxyConfig, logger *zap.Logger) error
 		Compression:    cfg.JuiceFSCompression,
 		TrashDays:      cfg.JuiceFSTrashDays,
 		MetaRetries:    cfg.JuiceFSMetaRetries,
+		EncryptionEnabled:    cfg.JuiceFSEncryptionEnabled,
+		EncryptionKeyPath:    cfg.JuiceFSEncryptionKeyPath,
+		EncryptionPassphrase: cfg.JuiceFSEncryptionPassphrase,
+		EncryptionAlgo:       cfg.JuiceFSEncryptionAlgo,
 	}
 
 	initializer := juicefs.NewInitializer(initConfig, logger)

@@ -234,12 +234,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	}); err != nil {
 		return err
 	}
-	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-metrics", deploymentName)); err != nil {
-		return err
-	}
-	if err := r.Resources.DeleteServiceIfExists(ctx, infra, fmt.Sprintf("%s-webhook", deploymentName)); err != nil {
-		return err
-	}
 
 	if err := r.Resources.EnsureDeploymentReady(ctx, infra, deploymentName, replicas); err != nil {
 		return err

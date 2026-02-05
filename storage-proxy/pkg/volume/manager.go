@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/pkg/naming"
+	"github.com/sandbox0-ai/infra/storage-proxy/pkg/juicefs"
 	"github.com/sirupsen/logrus"
 )
 
@@ -448,6 +449,18 @@ func (m *Manager) createS3Storage(config *VolumeConfig, prefix string, format *m
 			p += "/"
 		}
 		obj = object.WithPrefix(obj, p)
+	}
+
+	if m.config.JuiceFSEncryptionEnabled {
+		keyPEM, err := juicefs.LoadEncryptionKey(m.config.JuiceFSEncryptionKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load encryption key: %w", err)
+		}
+		encryptor, err := juicefs.NewEncryptor(keyPEM, m.config.JuiceFSEncryptionPassphrase, m.config.JuiceFSEncryptionAlgo)
+		if err != nil {
+			return nil, fmt.Errorf("create encryptor: %w", err)
+		}
+		obj = juicefs.WrapEncryptedStorage(obj, encryptor)
 	}
 
 	return obj, nil

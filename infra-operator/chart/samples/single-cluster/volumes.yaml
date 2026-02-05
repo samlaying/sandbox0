@@ -69,6 +69,8 @@ spec:
     storageProxy:
       enabled: true
       replicas: 1
+      config:
+        juicefsEncryptionEnabled: false
   initUser:
     enabled: true
     email: "admin@example.com"

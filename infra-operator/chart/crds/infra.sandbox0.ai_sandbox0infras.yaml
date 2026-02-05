@@ -1085,6 +1085,9 @@ spec:
                                 default: 5s
                                 type: string
                             type: object
+                          procdInitTimeout:
+                            default: 6s
+                            type: string
                           resyncPeriod:
                             default: 30s
                             type: string
@@ -1228,22 +1231,6 @@ spec:
                           dnsPort:
                             default: 53
                             type: integer
-                          platformAllowedCidrs:
-                            items:
-                              type: string
-                            type: array
-                          platformAllowedDomains:
-                            items:
-                              type: string
-                            type: array
-                          platformDeniedCidrs:
-                            items:
-                              type: string
-                            type: array
-                          platformDeniedDomains:
-                            items:
-                              type: string
-                            type: array
                           edtHorizon:
                             default: 200ms
                             type: string
@@ -1264,6 +1251,24 @@ spec:
                             type: string
                           nodeName:
                             type: string
+                          platformAllowedCidrs:
+                            description: Platform allow/deny lists (override user
+                              policy)
+                            items:
+                              type: string
+                            type: array
+                          platformAllowedDomains:
+                            items:
+                              type: string
+                            type: array
+                          platformDeniedCidrs:
+                            items:
+                              type: string
+                            type: array
+                          platformDeniedDomains:
+                            items:
+                              type: string
+                            type: array
                           preferNft:
                             default: true
                             type: boolean
@@ -1630,6 +1635,16 @@ spec:
                             type: string
                           juicefsDirEntryTimeout:
                             default: 1s
+                            type: string
+                          juicefsEncryptionAlgo:
+                            default: aes256gcm-rsa
+                            type: string
+                          juicefsEncryptionEnabled:
+                            default: false
+                            type: boolean
+                          juicefsEncryptionKeyPath:
+                            type: string
+                          juicefsEncryptionPassphrase:
                             type: string
                           juicefsEntryTimeout:
                             default: 1s

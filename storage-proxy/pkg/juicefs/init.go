@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/juicedata/juicefs/pkg/meta"
 	"github.com/juicedata/juicefs/pkg/object"
 	"go.uber.org/zap"
@@ -24,6 +25,10 @@ type InitConfig struct {
 	Compression    string
 	TrashDays      int
 	MetaRetries    int
+	EncryptionEnabled    bool
+	EncryptionKeyPath    string
+	EncryptionPassphrase string
+	EncryptionAlgo       string
 }
 
 // Initializer handles JuiceFS filesystem initialization
@@ -181,6 +186,29 @@ func (i *Initializer) format() error {
 	}
 	if format.Compression == "" {
 		format.Compression = "lz4"
+	}
+
+	if i.config.EncryptionEnabled {
+		keyPEM, err := LoadEncryptionKey(i.config.EncryptionKeyPath)
+		if err != nil {
+			return fmt.Errorf("load encryption key: %w", err)
+		}
+		format.EncryptKey = keyPEM
+		if i.config.EncryptionAlgo != "" {
+			format.EncryptAlgo = i.config.EncryptionAlgo
+		}
+		if format.EncryptAlgo == "" {
+			format.EncryptAlgo = EncryptionAlgoAES256GCMRSA
+		}
+		if format.UUID == "" {
+			format.UUID = uuid.NewString()
+		}
+		if _, err := NewEncryptor(keyPEM, i.config.EncryptionPassphrase, format.EncryptAlgo); err != nil {
+			return fmt.Errorf("init encryption: %w", err)
+		}
+		if err := format.Encrypt(); err != nil {
+			return fmt.Errorf("encrypt format secrets: %w", err)
+		}
 	}
 
 	// Initialize the format in metadata engine

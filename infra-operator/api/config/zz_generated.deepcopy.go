@@ -203,6 +203,7 @@ func (in *ManagerConfig) DeepCopyInto(out *ManagerConfig) {
 	out.NetdPolicyApplyTimeout = in.NetdPolicyApplyTimeout
 	out.NetdPolicyApplyPollInterval = in.NetdPolicyApplyPollInterval
 	out.ProcdClientTimeout = in.ProcdClientTimeout
+	out.ProcdInitTimeout = in.ProcdInitTimeout
 	out.ShutdownTimeout = in.ShutdownTimeout
 	in.ProcdConfig.DeepCopyInto(&out.ProcdConfig)
 }
@@ -226,6 +227,7 @@ func (in *NetdConfig) DeepCopyInto(out *NetdConfig) {
 		*out = new(bool)
 		**out = **in
 	}
+	out.ProxyUpstreamTimeout = in.ProxyUpstreamTimeout
 	if in.PlatformAllowedCIDRs != nil {
 		in, out := &in.PlatformAllowedCIDRs, &out.PlatformAllowedCIDRs
 		*out = make([]string, len(*in))
@@ -246,7 +248,6 @@ func (in *NetdConfig) DeepCopyInto(out *NetdConfig) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	out.ProxyUpstreamTimeout = in.ProxyUpstreamTimeout
 	out.EDTHorizon = in.EDTHorizon
 	out.MetricsReportInterval = in.MetricsReportInterval
 	out.ShutdownDelay = in.ShutdownDelay

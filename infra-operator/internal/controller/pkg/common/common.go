@@ -376,19 +376,6 @@ func MergeLabels(base map[string]string, overrides map[string]string) map[string
 	return out
 }
 
-// DeleteServiceIfExists removes a service when present.
-func (r *ResourceManager) DeleteServiceIfExists(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string) error {
-	svc := &corev1.Service{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, svc)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-	return r.Client.Delete(ctx, svc)
-}
-
 // ReconcileIngress creates or updates an ingress.
 func (r *ResourceManager) ReconcileIngress(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, serviceName string, servicePort int32, config *infrav1alpha1.IngressConfig) error {
 	ingressName := serviceName
