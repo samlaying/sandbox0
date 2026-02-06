@@ -29,9 +29,9 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/observability"
 	obsmetrics "github.com/sandbox0-ai/infra/pkg/observability/metrics"
 	"github.com/sandbox0-ai/infra/pkg/template"
+	templmigrations "github.com/sandbox0-ai/infra/pkg/template/migrations"
 	templreconciler "github.com/sandbox0-ai/infra/pkg/template/reconciler"
 	templstorepg "github.com/sandbox0-ai/infra/pkg/template/store/pg"
-	schedmigrations "github.com/sandbox0-ai/infra/scheduler/migrations"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -535,7 +535,7 @@ func runTemplateMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.
 
 	migrateLogger := &zapMigrateLogger{logger: logger}
 	if err := migrate.Up(ctx, pool, ".",
-		migrate.WithBaseFS(schedmigrations.FS),
+		migrate.WithBaseFS(templmigrations.FS),
 		migrate.WithLogger(migrateLogger),
 		migrate.WithSchema("sched"),
 	); err != nil {

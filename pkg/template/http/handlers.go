@@ -11,31 +11,47 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sandbox0-ai/infra/pkg/template"
+	"github.com/sandbox0-ai/infra/pkg/template/store"
 	"go.uber.org/zap"
 )
 
-// TemplateRequest represents the request body for updating a template
+// ClusterStore provides cluster lookup for delete warnings.
+type ClusterStore interface {
+	GetCluster(ctx context.Context, clusterID string) (*template.Cluster, error)
+}
+
+// Reconciler triggers template reconciliation.
+type Reconciler interface {
+	TriggerReconcile(ctx context.Context)
+}
+
+// Handler provides template HTTP handlers backed by a template store.
+type Handler struct {
+	Store           store.TemplateStore
+	AllocationStore store.AllocationStore
+	ClusterStore    ClusterStore
+	Reconciler      Reconciler
+	Logger          *zap.Logger
+}
+
+// TemplateRequest represents the request body for updating a template.
 type TemplateRequest struct {
 	TemplateName *string                      `json:"template_name,omitempty"`
 	Public       *bool                        `json:"public,omitempty"`
 	Spec         v1alpha1.SandboxTemplateSpec `json:"spec"`
 }
 
-// listTemplates lists all templates
-func (s *Server) listTemplates(c *gin.Context) {
+// ListTemplates lists all templates.
+func (h *Handler) ListTemplates(c *gin.Context) {
 	claims := internalauth.ClaimsFromContext(c.Request.Context())
 	if claims == nil {
 		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "missing authentication")
 		return
 	}
 
-	var templates []*template.Template
-	var err error
-
-	templates, err = s.templateStore.ListVisibleTemplates(c.Request.Context(), claims.TeamID)
-
+	templates, err := h.Store.ListVisibleTemplates(c.Request.Context(), claims.TeamID)
 	if err != nil {
-		s.logger.Error("Failed to list templates", zap.Error(err))
+		h.Logger.Error("Failed to list templates", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to list templates")
 		return
 	}
@@ -46,8 +62,8 @@ func (s *Server) listTemplates(c *gin.Context) {
 	})
 }
 
-// getTemplate gets a template by ID
-func (s *Server) getTemplate(c *gin.Context) {
+// GetTemplate gets a template by ID.
+func (h *Handler) GetTemplate(c *gin.Context) {
 	templateID := c.Param("id")
 	if templateID == "" {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
@@ -60,7 +76,6 @@ func (s *Server) getTemplate(c *gin.Context) {
 		return
 	}
 
-	// Optional: force public template
 	if v := c.Query("public"); v != "" {
 		public, err := strconv.ParseBool(v)
 		if err != nil {
@@ -68,38 +83,38 @@ func (s *Server) getTemplate(c *gin.Context) {
 			return
 		}
 		if public {
-			template, err := s.templateStore.GetTemplate(c.Request.Context(), "public", "", templateID)
+			tpl, err := h.Store.GetTemplate(c.Request.Context(), "public", "", templateID)
 			if err != nil {
-				s.logger.Error("Failed to get template", zap.Error(err))
+				h.Logger.Error("Failed to get template", zap.Error(err))
 				spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to get template")
 				return
 			}
-			if template == nil {
+			if tpl == nil {
 				spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, "template not found")
 				return
 			}
-			spec.JSONSuccess(c, http.StatusOK, template)
+			spec.JSONSuccess(c, http.StatusOK, tpl)
 			return
 		}
 	}
 
-	template, err := s.templateStore.GetTemplateForTeam(c.Request.Context(), claims.TeamID, templateID)
+	tpl, err := h.Store.GetTemplateForTeam(c.Request.Context(), claims.TeamID, templateID)
 	if err != nil {
-		s.logger.Error("Failed to get template", zap.Error(err))
+		h.Logger.Error("Failed to get template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to get template")
 		return
 	}
 
-	if template == nil {
+	if tpl == nil {
 		spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, "template not found")
 		return
 	}
 
-	spec.JSONSuccess(c, http.StatusOK, template)
+	spec.JSONSuccess(c, http.StatusOK, tpl)
 }
 
-// createTemplate creates a new template
-func (s *Server) createTemplate(c *gin.Context) {
+// CreateTemplate creates a new template.
+func (h *Handler) CreateTemplate(c *gin.Context) {
 	var req struct {
 		TemplateName string                       `json:"template_name"`
 		Public       bool                         `json:"public,omitempty"`
@@ -142,10 +157,9 @@ func (s *Server) createTemplate(c *gin.Context) {
 		return
 	}
 
-	// Check if template already exists
-	existing, err := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
+	existing, err := h.Store.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
-		s.logger.Error("Failed to check existing template", zap.Error(err))
+		h.Logger.Error("Failed to check existing template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to create template")
 		return
 	}
@@ -154,7 +168,7 @@ func (s *Server) createTemplate(c *gin.Context) {
 		return
 	}
 
-	template := &template.Template{
+	tpl := &template.Template{
 		TemplateID:   templateID,
 		TemplateName: req.TemplateName,
 		Scope:        scope,
@@ -163,35 +177,31 @@ func (s *Server) createTemplate(c *gin.Context) {
 		Spec:         req.Spec,
 	}
 
-	if err := s.templateStore.CreateTemplate(c.Request.Context(), template); err != nil {
-		s.logger.Error("Failed to create template", zap.Error(err))
+	if err := h.Store.CreateTemplate(c.Request.Context(), tpl); err != nil {
+		h.Logger.Error("Failed to create template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to create template")
 		return
 	}
 
-	s.logger.Info("Template created",
+	h.Logger.Info("Template created",
 		zap.String("template_id", templateID),
 		zap.String("template_name", req.TemplateName),
 		zap.String("scope", scope),
 		zap.String("team_id", teamID),
 	)
 
-	// Trigger immediate reconciliation to sync to clusters
-	if s.reconciler != nil {
-		go s.reconciler.TriggerReconcile(context.Background())
-	}
+	h.triggerReconcile()
 
-	// Get the created template to return with timestamps
-	created, _ := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
+	created, _ := h.Store.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if created != nil {
 		spec.JSONSuccess(c, http.StatusCreated, created)
 	} else {
-		spec.JSONSuccess(c, http.StatusCreated, template)
+		spec.JSONSuccess(c, http.StatusCreated, tpl)
 	}
 }
 
-// updateTemplate updates an existing template
-func (s *Server) updateTemplate(c *gin.Context) {
+// UpdateTemplate updates an existing template.
+func (h *Handler) UpdateTemplate(c *gin.Context) {
 	templateID := c.Param("id")
 	if templateID == "" {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
@@ -224,10 +234,9 @@ func (s *Server) updateTemplate(c *gin.Context) {
 		return
 	}
 
-	// Check if template exists
-	existing, err := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
+	existing, err := h.Store.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
-		s.logger.Error("Failed to get template", zap.Error(err))
+		h.Logger.Error("Failed to get template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to update template")
 		return
 	}
@@ -244,7 +253,7 @@ func (s *Server) updateTemplate(c *gin.Context) {
 		return
 	}
 
-	template := &template.Template{
+	tpl := &template.Template{
 		TemplateID:   templateID,
 		TemplateName: *req.TemplateName,
 		Scope:        scope,
@@ -253,35 +262,31 @@ func (s *Server) updateTemplate(c *gin.Context) {
 		Spec:         req.Spec,
 	}
 
-	if err := s.templateStore.UpdateTemplate(c.Request.Context(), template); err != nil {
-		s.logger.Error("Failed to update template", zap.Error(err))
+	if err := h.Store.UpdateTemplate(c.Request.Context(), tpl); err != nil {
+		h.Logger.Error("Failed to update template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to update template")
 		return
 	}
 
-	s.logger.Info("Template updated",
+	h.Logger.Info("Template updated",
 		zap.String("template_id", templateID),
 		zap.String("template_name", *req.TemplateName),
 		zap.String("scope", scope),
 		zap.String("team_id", teamID),
 	)
 
-	// Trigger immediate reconciliation to sync changes to clusters
-	if s.reconciler != nil {
-		go s.reconciler.TriggerReconcile(context.Background())
-	}
+	h.triggerReconcile()
 
-	// Get the updated template to return with timestamps
-	updated, _ := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
+	updated, _ := h.Store.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if updated != nil {
 		spec.JSONSuccess(c, http.StatusOK, updated)
 	} else {
-		spec.JSONSuccess(c, http.StatusOK, template)
+		spec.JSONSuccess(c, http.StatusOK, tpl)
 	}
 }
 
-// deleteTemplate deletes a template
-func (s *Server) deleteTemplate(c *gin.Context) {
+// DeleteTemplate deletes a template.
+func (h *Handler) DeleteTemplate(c *gin.Context) {
 	templateID := c.Param("id")
 	if templateID == "" {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
@@ -318,10 +323,9 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 		return
 	}
 
-	// Check if template exists
-	existing, err := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
+	existing, err := h.Store.GetTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
-		s.logger.Error("Failed to get template", zap.Error(err))
+		h.Logger.Error("Failed to get template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
 		return
 	}
@@ -330,68 +334,60 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 		return
 	}
 
-	// Get all allocations to clean up from clusters
-	allocations, err := s.allocationStore.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
-	if err != nil {
-		s.logger.Error("Failed to get template allocations", zap.Error(err))
-		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
-		return
-	}
-
-	// First, delete template from all clusters (best-effort)
-	// We log failures but continue with database deletion
 	var cleanupErrors []string
-	for _, alloc := range allocations {
-		cluster, err := s.repo.GetCluster(c.Request.Context(), alloc.ClusterID)
+	if h.AllocationStore != nil {
+		allocations, err := h.AllocationStore.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
 		if err != nil {
-			s.logger.Warn("Failed to get cluster info for cleanup",
-				zap.String("cluster_id", alloc.ClusterID),
-				zap.Error(err),
-			)
-			cleanupErrors = append(cleanupErrors, alloc.ClusterID+": failed to get cluster info")
-			continue
-		}
-		if cluster == nil {
-			s.logger.Warn("Cluster not found for cleanup",
-				zap.String("cluster_id", alloc.ClusterID),
-			)
-			continue
+			h.Logger.Error("Failed to get template allocations", zap.Error(err))
+			spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
+			return
 		}
 
-		// Note: DeleteTemplate needs to be added to server struct (via dependency injection)
-		// For now, we'll trigger reconcile which will handle orphan cleanup
-		s.logger.Info("Template will be cleaned from cluster via reconcile",
-			zap.String("cluster_id", alloc.ClusterID),
-			zap.String("template_id", templateID),
-		)
+		if h.ClusterStore != nil {
+			for _, alloc := range allocations {
+				cluster, err := h.ClusterStore.GetCluster(c.Request.Context(), alloc.ClusterID)
+				if err != nil {
+					h.Logger.Warn("Failed to get cluster info for cleanup",
+						zap.String("cluster_id", alloc.ClusterID),
+						zap.Error(err),
+					)
+					cleanupErrors = append(cleanupErrors, alloc.ClusterID+": failed to get cluster info")
+					continue
+				}
+				if cluster == nil {
+					h.Logger.Warn("Cluster not found for cleanup",
+						zap.String("cluster_id", alloc.ClusterID),
+					)
+					continue
+				}
+
+				h.Logger.Info("Template will be cleaned from cluster via reconcile",
+					zap.String("cluster_id", alloc.ClusterID),
+					zap.String("template_id", templateID),
+				)
+			}
+		}
+
+		if err := h.AllocationStore.DeleteAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
+			h.Logger.Error("Failed to delete template allocations", zap.Error(err))
+			spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
+			return
+		}
 	}
 
-	// Delete allocations from database
-	if err := s.allocationStore.DeleteAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
-		s.logger.Error("Failed to delete template allocations", zap.Error(err))
+	if err := h.Store.DeleteTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
+		h.Logger.Error("Failed to delete template", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
 		return
 	}
 
-	// Delete template from database
-	if err := s.templateStore.DeleteTemplate(c.Request.Context(), scope, teamID, templateID); err != nil {
-		s.logger.Error("Failed to delete template", zap.Error(err))
-		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to delete template")
-		return
-	}
-
-	s.logger.Info("Template deleted from database",
+	h.Logger.Info("Template deleted from database",
 		zap.String("template_id", templateID),
 		zap.String("scope", scope),
 		zap.String("team_id", teamID),
-		zap.Int("affected_clusters", len(allocations)),
 	)
 
-	// Trigger immediate reconciliation to clean up clusters
-	// Reconcile will detect orphaned templates and remove them
-	if s.reconciler != nil {
-		go s.reconciler.TriggerReconcile(context.Background())
-	}
+	h.triggerReconcile()
 
 	response := gin.H{"message": "template deleted"}
 	if len(cleanupErrors) > 0 {
@@ -400,8 +396,13 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 	spec.JSONSuccess(c, http.StatusOK, response)
 }
 
-// getTemplateAllocations gets the allocations for a template
-func (s *Server) getTemplateAllocations(c *gin.Context) {
+// GetTemplateAllocations gets allocations for a template.
+func (h *Handler) GetTemplateAllocations(c *gin.Context) {
+	if h.AllocationStore == nil {
+		spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, "allocations not supported")
+		return
+	}
+
 	templateID := c.Param("id")
 	if templateID == "" {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
@@ -428,15 +429,14 @@ func (s *Server) getTemplateAllocations(c *gin.Context) {
 		}
 	}
 
-	// Default behavior: private-only for allocations unless public=true is explicitly requested.
 	if scope == "team" && teamID == "" {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "team_id is required for private templates")
 		return
 	}
 
-	allocations, err := s.allocationStore.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
+	allocations, err := h.AllocationStore.ListAllocationsByTemplate(c.Request.Context(), scope, teamID, templateID)
 	if err != nil {
-		s.logger.Error("Failed to get template allocations", zap.Error(err))
+		h.Logger.Error("Failed to get template allocations", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to get template allocations")
 		return
 	}
@@ -445,4 +445,11 @@ func (s *Server) getTemplateAllocations(c *gin.Context) {
 		"allocations": allocations,
 		"count":       len(allocations),
 	})
+}
+
+func (h *Handler) triggerReconcile() {
+	if h.Reconciler == nil {
+		return
+	}
+	go h.Reconciler.TriggerReconcile(context.Background())
 }

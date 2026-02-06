@@ -17,8 +17,8 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/observability"
 	obsmetrics "github.com/sandbox0-ai/infra/pkg/observability/metrics"
 	"github.com/sandbox0-ai/infra/pkg/pubsub"
+	templmigrations "github.com/sandbox0-ai/infra/pkg/template/migrations"
 	templstorepg "github.com/sandbox0-ai/infra/pkg/template/store/pg"
-	schedmigrations "github.com/sandbox0-ai/infra/scheduler/migrations"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/client"
 	"github.com/sandbox0-ai/infra/scheduler/pkg/db"
 	httpserver "github.com/sandbox0-ai/infra/scheduler/pkg/http"
@@ -165,7 +165,7 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool, logger *zap.Logger) 
 
 	migrateLogger := &zapLogger{logger: logger}
 	if err := migrate.Up(ctx, pool, ".",
-		migrate.WithBaseFS(schedmigrations.FS),
+		migrate.WithBaseFS(templmigrations.FS),
 		migrate.WithLogger(migrateLogger),
 		migrate.WithSchema("sched"),
 	); err != nil {

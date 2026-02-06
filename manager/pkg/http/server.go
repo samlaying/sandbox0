@@ -13,6 +13,7 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
 	"github.com/sandbox0-ai/infra/pkg/observability"
 	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
+	templatehttp "github.com/sandbox0-ai/infra/pkg/template/http"
 	"github.com/sandbox0-ai/infra/pkg/template/store"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -20,17 +21,18 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router          *gin.Engine
-	sandboxService  *service.SandboxService
-	templateService *service.TemplateService
-	templateStore   store.TemplateStore
-	templateReconciler TemplateReconciler
+	router               *gin.Engine
+	sandboxService       *service.SandboxService
+	templateService      *service.TemplateService
+	templateStore        store.TemplateStore
+	templateReconciler   TemplateReconciler
 	templateStoreEnabled bool
-	clusterService  *service.ClusterService
-	authValidator   *internalauth.Validator
-	logger          *zap.Logger
-	port            int
-	obsProvider     *observability.Provider
+	templateHandler      *templatehttp.Handler
+	clusterService       *service.ClusterService
+	authValidator        *internalauth.Validator
+	logger               *zap.Logger
+	port                 int
+	obsProvider          *observability.Provider
 }
 
 // TemplateReconciler exposes minimal reconcile controls for template syncing.
@@ -62,17 +64,24 @@ func NewServer(
 	router.Use(requestLogger(logger))
 
 	server := &Server{
-		router:          router,
-		sandboxService:  sandboxService,
-		templateService: templateService,
-		templateStore:   templateStore,
-		templateReconciler: templateReconciler,
+		router:               router,
+		sandboxService:       sandboxService,
+		templateService:      templateService,
+		templateStore:        templateStore,
+		templateReconciler:   templateReconciler,
 		templateStoreEnabled: templateStoreEnabled,
-		clusterService:  clusterService,
-		authValidator:   authValidator,
-		logger:          logger,
-		port:            port,
-		obsProvider:     obsProvider,
+		clusterService:       clusterService,
+		authValidator:        authValidator,
+		logger:               logger,
+		port:                 port,
+		obsProvider:          obsProvider,
+	}
+	if templateStoreEnabled {
+		server.templateHandler = &templatehttp.Handler{
+			Store:      templateStore,
+			Reconciler: templateReconciler,
+			Logger:     logger,
+		}
 	}
 
 	server.setupRoutes()
