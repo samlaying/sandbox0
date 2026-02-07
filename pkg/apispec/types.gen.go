@@ -1435,11 +1435,6 @@ type VolumeConfig struct {
 	Writeback  *bool   `json:"writeback,omitempty"`
 }
 
-// WarmPoolRequest defines model for WarmPoolRequest.
-type WarmPoolRequest struct {
-	Count int32 `json:"count"`
-}
-
 // WebhookConfig defines model for WebhookConfig.
 type WebhookConfig struct {
 	// Secret Optional. Shared secret used to sign webhook payloads.
@@ -1590,9 +1585,6 @@ type PostApiV1TemplatesJSONRequestBody = TemplateCreateRequest
 
 // PutApiV1TemplatesIdJSONRequestBody defines body for PutApiV1TemplatesId for application/json ContentType.
 type PutApiV1TemplatesIdJSONRequestBody = TemplateUpdateRequest
-
-// PostApiV1TemplatesIdPoolWarmJSONRequestBody defines body for PostApiV1TemplatesIdPoolWarm for application/json ContentType.
-type PostApiV1TemplatesIdPoolWarmJSONRequestBody = WarmPoolRequest
 
 // PostAuthChangePasswordJSONRequestBody defines body for PostAuthChangePassword for application/json ContentType.
 type PostAuthChangePasswordJSONRequestBody = ChangePasswordRequest

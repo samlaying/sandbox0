@@ -127,7 +127,6 @@ func (s *Server) setupRoutes() {
 			templates.POST("", s.createTemplate)
 			templates.PUT("/:id", s.updateTemplate)
 			templates.DELETE("/:id", s.deleteTemplate)
-			templates.POST("/:id/pool/warm", s.warmPool)
 			templates.GET("/stats", s.getTemplateStats) // Template stats for scheduler
 		}
 

@@ -18,7 +18,6 @@ func ParseNetworkPolicyFromAnnotation(annotationValue string) (*NetworkPolicySpe
 	return &spec, nil
 }
 
-
 // NetworkPolicyToAnnotation serializes network policy spec to annotation JSON.
 func NetworkPolicyToAnnotation(spec *NetworkPolicySpec) (string, error) {
 	if spec == nil {
@@ -30,4 +29,3 @@ func NetworkPolicyToAnnotation(spec *NetworkPolicySpec) (string, error) {
 	}
 	return string(data), nil
 }
-

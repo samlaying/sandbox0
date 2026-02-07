@@ -57,15 +57,3 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 	c.Request.URL.Path = "/api/v1/templates/" + templateID
 	s.proxyToManager(c)
 }
-
-// warmPool warms the pool for a template
-func (s *Server) warmPool(c *gin.Context) {
-	templateID := c.Param("id")
-	if templateID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
-		return
-	}
-
-	c.Request.URL.Path = "/api/v1/templates/" + templateID + "/pool/warm"
-	s.proxyToManager(c)
-}

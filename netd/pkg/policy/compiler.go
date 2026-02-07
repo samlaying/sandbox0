@@ -27,10 +27,10 @@ type PortRange struct {
 }
 
 type CompiledRuleSet struct {
-	AllowedCIDRs []*net.IPNet
-	DeniedCIDRs  []*net.IPNet
-	AllowedPorts []PortRange
-	DeniedPorts  []PortRange
+	AllowedCIDRs   []*net.IPNet
+	DeniedCIDRs    []*net.IPNet
+	AllowedPorts   []PortRange
+	DeniedPorts    []PortRange
 	AllowedDomains []DomainRule
 	DeniedDomains  []DomainRule
 }

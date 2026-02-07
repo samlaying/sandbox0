@@ -224,14 +224,14 @@ func main() {
 
 	// Create services
 	cfgForSandbox := service.SandboxServiceConfig{
-		DefaultTTL:                  cfg.DefaultSandboxTTL.Duration,
-		PauseMinMemoryRequest:       cfg.PauseMinMemoryRequest,
-		PauseMinMemoryLimit:         cfg.PauseMinMemoryLimit,
-		PauseMemoryBufferRatio:      pauseMemoryBufferRatio,
-		PauseMinCPU:                 cfg.PauseMinCPU,
-		ProcdPort:                   cfg.ProcdConfig.HTTPPort,
-		ProcdClientTimeout:          cfg.ProcdClientTimeout.Duration,
-		ProcdInitTimeout:            cfg.ProcdInitTimeout.Duration,
+		DefaultTTL:             cfg.DefaultSandboxTTL.Duration,
+		PauseMinMemoryRequest:  cfg.PauseMinMemoryRequest,
+		PauseMinMemoryLimit:    cfg.PauseMinMemoryLimit,
+		PauseMemoryBufferRatio: pauseMemoryBufferRatio,
+		PauseMinCPU:            cfg.PauseMinCPU,
+		ProcdPort:              cfg.ProcdConfig.HTTPPort,
+		ProcdClientTimeout:     cfg.ProcdClientTimeout.Duration,
+		ProcdInitTimeout:       cfg.ProcdInitTimeout.Duration,
 	}
 
 	sandboxService := service.NewSandboxService(

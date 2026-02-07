@@ -7,8 +7,8 @@ import (
 
 // PlatformPolicy defines platform-managed allow/deny rules that override user policy.
 type PlatformPolicy struct {
-	AllowedCIDRs  []*net.IPNet
-	DeniedCIDRs   []*net.IPNet
+	AllowedCIDRs   []*net.IPNet
+	DeniedCIDRs    []*net.IPNet
 	AllowedDomains []DomainRule
 	DeniedDomains  []DomainRule
 }
@@ -33,8 +33,8 @@ func BuildPlatformPolicy(allowedCIDRs, deniedCIDRs, allowedDomains, deniedDomain
 	}
 
 	return &PlatformPolicy{
-		AllowedCIDRs:  compiledAllowedCIDRs,
-		DeniedCIDRs:   compiledDeniedCIDRs,
+		AllowedCIDRs:   compiledAllowedCIDRs,
+		DeniedCIDRs:    compiledDeniedCIDRs,
 		AllowedDomains: compiledAllowedDomains,
 		DeniedDomains:  compiledDeniedDomains,
 	}, nil

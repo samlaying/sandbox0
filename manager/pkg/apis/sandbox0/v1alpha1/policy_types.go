@@ -29,4 +29,3 @@ type PortSpec struct {
 	// EndPort for port ranges (optional)
 	EndPort *int32 `json:"endPort,omitempty"`
 }
-

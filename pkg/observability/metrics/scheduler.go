@@ -7,14 +7,14 @@ import (
 
 // SchedulerMetrics holds Prometheus metrics for the scheduler service.
 type SchedulerMetrics struct {
-	ReconcileTotal        *prometheus.CounterVec
-	ReconcileDuration     prometheus.Histogram
-	TemplateAllocations   *prometheus.GaugeVec
-	ClusterCapacity       *prometheus.GaugeVec
-	TemplateSyncStatus    *prometheus.GaugeVec
-	OrphansRemoved        *prometheus.CounterVec
+	ReconcileTotal         *prometheus.CounterVec
+	ReconcileDuration      prometheus.Histogram
+	TemplateAllocations    *prometheus.GaugeVec
+	ClusterCapacity        *prometheus.GaugeVec
+	TemplateSyncStatus     *prometheus.GaugeVec
+	OrphansRemoved         *prometheus.CounterVec
 	LastReconcileTimestamp prometheus.Gauge
-	CapacityClamps        *prometheus.CounterVec
+	CapacityClamps         *prometheus.CounterVec
 }
 
 // NewScheduler registers and returns scheduler metrics.

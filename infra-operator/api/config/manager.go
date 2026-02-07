@@ -119,10 +119,10 @@ type ManagerConfig struct {
 
 // BuiltinTemplateConfig defines a system builtin template.
 type BuiltinTemplateConfig struct {
-	TemplateID  string                   `yaml:"template_id" json:"templateId"`
-	Image       string                   `yaml:"image" json:"image"`
-	DisplayName string                   `yaml:"display_name" json:"displayName"`
-	Description string                   `yaml:"description" json:"description"`
+	TemplateID  string                    `yaml:"template_id" json:"templateId"`
+	Image       string                    `yaml:"image" json:"image"`
+	DisplayName string                    `yaml:"display_name" json:"displayName"`
+	Description string                    `yaml:"description" json:"description"`
 	Pool        BuiltinTemplatePoolConfig `yaml:"pool" json:"pool"`
 }
 

@@ -35,26 +35,26 @@ type StorageProxyMetrics struct {
 	SnapshotSizeBytes         *prometheus.HistogramVec
 	SnapshotErrors            *prometheus.CounterVec
 
-	CoordinatorMountsActive             prometheus.Gauge
-	CoordinatorMountRegistrations       *prometheus.CounterVec
-	CoordinatorMountUnregistrations     *prometheus.CounterVec
-	CoordinatorHeartbeatsTotal          prometheus.Counter
-	CoordinatorHeartbeatErrors          prometheus.Counter
-	CoordinatorStaleMountsCleaned       prometheus.Counter
-	CoordinatorFlushCoordinationsTotal  *prometheus.CounterVec
+	CoordinatorMountsActive              prometheus.Gauge
+	CoordinatorMountRegistrations        *prometheus.CounterVec
+	CoordinatorMountUnregistrations      *prometheus.CounterVec
+	CoordinatorHeartbeatsTotal           prometheus.Counter
+	CoordinatorHeartbeatErrors           prometheus.Counter
+	CoordinatorStaleMountsCleaned        prometheus.Counter
+	CoordinatorFlushCoordinationsTotal   *prometheus.CounterVec
 	CoordinatorFlushCoordinationDuration prometheus.Histogram
-	CoordinatorFlushRequestsSent        prometheus.Counter
-	CoordinatorFlushRequestsReceived    prometheus.Counter
-	CoordinatorFlushResponsesTotal      *prometheus.CounterVec
-	CoordinatorFlushLatency             prometheus.Histogram
-	CoordinatorActiveCoordinations      prometheus.Gauge
-	CoordinatorNotificationsReceived    *prometheus.CounterVec
-	CoordinatorNotificationErrors       prometheus.Counter
+	CoordinatorFlushRequestsSent         prometheus.Counter
+	CoordinatorFlushRequestsReceived     prometheus.Counter
+	CoordinatorFlushResponsesTotal       *prometheus.CounterVec
+	CoordinatorFlushLatency              prometheus.Histogram
+	CoordinatorActiveCoordinations       prometheus.Gauge
+	CoordinatorNotificationsReceived     *prometheus.CounterVec
+	CoordinatorNotificationErrors        prometheus.Counter
 
-	HTTPRequestsTotal    *prometheus.CounterVec
-	HTTPRequestDuration  *prometheus.HistogramVec
-	HTTPRequestSize      *prometheus.HistogramVec
-	HTTPResponseSize     *prometheus.HistogramVec
+	HTTPRequestsTotal   *prometheus.CounterVec
+	HTTPRequestDuration *prometheus.HistogramVec
+	HTTPRequestSize     *prometheus.HistogramVec
+	HTTPResponseSize    *prometheus.HistogramVec
 }
 
 // NewStorageProxy registers and returns storage-proxy metrics.

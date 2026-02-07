@@ -355,7 +355,6 @@ func (s *Server) setupRoutes() {
 			templates.POST("", s.authMiddleware.RequirePermission(auth.PermTemplateCreate), s.createTemplate)
 			templates.PUT("/:id", s.authMiddleware.RequirePermission(auth.PermTemplateWrite), s.updateTemplate)
 			templates.DELETE("/:id", s.authMiddleware.RequirePermission(auth.PermTemplateDelete), s.deleteTemplate)
-			templates.POST("/:id/pool/warm", s.authMiddleware.RequirePermission(auth.PermTemplateWrite), s.warmPool)
 		}
 
 		// === SandboxVolume Management (→ Storage Proxy) ===

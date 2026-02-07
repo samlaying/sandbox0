@@ -8,12 +8,12 @@ import (
 
 // SandboxPolicyInput contains the policy data needed by a network provider.
 type SandboxPolicyInput struct {
-	SandboxID       string
-	Namespace       string
-	PodName         string
-	TeamID          string
-	PodLabels       map[string]string
-	NetworkPolicy   *v1alpha1.NetworkPolicySpec
+	SandboxID     string
+	Namespace     string
+	PodName       string
+	TeamID        string
+	PodLabels     map[string]string
+	NetworkPolicy *v1alpha1.NetworkPolicySpec
 }
 
 // Provider applies sandbox network policies using an external dataplane.

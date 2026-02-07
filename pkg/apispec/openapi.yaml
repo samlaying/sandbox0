@@ -1583,29 +1583,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessMessageResponse"
-  /api/v1/templates/{id}/pool/warm:
-    post:
-      tags: [templates]
-      summary: Warm template pool
-      security:
-        - bearerAuth: []
-      x-upstream-service: manager
-      x-upstream-path: /api/v1/templates/{id}/pool/warm
-      parameters:
-        - $ref: "#/components/parameters/TemplateID"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WarmPoolRequest"
-      responses:
-        "200":
-          description: Pool warming triggered
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessMessageResponse"
   /api/v1/sandboxvolumes:
     post:
       tags: [sandbox-volumes]
@@ -3246,13 +3223,6 @@ components:
               properties:
                 status:
                   type: string
-    WarmPoolRequest:
-      type: object
-      properties:
-        count:
-          type: integer
-          format: int32
-      required: [count]
     TemplateCreateRequest:
       type: object
       properties:

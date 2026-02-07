@@ -13,18 +13,18 @@ import (
 
 // InitConfig holds configuration for JuiceFS initialization
 type InitConfig struct {
-	Name           string
-	MetaURL        string
-	S3Bucket       string
-	S3Region       string
-	S3Endpoint     string
-	S3AccessKey    string
-	S3SecretKey    string
-	S3SessionToken string
-	BlockSize      int
-	Compression    string
-	TrashDays      int
-	MetaRetries    int
+	Name                 string
+	MetaURL              string
+	S3Bucket             string
+	S3Region             string
+	S3Endpoint           string
+	S3AccessKey          string
+	S3SecretKey          string
+	S3SessionToken       string
+	BlockSize            int
+	Compression          string
+	TrashDays            int
+	MetaRetries          int
 	EncryptionEnabled    bool
 	EncryptionKeyPath    string
 	EncryptionPassphrase string

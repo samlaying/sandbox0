@@ -35,7 +35,7 @@ type Handler struct {
 
 // TemplateRequest represents the request body for updating a template.
 type TemplateRequest struct {
-	Spec         v1alpha1.SandboxTemplateSpec `json:"spec"`
+	Spec v1alpha1.SandboxTemplateSpec `json:"spec"`
 }
 
 // ListTemplates lists all templates.
@@ -106,7 +106,7 @@ func (h *Handler) GetTemplate(c *gin.Context) {
 func (h *Handler) CreateTemplate(c *gin.Context) {
 	var req struct {
 		TemplateID string                       `json:"template_id"`
-		Spec         v1alpha1.SandboxTemplateSpec `json:"spec"`
+		Spec       v1alpha1.SandboxTemplateSpec `json:"spec"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

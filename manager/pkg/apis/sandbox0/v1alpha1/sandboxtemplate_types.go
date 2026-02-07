@@ -196,8 +196,8 @@ type PoolStrategy struct {
 
 // TplSandboxNetworkPolicy defines network policy (template-level default)
 type TplSandboxNetworkPolicy struct {
-	Mode    NetworkPolicyMode     `json:"mode"`
-	Egress  *NetworkEgressPolicy  `json:"egress,omitempty"`
+	Mode   NetworkPolicyMode    `json:"mode"`
+	Egress *NetworkEgressPolicy `json:"egress,omitempty"`
 }
 
 // NetworkPolicyMode defines network policy mode

@@ -40,10 +40,11 @@ spec:
       enabled: true
       replicas: 1
       config:
-        builtin_templates:
-          - template_id: default
+        builtinTemplates:
+          - templateId: default
             image: sandbox0ai/otemplates:default-v0.1.0
-            display_name: Default
+            displayName: Default
+            description: Builtin template installed by infra-operator.
             pool:
               minIdle: 1
               maxIdle: 5

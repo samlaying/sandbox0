@@ -18,17 +18,17 @@ import (
 )
 
 type SandboxInfo struct {
-	Namespace            string
-	Name                 string
-	UID                  types.UID
-	ResourceVersion      string
-	PodIP                string
-	NodeName             string
-	SandboxID            string
-	TeamID               string
-	NetworkPolicy        string
-	NetworkPolicyHash    string
-	NetworkAppliedHash   string
+	Namespace          string
+	Name               string
+	UID                types.UID
+	ResourceVersion    string
+	PodIP              string
+	NodeName           string
+	SandboxID          string
+	TeamID             string
+	NetworkPolicy      string
+	NetworkPolicyHash  string
+	NetworkAppliedHash string
 }
 
 type ServiceInfo struct {
@@ -502,17 +502,17 @@ func sandboxInfoFromPod(pod *corev1.Pod) *SandboxInfo {
 	}
 	teamID := pod.Annotations[controller.AnnotationTeamID]
 	return &SandboxInfo{
-		Namespace:            pod.Namespace,
-		Name:                 pod.Name,
-		UID:                  pod.UID,
-		ResourceVersion:      pod.ResourceVersion,
-		PodIP:                pod.Status.PodIP,
-		NodeName:             pod.Spec.NodeName,
-		SandboxID:            sandboxID,
-		TeamID:               teamID,
-		NetworkPolicy:        pod.Annotations[controller.AnnotationNetworkPolicy],
-		NetworkPolicyHash:    pod.Annotations[controller.AnnotationNetworkPolicyHash],
-		NetworkAppliedHash:   pod.Annotations[controller.AnnotationNetworkPolicyAppliedHash],
+		Namespace:          pod.Namespace,
+		Name:               pod.Name,
+		UID:                pod.UID,
+		ResourceVersion:    pod.ResourceVersion,
+		PodIP:              pod.Status.PodIP,
+		NodeName:           pod.Spec.NodeName,
+		SandboxID:          sandboxID,
+		TeamID:             teamID,
+		NetworkPolicy:      pod.Annotations[controller.AnnotationNetworkPolicy],
+		NetworkPolicyHash:  pod.Annotations[controller.AnnotationNetworkPolicyHash],
+		NetworkAppliedHash: pod.Annotations[controller.AnnotationNetworkPolicyAppliedHash],
 	}
 }
 

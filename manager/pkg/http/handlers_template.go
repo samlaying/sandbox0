@@ -7,8 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
-	"github.com/sandbox0-ai/infra/pkg/internalauth"
-	"github.com/sandbox0-ai/infra/pkg/naming"
 	"go.uber.org/zap"
 )
 
@@ -59,76 +57,6 @@ func (s *Server) deleteTemplate(c *gin.Context) {
 		return
 	}
 	s.templateHandler.DeleteTemplate(c)
-}
-
-// WarmPoolRequest represents the request body for warming the pool.
-type WarmPoolRequest struct {
-	Count int32 `json:"count"`
-}
-
-// warmPool warms the pool for a template.
-func (s *Server) warmPool(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.warmPoolLegacy(c)
-		return
-	}
-
-	templateID := c.Param("id")
-	if templateID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
-		return
-	}
-	canonicalTemplateID, err := naming.CanonicalTemplateID(templateID)
-	if err != nil {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
-		return
-	}
-	templateID = canonicalTemplateID
-
-	claims := internalauth.ClaimsFromContext(c.Request.Context())
-	if claims == nil {
-		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "missing authentication")
-		return
-	}
-	if claims.TeamID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "team_id is required for custom templates")
-		return
-	}
-
-	var req WarmPoolRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid request: "+err.Error())
-		return
-	}
-
-	scope := "team"
-	teamID := claims.TeamID
-
-	tpl, err := s.templateStore.GetTemplate(c.Request.Context(), scope, teamID, templateID)
-	if err != nil {
-		s.logger.Error("Failed to get template", zap.Error(err))
-		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to warm pool")
-		return
-	}
-	if tpl == nil {
-		spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, "template not found")
-		return
-	}
-
-	if tpl.Spec.Pool.MinIdle < req.Count {
-		tpl.Spec.Pool.MinIdle = req.Count
-		if tpl.Spec.Pool.MaxIdle < req.Count {
-			tpl.Spec.Pool.MaxIdle = req.Count
-		}
-		if err := s.templateStore.UpdateTemplate(c.Request.Context(), tpl); err != nil {
-			s.logger.Error("Failed to update template pool settings", zap.Error(err))
-			spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to warm pool")
-			return
-		}
-	}
-
-	s.triggerTemplateReconcile()
-	spec.JSONSuccess(c, http.StatusOK, gin.H{"message": "pool warming triggered"})
 }
 
 // Legacy handlers: apply templates directly to K8s CRDs (scheduler-managed mode).
@@ -222,28 +150,6 @@ func (s *Server) deleteTemplateLegacy(c *gin.Context) {
 	}
 
 	spec.JSONSuccess(c, http.StatusOK, gin.H{"message": "template deleted"})
-}
-
-func (s *Server) warmPoolLegacy(c *gin.Context) {
-	templateID := c.Param("id")
-	if templateID == "" {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "template_id is required")
-		return
-	}
-
-	var req WarmPoolRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid request: "+err.Error())
-		return
-	}
-
-	if err := s.templateService.WarmPool(c.Request.Context(), templateID, req.Count); err != nil {
-		s.logger.Error("Failed to warm pool", zap.Error(err))
-		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to warm pool")
-		return
-	}
-
-	spec.JSONSuccess(c, http.StatusOK, gin.H{"message": "pool warming triggered"})
 }
 
 func (s *Server) triggerTemplateReconcile() {

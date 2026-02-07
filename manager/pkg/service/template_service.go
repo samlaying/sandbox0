@@ -154,33 +154,6 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 	return nil
 }
 
-// WarmPool triggers pool warming for a template in the configured namespace.
-func (s *TemplateService) WarmPool(ctx context.Context, id string, count int32) error {
-	s.logger.Info("Warming pool", zap.String("name", id), zap.Int32("count", count))
-
-	// Get current template
-	template, err := s.findTemplateByName(id)
-	if err != nil {
-		return fmt.Errorf("get template: %w", err)
-	}
-	namespace := template.Namespace
-
-	// Update MinIdle if needed
-	if template.Spec.Pool.MinIdle < count {
-		template.Spec.Pool.MinIdle = count
-		if template.Spec.Pool.MaxIdle < count {
-			template.Spec.Pool.MaxIdle = count
-		}
-
-		_, err = s.crdClient.Sandbox0V1alpha1().SandboxTemplates(namespace).Update(ctx, template, metav1.UpdateOptions{})
-		if err != nil {
-			return fmt.Errorf("update template pool settings: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func (s *TemplateService) resolveTemplateNamespace(template *v1alpha1.SandboxTemplate) (string, error) {
 	if template.Namespace != "" {
 		return template.Namespace, nil

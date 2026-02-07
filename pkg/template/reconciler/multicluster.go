@@ -7,35 +7,35 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
-	"github.com/sandbox0-ai/infra/pkg/template/allocator"
 	"github.com/sandbox0-ai/infra/pkg/clock"
 	"github.com/sandbox0-ai/infra/pkg/naming"
 	obsmetrics "github.com/sandbox0-ai/infra/pkg/observability/metrics"
 	"github.com/sandbox0-ai/infra/pkg/template"
+	"github.com/sandbox0-ai/infra/pkg/template/allocator"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MultiClusterReconciler handles the reconciliation of templates across clusters.
 type MultiClusterReconciler struct {
-	templateStore   TemplateStore
-	allocationStore AllocationStore
-	clusterStore    ClusterStore
-	igClient        ClusterClient
-	logger          *zap.Logger
-	interval        time.Duration
-	clock           *clock.Clock
-	podsPerNode     int
-	allocator       *allocator.Allocator
-	clusterCache    map[string]*ClusterSummary
-	cacheMu         sync.RWMutex
-	templateStats   map[string]map[string]TemplateStat
-	templateStatsAt map[string]time.Time
-	statsMu         sync.RWMutex
-	lastReconcileAt time.Time
+	templateStore    TemplateStore
+	allocationStore  AllocationStore
+	clusterStore     ClusterStore
+	igClient         ClusterClient
+	logger           *zap.Logger
+	interval         time.Duration
+	clock            *clock.Clock
+	podsPerNode      int
+	allocator        *allocator.Allocator
+	clusterCache     map[string]*ClusterSummary
+	cacheMu          sync.RWMutex
+	templateStats    map[string]map[string]TemplateStat
+	templateStatsAt  map[string]time.Time
+	statsMu          sync.RWMutex
+	lastReconcileAt  time.Time
 	lastReconcileErr error
-	statusMu        sync.RWMutex
-	metrics         *obsmetrics.SchedulerMetrics
+	statusMu         sync.RWMutex
+	metrics          *obsmetrics.SchedulerMetrics
 }
 
 // NewMultiClusterReconciler creates a new MultiClusterReconciler.
