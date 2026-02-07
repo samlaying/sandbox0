@@ -10,14 +10,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// NOTE: In multi-cluster mode, scheduler syncs templates via manager's
-// /api/v1/templates endpoints. Keep legacy handlers for that path when
-// TemplateStoreEnabled is false.
+// NOTE: Scheduler syncs templates via manager's internal API.
 
 // listTemplates lists all templates.
 func (s *Server) listTemplates(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.listTemplatesLegacy(c)
+	if s.templateHandler == nil {
+		spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "template store is disabled")
 		return
 	}
 	s.templateHandler.ListTemplates(c)
@@ -25,8 +23,8 @@ func (s *Server) listTemplates(c *gin.Context) {
 
 // getTemplate gets a template by ID.
 func (s *Server) getTemplate(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.getTemplateLegacy(c)
+	if s.templateHandler == nil {
+		spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "template store is disabled")
 		return
 	}
 	s.templateHandler.GetTemplate(c)
@@ -34,8 +32,8 @@ func (s *Server) getTemplate(c *gin.Context) {
 
 // createTemplate creates a new template.
 func (s *Server) createTemplate(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.createTemplateLegacy(c)
+	if s.templateHandler == nil {
+		spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "template store is disabled")
 		return
 	}
 	s.templateHandler.CreateTemplate(c)
@@ -43,8 +41,8 @@ func (s *Server) createTemplate(c *gin.Context) {
 
 // updateTemplate updates an existing template.
 func (s *Server) updateTemplate(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.updateTemplateLegacy(c)
+	if s.templateHandler == nil {
+		spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "template store is disabled")
 		return
 	}
 	s.templateHandler.UpdateTemplate(c)
@@ -52,11 +50,32 @@ func (s *Server) updateTemplate(c *gin.Context) {
 
 // deleteTemplate deletes a template.
 func (s *Server) deleteTemplate(c *gin.Context) {
-	if !s.templateStoreEnabled {
-		s.deleteTemplateLegacy(c)
+	if s.templateHandler == nil {
+		spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "template store is disabled")
 		return
 	}
 	s.templateHandler.DeleteTemplate(c)
+}
+
+// Internal handlers: apply templates directly to K8s CRDs (scheduler-managed mode).
+func (s *Server) listTemplatesInternal(c *gin.Context) {
+	s.listTemplatesLegacy(c)
+}
+
+func (s *Server) getTemplateInternal(c *gin.Context) {
+	s.getTemplateLegacy(c)
+}
+
+func (s *Server) createTemplateInternal(c *gin.Context) {
+	s.createTemplateLegacy(c)
+}
+
+func (s *Server) updateTemplateInternal(c *gin.Context) {
+	s.updateTemplateLegacy(c)
+}
+
+func (s *Server) deleteTemplateInternal(c *gin.Context) {
+	s.deleteTemplateLegacy(c)
 }
 
 // Legacy handlers: apply templates directly to K8s CRDs (scheduler-managed mode).

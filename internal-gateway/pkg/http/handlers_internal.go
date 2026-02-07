@@ -38,7 +38,7 @@ func (s *Server) getClusterSummary(c *gin.Context) {
 	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
 
 	// Rewrite path for manager
-	c.Request.URL.Path = "/api/v1/cluster/summary"
+	c.Request.URL.Path = "/internal/v1/cluster/summary"
 
 	// Forward to manager
 	s.proxy2Mgr.ProxyToTarget(c)
@@ -70,7 +70,7 @@ func (s *Server) getTemplateStats(c *gin.Context) {
 	c.Request.Header.Set(internalauth.DefaultTokenHeader, internalToken)
 
 	// Rewrite path for manager
-	c.Request.URL.Path = "/api/v1/templates/stats"
+	c.Request.URL.Path = "/internal/v1/templates/stats"
 
 	// Forward to manager
 	s.proxy2Mgr.ProxyToTarget(c)

@@ -177,7 +177,7 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 
 	// First, try to get the template to determine if it exists
 	templateID := template.Name
-	getURL := fmt.Sprintf("%s/api/v1/templates/%s", baseURL, templateID)
+	getURL := fmt.Sprintf("%s/internal/v1/templates/%s", baseURL, templateID)
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, getURL, nil)
 	if err != nil {
 		return fmt.Errorf("create get request: %w", err)
@@ -203,11 +203,11 @@ func (c *InternalGatewayClient) CreateOrUpdateTemplate(ctx context.Context, base
 	if templateExists {
 		// Update existing template
 		method = http.MethodPut
-		url = fmt.Sprintf("%s/api/v1/templates/%s", baseURL, templateID)
+		url = fmt.Sprintf("%s/internal/v1/templates/%s", baseURL, templateID)
 	} else {
 		// Create new template
 		method = http.MethodPost
-		url = fmt.Sprintf("%s/api/v1/templates", baseURL)
+		url = fmt.Sprintf("%s/internal/v1/templates", baseURL)
 	}
 
 	// Create request
@@ -257,7 +257,7 @@ func (c *InternalGatewayClient) DeleteTemplate(ctx context.Context, baseURL stri
 	}
 
 	// Build request URL
-	url := fmt.Sprintf("%s/api/v1/templates/%s", baseURL, templateID)
+	url := fmt.Sprintf("%s/internal/v1/templates/%s", baseURL, templateID)
 
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)

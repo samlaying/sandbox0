@@ -119,7 +119,7 @@ func (s *Server) setupRoutes() {
 			sandboxes.DELETE("/:id", s.terminateSandbox)
 		}
 
-		// Template management
+		// Template management (public API)
 		templates := v1.Group("/templates")
 		{
 			templates.GET("", s.listTemplates)
@@ -127,13 +127,28 @@ func (s *Server) setupRoutes() {
 			templates.POST("", s.createTemplate)
 			templates.PUT("/:id", s.updateTemplate)
 			templates.DELETE("/:id", s.deleteTemplate)
-			templates.GET("/stats", s.getTemplateStats) // Template stats for scheduler
+		}
+	}
+
+	// Internal API v1 (for scheduler)
+	internal := s.router.Group("/internal/v1")
+	internal.Use(s.authMiddleware())
+	{
+		// Template management (scheduler sync)
+		internalTemplates := internal.Group("/templates")
+		{
+			internalTemplates.GET("", s.listTemplatesInternal)
+			internalTemplates.GET("/stats", s.getTemplateStats)
+			internalTemplates.GET("/:id", s.getTemplateInternal)
+			internalTemplates.POST("", s.createTemplateInternal)
+			internalTemplates.PUT("/:id", s.updateTemplateInternal)
+			internalTemplates.DELETE("/:id", s.deleteTemplateInternal)
 		}
 
-		// Cluster management (for scheduler)
-		cluster := v1.Group("/cluster")
+		// Cluster management
+		internalCluster := internal.Group("/cluster")
 		{
-			cluster.GET("/summary", s.getClusterSummary)
+			internalCluster.GET("/summary", s.getClusterSummary)
 		}
 	}
 }
