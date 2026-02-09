@@ -29,7 +29,6 @@ Initial admin password is not ready yet. Secret {{ $secretName }} was not found.
 {{- else }}
 Initial admin password is not configured because initUser.passwordSecret.name is empty.
 {{- end -}}
-{{- end -}}
 {{- else }}
 Initial admin login is not configured. Enable spec.initUser to generate a password.
 {{- end -}}
