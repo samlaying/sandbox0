@@ -1,3 +1,4 @@
+{{- if .Capabilities.APIVersions.Has "infra.sandbox0.ai/v1alpha1" -}}
 {{- $infras := lookup "infra.sandbox0.ai/v1alpha1" "Sandbox0Infra" .Release.Namespace "" -}}
 {{- $items := list -}}
 {{- if $infras -}}
@@ -34,4 +35,7 @@ Initial admin login is not configured. Enable spec.initUser to generate a passwo
 {{- end -}}
 {{- else }}
 Initial admin login could not be resolved because there are zero or multiple Sandbox0Infra resources in namespace {{ .Release.Namespace }}.
+{{- end }}
+{{- else }}
+Initial admin login is not available yet. The Sandbox0Infra CRD is not registered in the cluster.
 {{- end }}

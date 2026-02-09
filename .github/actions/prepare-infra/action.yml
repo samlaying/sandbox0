@@ -27,14 +27,15 @@ runs:
         go-version: ${{ inputs.go-version }}
         cache: true
 
-    - name: Cache Go build, module, and local outputs
-      uses: actions/cache@v4
+    - name: Restore Go build, module, and local outputs
+      id: go-build-cache
+      uses: actions/cache/restore@v4
       with:
         path: |
           ~/.cache/go-build
           ~/go/pkg/mod
           ${{ inputs.infra-dir }}/bin
-        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.sum', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
+        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.mod', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
         restore-keys: |
           infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}-
 
@@ -50,8 +51,9 @@ runs:
     - name: Setup protoc
       uses: arduino/setup-protoc@v3
 
-    - name: Cache infra image tar
-      uses: actions/cache@v4
+    - name: Restore infra image tar
+      id: infra-image-cache
+      uses: actions/cache/restore@v4
       with:
         path: /tmp/infra-image.tar
         key: infra-image-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.sum', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Dockerfile.local', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
@@ -73,8 +75,9 @@ runs:
           docker save -o /tmp/infra-image.tar sandbox0ai/infra:latest
         fi
 
-    - name: Cache dependency images
-      uses: actions/cache@v4
+    - name: Restore dependency images cache
+      id: infra-deps-cache
+      uses: actions/cache/restore@v4
       with:
         path: /tmp/infra-deps.tar
         key: infra-deps-${{ runner.os }}-${{ inputs.cache-key-suffix }}-postgres16-rustfs-1.0.0-alpha.79-registry-2.8.3
@@ -103,3 +106,27 @@ runs:
         kind load docker-image postgres:16-alpine --name ${{ inputs.kind-cluster-name }}
         kind load docker-image rustfs/rustfs:1.0.0-alpha.79 --name ${{ inputs.kind-cluster-name }}
         kind load docker-image registry:2.8.3 --name ${{ inputs.kind-cluster-name }}
+
+    - name: Save Go build, module, and local outputs
+      if: steps.go-build-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ${{ inputs.infra-dir }}/bin
+        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.mod', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
+
+    - name: Save infra image tar
+      if: steps.infra-image-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: /tmp/infra-image.tar
+        key: infra-image-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.sum', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Dockerfile.local', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
+
+    - name: Save dependency images cache
+      if: steps.infra-deps-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: /tmp/infra-deps.tar
+        key: infra-deps-${{ runner.os }}-${{ inputs.cache-key-suffix }}-postgres16-rustfs-1.0.0-alpha.79-registry-2.8.3
