@@ -71,7 +71,7 @@ jobs:
       - uses: helm/kind-action@v1
         with:
           version: v0.30.0
-          config: infra/tests/e2e/kind-config.yaml
+          config: tests/e2e/kind-config.yaml
           cluster_name: ${{ env.KIND_CLUSTER_NAME }}
 
       - name: Install Helm
