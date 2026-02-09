@@ -22,6 +22,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+          cache: true
+
+      - name: Cache local build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            bin
+          key: infra-bin-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('go.sum', '**/*.go', 'Makefile') }}
+          restore-keys: |
+            infra-bin-${{ runner.os }}-${{ matrix.arch }}-
 
       - uses: helm/kind-action@v1
         with:
@@ -32,9 +42,11 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Build Docker Image
+      - name: Build Docker Image (local binaries)
         working-directory: infra
-        run: make docker-build
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: make docker-build-local
 
       - name: Load Image to Kind
         run: kind load docker-image sandbox0ai/infra:latest --name sandbox0-e2e-${{ matrix.arch }}
