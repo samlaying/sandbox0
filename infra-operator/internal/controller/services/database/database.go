@@ -146,6 +146,7 @@ func (r *Reconciler) reconcileDatabaseSecret(ctx context.Context, infra *infrav1
 	if errors.IsNotFound(err) {
 		// Create new secret with generated password
 		password := common.GenerateRandomString(24)
+		host := buildDatabaseHost(infra)
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      secretName,
@@ -156,9 +157,9 @@ func (r *Reconciler) reconcileDatabaseSecret(ctx context.Context, infra *infrav1
 				"username": builtin.Username,
 				"password": password,
 				"database": builtin.Database,
-				"host":     fmt.Sprintf("%s-postgres", infra.Name),
+				"host":     host,
 				"port":     fmt.Sprintf("%d", builtin.Port),
-				"dsn":      fmt.Sprintf("postgres://%s:%s@%s-postgres:%d/%s?sslmode=%s", builtin.Username, password, infra.Name, builtin.Port, builtin.Database, builtin.SSLMode),
+				"dsn":      fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s", builtin.Username, password, host, builtin.Port, builtin.Database, builtin.SSLMode),
 			},
 		}
 
@@ -503,12 +504,33 @@ func parsePortForwardURL(raw string) (string, int32, error) {
 func GetDatabaseDSN(ctx context.Context, client client.Client, infra *infrav1alpha1.Sandbox0Infra) (string, error) {
 	switch infra.Spec.Database.Type {
 	case infrav1alpha1.DatabaseTypeBuiltin:
+		builtin := resolveBuiltinDatabaseConfig(infra)
 		secretName := fmt.Sprintf("%s-%s", infra.Name, databaseSecretName)
 		secret := &corev1.Secret{}
 		if err := client.Get(ctx, types.NamespacedName{Name: secretName, Namespace: infra.Namespace}, secret); err != nil {
 			return "", err
 		}
-		return string(secret.Data["dsn"]), nil
+		username := string(secret.Data["username"])
+		if username == "" {
+			username = builtin.Username
+		}
+		password := string(secret.Data["password"])
+		if password == "" {
+			return "", fmt.Errorf("database secret %q missing password", secretName)
+		}
+		databaseName := string(secret.Data["database"])
+		if databaseName == "" {
+			databaseName = builtin.Database
+		}
+		port := builtin.Port
+		if portValue := string(secret.Data["port"]); portValue != "" {
+			if parsed, err := strconv.ParseInt(portValue, 10, 32); err == nil {
+				port = int32(parsed)
+			}
+		}
+		host := buildDatabaseHost(infra)
+		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			username, password, host, port, databaseName, builtin.SSLMode), nil
 
 	case infrav1alpha1.DatabaseTypeExternal:
 		if infra.Spec.Database.External == nil {
@@ -539,6 +561,13 @@ func GetDatabaseDSN(ctx context.Context, client client.Client, infra *infrav1alp
 	default:
 		return "", fmt.Errorf("unsupported database type: %s", infra.Spec.Database.Type)
 	}
+}
+
+func buildDatabaseHost(infra *infrav1alpha1.Sandbox0Infra) string {
+	if infra.Namespace == "" {
+		return fmt.Sprintf("%s-postgres", infra.Name)
+	}
+	return fmt.Sprintf("%s-postgres.%s.svc", infra.Name, infra.Namespace)
 }
 
 // GetJuicefsMetaURL returns the JuiceFS metadata database URL.

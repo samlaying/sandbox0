@@ -146,8 +146,6 @@ spec:
                       name:
                         description: Name is the name of the secret
                         type: string
-                    required:
-                    - name
                     type: object
                   url:
                     description: URL is the control plane edge-gateway URL
@@ -230,8 +228,6 @@ spec:
                           name:
                             description: Name is the name of the secret
                             type: string
-                        required:
-                        - name
                         type: object
                       port:
                         default: 5432
@@ -266,10 +262,6 @@ spec:
                   email:
                     description: Email is the admin user's email
                     type: string
-                  enabled:
-                    default: false
-                    description: Enabled enables initial user creation
-                    type: boolean
                   name:
                     description: Name is the admin user's display name
                     type: string
@@ -284,12 +276,7 @@ spec:
                       name:
                         description: Name is the name of the secret
                         type: string
-                    required:
-                    - name
                     type: object
-                required:
-                - email
-                - passwordSecret
                 type: object
               internalAuth:
                 description: InternalAuth configures internal authentication keys
@@ -370,8 +357,6 @@ spec:
                           name:
                             description: Name is the name of the secret
                             type: string
-                        required:
-                        - name
                         type: object
                       port:
                         default: 5432

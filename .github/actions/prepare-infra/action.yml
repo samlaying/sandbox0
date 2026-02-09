@@ -51,29 +51,14 @@ runs:
     - name: Setup protoc
       uses: arduino/setup-protoc@v3
 
-    - name: Restore infra image tar
-      id: infra-image-cache
-      uses: actions/cache/restore@v4
-      with:
-        path: /tmp/infra-image.tar
-        key: infra-image-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.sum', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Dockerfile.local', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
-        restore-keys: |
-          infra-image-${{ runner.os }}-${{ inputs.cache-key-suffix }}-
-
-    - name: Build or load Docker image (local binaries)
+    - name: Build Docker image (local binaries)
       working-directory: ${{ inputs.infra-dir }}
       env:
         DOCKER_BUILDKIT: "1"
       shell: bash
       run: |
-        if [ -f /tmp/infra-image.tar ]; then
-          echo "Loading cached infra image..."
-          docker load -i /tmp/infra-image.tar
-        else
-          echo "Building infra image..."
-          make docker-build-local
-          docker save -o /tmp/infra-image.tar sandbox0ai/infra:latest
-        fi
+        echo "Building infra image..."
+        make docker-build-local
 
     - name: Restore dependency images cache
       id: infra-deps-cache
@@ -116,13 +101,6 @@ runs:
           ~/go/pkg/mod
           ${{ inputs.infra-dir }}/bin
         key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.mod', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
-
-    - name: Save infra image tar
-      if: steps.infra-image-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: /tmp/infra-image.tar
-        key: infra-image-${{ runner.os }}-${{ inputs.cache-key-suffix }}-${{ hashFiles(format('{0}/go.sum', inputs.infra-dir), format('{0}/**/*.go', inputs.infra-dir), format('{0}/Dockerfile.local', inputs.infra-dir), format('{0}/Makefile', inputs.infra-dir)) }}
 
     - name: Save dependency images cache
       if: steps.infra-deps-cache.outputs.cache-hit != 'true'

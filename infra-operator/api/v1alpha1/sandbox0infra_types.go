@@ -214,6 +214,7 @@ type ExternalDatabaseConfig struct {
 // SecretKeyRef references a key in a secret
 type SecretKeyRef struct {
 	// Name is the name of the secret
+	// +optional
 	Name string `json:"name"`
 
 	// Key is the key in the secret
@@ -948,9 +949,11 @@ type ResourceCapacity struct {
 // InitUserConfig defines initial admin user configuration
 type InitUserConfig struct {
 	// Email is the admin user's email
+	// +optional
 	Email string `json:"email"`
 
 	// PasswordSecret references the secret containing the password
+	// +optional
 	PasswordSecret SecretKeyRef `json:"passwordSecret"`
 
 	// Name is the admin user's display name

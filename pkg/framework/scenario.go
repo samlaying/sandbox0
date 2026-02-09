@@ -190,7 +190,7 @@ func buildScenarioSecrets(infra *infrav1alpha1.Sandbox0Infra, namespace string) 
 	if infra == nil {
 		return secrets
 	}
-	if infra.Spec.InitUser != nil && infra.Spec.InitUser.Enabled {
+	if infra.Spec.InitUser != nil {
 		addSecret(secretFromKeyRef(namespace, infra.Spec.InitUser.PasswordSecret, "password"))
 	}
 	if infra.Spec.Database != nil && infra.Spec.Database.Type == infrav1alpha1.DatabaseTypeExternal && infra.Spec.Database.External != nil {
