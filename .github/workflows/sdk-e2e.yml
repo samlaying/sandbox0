@@ -1,0 +1,138 @@
+name: SDK E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_repo:
+        description: "SDK repository to test (owner/repo)"
+        required: true
+        default: "sandbox0-ai/sdk-go"
+      sdk_ref:
+        description: "SDK git ref (branch, tag, or SHA)"
+        required: true
+        default: "main"
+      sdk_test_cmd:
+        description: "SDK test command"
+        required: true
+        default: "go test -tags=e2e ./..."
+      infra_manifest:
+        description: "Infra scenario manifest (relative to repo root)"
+        required: true
+        default: "infra-operator/chart/samples/single-cluster/minimal.yaml"
+      infra_name:
+        description: "Sandbox0Infra name from manifest"
+        required: true
+        default: "minimal"
+      infra_namespace:
+        description: "Infra namespace"
+        required: true
+        default: "sandbox0-system"
+  workflow_call:
+    inputs:
+      sdk_repo:
+        type: string
+        required: true
+      sdk_ref:
+        type: string
+        required: true
+      sdk_test_cmd:
+        type: string
+        required: true
+      infra_manifest:
+        type: string
+        required: true
+      infra_name:
+        type: string
+        required: true
+      infra_namespace:
+        type: string
+        required: true
+
+jobs:
+  sdk-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      KIND_CLUSTER_NAME: sandbox0-sdk-e2e
+      INFRA_MANIFEST: ${{ inputs.infra_manifest }}
+      INFRA_NAME: ${{ inputs.infra_name }}
+      INFRA_NAMESPACE: ${{ inputs.infra_namespace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - uses: helm/kind-action@v1
+        with:
+          version: v0.30.0
+          config: infra/tests/e2e/kind-config.yaml
+          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build Docker Image
+        run: make docker-build
+
+      - name: Load Image to Kind
+        run: kind load docker-image sandbox0ai/infra:latest --name ${{ env.KIND_CLUSTER_NAME }}
+
+      - name: Install infra-operator
+        run: |
+          helm upgrade --install infra-operator infra-operator/chart \
+            --namespace infra-operator --create-namespace
+
+      - name: Apply infra manifest
+        run: kubectl apply -f "${INFRA_MANIFEST}"
+
+      - name: Wait for internal-gateway service
+        run: |
+          service_name="${INFRA_NAME}-internal-gateway"
+          for i in $(seq 1 60); do
+            if kubectl -n "${INFRA_NAMESPACE}" get svc "${service_name}" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "internal-gateway service not ready"
+          exit 1
+
+      - name: Start API port-forward
+        run: |
+          service_name="${INFRA_NAME}-internal-gateway"
+          service_port=$(kubectl -n "${INFRA_NAMESPACE}" get svc "${service_name}" -o jsonpath='{.spec.ports[0].port}')
+          kubectl -n "${INFRA_NAMESPACE}" port-forward "svc/${service_name}" 18080:"${service_port}" >/tmp/port-forward.log 2>&1 &
+          sleep 3
+          echo "S0_E2E_BASE_URL=http://127.0.0.1:18080" >> "$GITHUB_ENV"
+
+      - name: Export admin credentials
+        run: |
+          password=$(kubectl -n "${INFRA_NAMESPACE}" get secret admin-password -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${password}"
+          echo "S0_E2E_EMAIL=admin@example.com" >> "$GITHUB_ENV"
+          echo "S0_E2E_PASSWORD=${password}" >> "$GITHUB_ENV"
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.sdk_repo }}
+          ref: ${{ inputs.sdk_ref }}
+          path: sdk
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: sdk/go.sum
+
+      - name: Run SDK tests
+        working-directory: sdk
+        run: ${{ inputs.sdk_test_cmd }}
+
+      - name: Cleanup infra
+        if: always()
+        run: |
+          kubectl delete -f "${INFRA_MANIFEST}" --ignore-not-found=true
+          helm uninstall infra-operator --namespace infra-operator || true
+          kind delete cluster --name "${KIND_CLUSTER_NAME}" || true
