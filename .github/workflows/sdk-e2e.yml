@@ -27,6 +27,10 @@ on:
         description: "Infra namespace"
         required: true
         default: "sandbox0-system"
+      trace_id:
+        description: "Unique ID to track this run"
+        required: false
+        default: ""
   workflow_call:
     inputs:
       sdk_repo:
