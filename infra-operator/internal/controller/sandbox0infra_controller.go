@@ -52,6 +52,8 @@ import (
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/scheduler"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storage"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/services/storageproxy"
+	"github.com/sandbox0-ai/infra/pkg/naming"
+	"github.com/sandbox0-ai/infra/pkg/template"
 )
 
 const (
@@ -60,6 +62,7 @@ const (
 	retryBaseDelay         = 2 * time.Second
 	retryMaxDelay          = 2 * time.Minute
 	initUserPasswordLength = 24
+	templateIDPodLabelKey  = "sandbox0.ai/template-id"
 )
 
 // Sandbox0InfraReconciler reconciles a Sandbox0Infra object
@@ -277,11 +280,6 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 	rbacReconciler := rbac.NewReconciler(resources)
 
 	steps := []reconcileStep{}
-	builtinTemplatesRequired := shouldTrackBuiltinTemplatesCondition(infra, plan)
-	builtinTemplatesConditionType := ""
-	if builtinTemplatesRequired {
-		builtinTemplatesConditionType = infrav1alpha1.ConditionTypeBuiltinTemplatesReady
-	}
 	if plan.RequireControlPlaneConfig {
 		steps = append(steps, reconcileStep{
 			Name: "control-plane-config",
@@ -380,16 +378,12 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 				SkipSuccessCondition: true,
 			},
 			reconcileStep{
-				Name:                  "scheduler",
-				Run:                   func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo) },
-				ConditionType:         infrav1alpha1.ConditionTypeSchedulerReady,
-				AdditionalCondition:   builtinTemplatesConditionType,
-				SuccessReason:         "SchedulerReady",
-				SuccessMessage:        "Scheduler is ready",
-				AdditionalReason:      "BuiltinTemplatesReady",
-				AdditionalMessage:     "Builtin templates are synchronized",
-				ErrorReason:           "SchedulerFailed",
-				AdditionalErrorReason: "BuiltinTemplateSyncFailed",
+				Name:           "scheduler",
+				Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo) },
+				ConditionType:  infrav1alpha1.ConditionTypeSchedulerReady,
+				SuccessReason:  "SchedulerReady",
+				SuccessMessage: "Scheduler is ready",
+				ErrorReason:    "SchedulerFailed",
 			},
 		)
 	}
@@ -440,18 +434,21 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 				SkipSuccessCondition: true,
 			},
 			reconcileStep{
-				Name:                  "manager",
-				Run:                   func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
-				ConditionType:         infrav1alpha1.ConditionTypeManagerReady,
-				AdditionalCondition:   builtinTemplatesConditionType,
-				SuccessReason:         "ManagerReady",
-				SuccessMessage:        "Manager is ready",
-				AdditionalReason:      "BuiltinTemplatesReady",
-				AdditionalMessage:     "Builtin templates are synchronized",
-				ErrorReason:           "ManagerFailed",
-				AdditionalErrorReason: "BuiltinTemplateSyncFailed",
+				Name:           "manager",
+				Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
+				ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
+				SuccessReason:  "ManagerReady",
+				SuccessMessage: "Manager is ready",
+				ErrorReason:    "ManagerFailed",
 			},
 		)
+		steps = append(steps, reconcileStep{
+			Name:                 "builtin-template-pods",
+			Run:                  func(ctx context.Context) error { return r.waitBuiltinTemplatePodsReady(ctx, infra) },
+			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
+			ErrorReason:          "BuiltinTemplatePodsNotReady",
+			SkipSuccessCondition: true,
+		})
 	}
 	if plan.EnableStorageProxy {
 		steps = append(steps,
@@ -640,36 +637,7 @@ func (r *Sandbox0InfraReconciler) expectedConditionTypes(infra *infrav1alpha1.Sa
 	if plan.EnableClusterRegistration {
 		conditions = append(conditions, infrav1alpha1.ConditionTypeClusterRegistered)
 	}
-	if shouldTrackBuiltinTemplatesCondition(infra, plan) {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeBuiltinTemplatesReady)
-	}
 	return conditions
-}
-
-func shouldTrackBuiltinTemplatesCondition(infra *infrav1alpha1.Sandbox0Infra, plan componentPlan) bool {
-	if infra == nil || len(infra.Spec.BuiltinTemplates) == 0 {
-		return false
-	}
-	if plan.EnableScheduler {
-		return true
-	}
-	return plan.EnableManager && managerTemplateStoreEnabled(infra)
-}
-
-func managerTemplateStoreEnabled(infra *infrav1alpha1.Sandbox0Infra) bool {
-	if infra == nil || infra.Spec.Services == nil || infra.Spec.Services.InternalGateway == nil {
-		return false
-	}
-	cfg := infra.Spec.Services.InternalGateway.Config
-	mode := ""
-	if cfg != nil {
-		mode = cfg.AuthMode
-	}
-	mode = strings.TrimSpace(strings.ToLower(mode))
-	if mode == "" {
-		mode = "internal"
-	}
-	return mode != "internal"
 }
 
 // setCondition sets or updates a condition
@@ -728,6 +696,78 @@ func (r *Sandbox0InfraReconciler) registerCluster(ctx context.Context, infra *in
 	infra.Status.Cluster.RegisteredAt = &now
 
 	return nil
+}
+
+func (r *Sandbox0InfraReconciler) waitBuiltinTemplatePodsReady(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+	if infra == nil || len(infra.Spec.BuiltinTemplates) == 0 {
+		return nil
+	}
+	if !infrav1alpha1.IsManagerEnabled(infra) || !isManagerTemplateStoreEnabled(infra) {
+		return nil
+	}
+
+	for _, builtin := range infra.Spec.BuiltinTemplates {
+		templateID, err := naming.CanonicalTemplateID(builtin.TemplateID)
+		if err != nil {
+			return fmt.Errorf("invalid builtin template_id %q: %w", builtin.TemplateID, err)
+		}
+
+		minIdle, _, _ := template.ApplyDefaultPool(builtin.Pool.MinIdle, builtin.Pool.MaxIdle, builtin.Pool.AutoScale)
+		if minIdle == 0 {
+			continue
+		}
+
+		namespace, err := naming.TemplateNamespaceForBuiltin(templateID)
+		if err != nil {
+			return fmt.Errorf("resolve namespace for builtin template %q: %w", templateID, err)
+		}
+
+		podList := &corev1.PodList{}
+		if err := r.List(ctx, podList,
+			client.InNamespace(namespace),
+			client.MatchingLabels{templateIDPodLabelKey: templateID},
+		); err != nil {
+			return fmt.Errorf("list pods for builtin template %q: %w", templateID, err)
+		}
+
+		readyPods := int32(0)
+		for i := range podList.Items {
+			if isReadyPod(&podList.Items[i]) {
+				readyPods++
+			}
+		}
+		if readyPods < minIdle {
+			return fmt.Errorf("builtin template %q pods not ready: %d/%d ready", templateID, readyPods, minIdle)
+		}
+	}
+	return nil
+}
+
+func isReadyPod(pod *corev1.Pod) bool {
+	if pod == nil || pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func isManagerTemplateStoreEnabled(infra *infrav1alpha1.Sandbox0Infra) bool {
+	if infra == nil || infra.Spec.Services == nil || infra.Spec.Services.InternalGateway == nil {
+		return false
+	}
+	authMode := ""
+	if cfg := infra.Spec.Services.InternalGateway.Config; cfg != nil {
+		authMode = cfg.AuthMode
+	}
+	authMode = strings.TrimSpace(strings.ToLower(authMode))
+	if authMode == "" {
+		authMode = "internal"
+	}
+	return authMode != "internal"
 }
 
 // SetupWithManager sets up the controller with the Manager.

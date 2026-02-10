@@ -21,6 +21,7 @@ import (
 	"errors"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -102,70 +103,34 @@ func TestRunStepsErrorStopsAndSetsCondition(t *testing.T) {
 	}
 }
 
-func TestRunStepsSetsAdditionalCondition(t *testing.T) {
-	ctx := context.Background()
-	reconciler := &Sandbox0InfraReconciler{}
-	infra := &infrav1alpha1.Sandbox0Infra{}
-
-	steps := []reconcileStep{
-		{
-			Name:                "scheduler",
-			Run:                 func(context.Context) error { return nil },
-			ConditionType:       infrav1alpha1.ConditionTypeSchedulerReady,
-			AdditionalCondition: infrav1alpha1.ConditionTypeBuiltinTemplatesReady,
-			SuccessReason:       "SchedulerReady",
-			SuccessMessage:      "Scheduler is ready",
-			AdditionalReason:    "BuiltinTemplatesReady",
-			AdditionalMessage:   "Builtin templates are synchronized",
-			ErrorReason:         "SchedulerFailed",
+func TestIsReadyPod(t *testing.T) {
+	readyPod := &corev1.Pod{
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
 		},
 	}
-
-	_, err := reconciler.runSteps(ctx, infra, steps)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	if !isReadyPod(readyPod) {
+		t.Fatalf("expected running ready pod to be reported as ready")
 	}
 
-	additionalCondition := meta.FindStatusCondition(infra.Status.Conditions, infrav1alpha1.ConditionTypeBuiltinTemplatesReady)
-	if additionalCondition == nil {
-		t.Fatalf("expected builtin templates condition to be set")
-	}
-	if additionalCondition.Status != metav1.ConditionTrue {
-		t.Fatalf("expected builtin templates condition status true, got %v", additionalCondition.Status)
-	}
-}
-
-func TestRunStepsErrorSetsAdditionalCondition(t *testing.T) {
-	ctx := context.Background()
-	reconciler := &Sandbox0InfraReconciler{}
-	infra := &infrav1alpha1.Sandbox0Infra{}
-	stepErr := errors.New("sync builtin templates failed")
-
-	steps := []reconcileStep{
-		{
-			Name:                  "manager",
-			Run:                   func(context.Context) error { return stepErr },
-			ConditionType:         infrav1alpha1.ConditionTypeManagerReady,
-			AdditionalCondition:   infrav1alpha1.ConditionTypeBuiltinTemplatesReady,
-			ErrorReason:           "ManagerFailed",
-			AdditionalErrorReason: "BuiltinTemplateSyncFailed",
-			ErrorResult:           &ctrl.Result{},
+	notReadyPod := &corev1.Pod{
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionFalse,
+				},
+			},
 		},
 	}
-
-	_, err := reconciler.runSteps(ctx, infra, steps)
-	if !errors.Is(err, stepErr) {
-		t.Fatalf("expected error %v, got %v", stepErr, err)
-	}
-
-	additionalCondition := meta.FindStatusCondition(infra.Status.Conditions, infrav1alpha1.ConditionTypeBuiltinTemplatesReady)
-	if additionalCondition == nil {
-		t.Fatalf("expected builtin templates condition to be set")
-	}
-	if additionalCondition.Status != metav1.ConditionFalse {
-		t.Fatalf("expected builtin templates condition status false, got %v", additionalCondition.Status)
-	}
-	if additionalCondition.Reason != "BuiltinTemplateSyncFailed" {
-		t.Fatalf("expected additional condition reason BuiltinTemplateSyncFailed, got %s", additionalCondition.Reason)
+	if isReadyPod(notReadyPod) {
+		t.Fatalf("expected pending pod to be reported as not ready")
 	}
 }
