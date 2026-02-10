@@ -18,11 +18,11 @@ on:
       infra_manifest:
         description: "Infra scenario manifest (relative to repo root)"
         required: true
-        default: "infra-operator/chart/samples/single-cluster/minimal.yaml"
+        default: "infra-operator/chart/samples/single-cluster/fullmode.yaml"
       infra_name:
         description: "Sandbox0Infra name from manifest"
         required: true
-        default: "minimal"
+        default: "fullmode"
       infra_namespace:
         description: "Infra namespace"
         required: true
