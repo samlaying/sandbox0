@@ -800,7 +800,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-    patch:
+    put:
       tags: [sandboxes]
       summary: Update sandbox configuration
       security:
@@ -983,7 +983,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-    patch:
+    put:
       tags: [sandboxes]
       summary: Update sandbox network policy
       security:

@@ -298,7 +298,7 @@ func (s *Server) setupRoutes() {
 			sandboxes.POST("", s.authMiddleware.RequirePermission(auth.PermSandboxCreate), s.createSandbox)
 			sandboxes.GET("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandbox)
 			sandboxes.GET("/:id/status", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getSandboxStatus)
-			sandboxes.PATCH("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.updateSandbox)
+			sandboxes.PUT("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.updateSandbox)
 			sandboxes.DELETE("/:id", s.authMiddleware.RequirePermission(auth.PermSandboxDelete), s.deleteSandbox)
 			sandboxes.POST("/:id/pause", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.pauseSandbox)
 			sandboxes.POST("/:id/resume", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.resumeSandbox)
@@ -306,7 +306,7 @@ func (s *Server) setupRoutes() {
 
 			// === Network Policy (→ Manager) ===
 			sandboxes.GET("/:id/network", s.authMiddleware.RequirePermission(auth.PermSandboxRead), s.getNetworkPolicy)
-			sandboxes.PATCH("/:id/network", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.updateNetworkPolicy)
+			sandboxes.PUT("/:id/network", s.authMiddleware.RequirePermission(auth.PermSandboxWrite), s.updateNetworkPolicy)
 
 			// === Process/Context Management (→ Procd) ===
 			contexts := sandboxes.Group("/:id/contexts")

@@ -1545,8 +1545,8 @@ type PostApiKeysJSONRequestBody = CreateAPIKeyRequest
 // PostApiV1SandboxesJSONRequestBody defines body for PostApiV1Sandboxes for application/json ContentType.
 type PostApiV1SandboxesJSONRequestBody = ClaimRequest
 
-// PatchApiV1SandboxesIdJSONRequestBody defines body for PatchApiV1SandboxesId for application/json ContentType.
-type PatchApiV1SandboxesIdJSONRequestBody = SandboxUpdateRequest
+// PutApiV1SandboxesIdJSONRequestBody defines body for PutApiV1SandboxesId for application/json ContentType.
+type PutApiV1SandboxesIdJSONRequestBody = SandboxUpdateRequest
 
 // PostApiV1SandboxesIdContextsJSONRequestBody defines body for PostApiV1SandboxesIdContexts for application/json ContentType.
 type PostApiV1SandboxesIdContextsJSONRequestBody = CreateContextRequest
@@ -1566,8 +1566,8 @@ type PostApiV1SandboxesIdContextsCtxIdSignalJSONRequestBody = SignalContextReque
 // PostApiV1SandboxesIdFilesMoveJSONRequestBody defines body for PostApiV1SandboxesIdFilesMove for application/json ContentType.
 type PostApiV1SandboxesIdFilesMoveJSONRequestBody = MoveFileRequest
 
-// PatchApiV1SandboxesIdNetworkJSONRequestBody defines body for PatchApiV1SandboxesIdNetwork for application/json ContentType.
-type PatchApiV1SandboxesIdNetworkJSONRequestBody = TplSandboxNetworkPolicy
+// PutApiV1SandboxesIdNetworkJSONRequestBody defines body for PutApiV1SandboxesIdNetwork for application/json ContentType.
+type PutApiV1SandboxesIdNetworkJSONRequestBody = TplSandboxNetworkPolicy
 
 // PostApiV1SandboxesIdRefreshJSONRequestBody defines body for PostApiV1SandboxesIdRefresh for application/json ContentType.
 type PostApiV1SandboxesIdRefreshJSONRequestBody = RefreshRequest

@@ -112,11 +112,11 @@ func (s *Server) setupRoutes() {
 		{
 			sandboxes.POST("", s.claimSandbox)
 			sandboxes.GET("/:id", s.getSandbox)
-			sandboxes.PATCH("/:id", s.updateSandbox)
+			sandboxes.PUT("/:id", s.updateSandbox)
 			sandboxes.GET("/:id/status", s.getSandboxStatus)
 			sandboxes.GET("/:id/stats", s.getSandboxStats)
 			sandboxes.GET("/:id/network", s.getNetworkPolicy)
-			sandboxes.PATCH("/:id/network", s.updateNetworkPolicy)
+			sandboxes.PUT("/:id/network", s.updateNetworkPolicy)
 			sandboxes.POST("/:id/pause", s.pauseSandbox)
 			sandboxes.POST("/:id/resume", s.resumeSandbox)
 			sandboxes.POST("/:id/refresh", s.refreshSandbox)
