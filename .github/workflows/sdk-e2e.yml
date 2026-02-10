@@ -54,7 +54,7 @@ on:
 
 jobs:
   sdk-e2e:
-    runs-on: ubuntu-latest
+    runs-on: Linux-x86
     timeout-minutes: 60
     env:
       KIND_CLUSTER_NAME: sandbox0-sdk-e2e
