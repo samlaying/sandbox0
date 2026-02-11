@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,4 +94,118 @@ func (c *ManagerClient) GetSandbox(ctx context.Context, sandboxID, userID, teamI
 	)
 
 	return sandbox, nil
+}
+
+// GetSandboxInternal retrieves sandbox information for trusted internal routing.
+func (c *ManagerClient) GetSandboxInternal(ctx context.Context, sandboxID string) (*mgr.Sandbox, error) {
+	token, err := c.internalAuthGen.Generate("manager", "", "", internalauth.GenerateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("generate internal token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/internal/v1/sandboxes/%s", c.baseURL, sandboxID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set(internalauth.DefaultTokenHeader, token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("sandbox not found: %s", sandboxID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	sandbox, apiErr, err := spec.DecodeResponse[mgr.Sandbox](resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if apiErr != nil {
+		return nil, fmt.Errorf("manager error: %s", apiErr.Message)
+	}
+	return sandbox, nil
+}
+
+// ResumeSandbox asks manager to resume a paused sandbox.
+func (c *ManagerClient) ResumeSandbox(ctx context.Context, sandboxID, userID, teamID string) error {
+	token, err := c.internalAuthGen.Generate("manager", teamID, userID, internalauth.GenerateOptions{})
+	if err != nil {
+		return fmt.Errorf("generate internal token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/sandboxes/%s/resume", c.baseURL, sandboxID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set(internalauth.DefaultTokenHeader, token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("sandbox not found: %s", sandboxID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		var payload map[string]any
+		_ = json.Unmarshal(body, &payload)
+		if msg, ok := payload["message"].(string); ok && msg != "" {
+			return fmt.Errorf("manager error: %s", msg)
+		}
+		return fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *ManagerClient) UpdateSandboxExposedPorts(ctx context.Context, sandboxID, userID, teamID string, ports []mgr.ExposedPortConfig) error {
+	token, err := c.internalAuthGen.Generate("manager", teamID, userID, internalauth.GenerateOptions{})
+	if err != nil {
+		return fmt.Errorf("generate internal token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v1/sandboxes/%s", c.baseURL, sandboxID)
+	payload := map[string]any{
+		"config": map[string]any{
+			"exposed_ports": ports,
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set(internalauth.DefaultTokenHeader, token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("sandbox not found: %s", sandboxID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }

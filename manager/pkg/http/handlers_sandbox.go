@@ -84,6 +84,26 @@ func (s *Server) getSandbox(c *gin.Context) {
 	spec.JSONSuccess(c, http.StatusOK, sandbox)
 }
 
+// getSandboxInternal gets sandbox for internal trusted callers without team ownership enforcement.
+func (s *Server) getSandboxInternal(c *gin.Context) {
+	sandboxID := c.Param("id")
+	if sandboxID == "" {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "sandbox_id is required")
+		return
+	}
+
+	sandbox, err := s.sandboxService.GetSandbox(c.Request.Context(), sandboxID)
+	if err != nil {
+		s.logger.Error("Failed to get sandbox (internal)",
+			zap.String("sandboxID", sandboxID),
+			zap.Error(err),
+		)
+		spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, fmt.Sprintf("sandbox not found: %v", err))
+		return
+	}
+	spec.JSONSuccess(c, http.StatusOK, sandbox)
+}
+
 // updateSandbox updates sandbox configuration
 func (s *Server) updateSandbox(c *gin.Context) {
 	sandboxID := c.Param("id")

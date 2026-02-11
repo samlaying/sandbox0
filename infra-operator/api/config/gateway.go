@@ -54,6 +54,20 @@ type GatewayConfig struct {
 	// +optional
 	// +kubebuilder:default="http://localhost:8080"
 	BaseURL string `yaml:"base_url" json:"baseUrl"`
+
+	// Public exposure host routing configuration.
+	// Host format is fixed as: <exposureLabel>.<region>.<rootDomain>
+	// +optional
+	// +kubebuilder:default=false
+	PublicExposureEnabled bool `yaml:"public_exposure_enabled" json:"publicExposureEnabled"`
+	// +optional
+	// +kubebuilder:default="sandbox0.app"
+	PublicRootDomain string `yaml:"public_root_domain" json:"publicRootDomain"`
+	// +optional
+	PublicRegionID string `yaml:"public_region_id" json:"publicRegionId"`
+	// +optional
+	// +kubebuilder:default=true
+	PublicStrictHostValidation bool `yaml:"public_strict_host_validation" json:"publicStrictHostValidation"`
 }
 
 // BuiltInAuthConfig configures the built-in authentication.

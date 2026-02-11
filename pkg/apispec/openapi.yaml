@@ -2394,6 +2394,22 @@ components:
           $ref: "#/components/schemas/TplSandboxNetworkPolicy"
         webhook:
           $ref: "#/components/schemas/WebhookConfig"
+        auto_resume:
+          type: boolean
+          default: false
+        exposed_ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExposedPortConfig"
+    ExposedPortConfig:
+      type: object
+      properties:
+        port:
+          type: integer
+          format: int32
+        auto_wakeup:
+          type: boolean
+      required: [port, auto_wakeup]
     WebhookConfig:
       type: object
       properties:
@@ -2441,6 +2457,14 @@ components:
           type: string
         status:
           type: string
+        paused:
+          type: boolean
+        auto_resume:
+          type: boolean
+        exposed_ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExposedPortConfig"
         pod_name:
           type: string
         expires_at:
@@ -2457,6 +2481,8 @@ components:
         - template_id
         - team_id
         - status
+        - paused
+        - auto_resume
         - pod_name
         - expires_at
         - claimed_at
@@ -2732,6 +2758,11 @@ components:
           type: array
           items:
             type: string
+        expose_port:
+          type: integer
+          format: int32
+        expose_auto_wakeup:
+          type: boolean
     CreateContextRequest:
       type: object
       properties:
@@ -2780,6 +2811,11 @@ components:
           type: string
         output:
           type: string
+        public_url:
+          type: string
+        exposed_port:
+          type: integer
+          format: int32
       required: [id, type, running, paused, created_at]
     ContextStatsResponse:
       type: object

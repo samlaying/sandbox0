@@ -18,6 +18,9 @@ func TestReplicasetAndSandboxNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sandbox name: %v", err)
 	}
+	if len(sandboxName) > sandboxNameMaxLen {
+		t.Fatalf("sandbox name too long: %d", len(sandboxName))
+	}
 
 	parsed, err := ParseSandboxName(sandboxName)
 	if err != nil {
@@ -25,6 +28,37 @@ func TestReplicasetAndSandboxNames(t *testing.T) {
 	}
 	if parsed.ClusterID != clusterID {
 		t.Fatalf("expected clusterID %s, got %s", clusterID, parsed.ClusterID)
+	}
+}
+
+func TestExposureHostLabel(t *testing.T) {
+	sandboxName := "rs-mfwha2dbfzzsayjaomxwg2dbon2gc-zd0b8631-abcde"
+	label, err := BuildExposureHostLabel(sandboxName, 3000)
+	if err != nil {
+		t.Fatalf("BuildExposureHostLabel: %v", err)
+	}
+
+	gotSandbox, gotPort, err := ParseExposureHostLabel(label)
+	if err != nil {
+		t.Fatalf("ParseExposureHostLabel: %v", err)
+	}
+	if gotSandbox != sandboxName {
+		t.Fatalf("expected sandbox %q, got %q", sandboxName, gotSandbox)
+	}
+	if gotPort != 3000 {
+		t.Fatalf("expected port %d, got %d", 3000, gotPort)
+	}
+}
+
+func TestExposureHostLabelRejectsInvalid(t *testing.T) {
+	if _, err := BuildExposureHostLabel("bad_name", 3000); err == nil {
+		t.Fatalf("expected invalid sandboxName error")
+	}
+	if _, err := BuildExposureHostLabel("rs-valid-name", 0); err == nil {
+		t.Fatalf("expected invalid port error")
+	}
+	if _, _, err := ParseExposureHostLabel("rs-valid-name-p3000"); err == nil {
+		t.Fatalf("expected parse error")
 	}
 }
 

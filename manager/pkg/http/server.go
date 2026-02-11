@@ -143,6 +143,11 @@ func (s *Server) setupRoutes() {
 	internal := s.router.Group("/internal/v1")
 	internal.Use(s.authMiddleware())
 	{
+		internalSandboxes := internal.Group("/sandboxes")
+		{
+			internalSandboxes.GET("/:id", s.getSandboxInternal)
+		}
+
 		// Template management (scheduler sync)
 		internalTemplates := internal.Group("/templates")
 		{

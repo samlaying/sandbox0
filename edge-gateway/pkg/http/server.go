@@ -224,6 +224,9 @@ func (s *Server) setupRoutes() {
 		api.Use(s.injectInternalToken())
 		api.Any("/*path", s.igRouter.ProxyToTarget)
 	}
+
+	// Host-based public exposure fallback (non-/api paths).
+	s.router.NoRoute(s.proxyPublicExposureNoRoute)
 }
 
 // injectInternalToken adds internal auth token to forwarded requests (default: internal-gateway)

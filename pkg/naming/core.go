@@ -11,14 +11,19 @@ import (
 )
 
 const (
-	dnsLabelMaxLen    = 63
-	podRandSuffixLen  = 5
-	replicaSetMaxLen  = dnsLabelMaxLen - 1 - podRandSuffixLen
-	defaultClusterID  = "default"
-	nameHashLength    = 8
-	clusterKeyMaxLen  = 32
-	clusterIDMaxLen   = 20
-	sandboxNamePrefix = "rs"
+	dnsLabelMaxLen   = 63
+	podRandSuffixLen = 5
+	replicaSetMaxLen = dnsLabelMaxLen - 1 - podRandSuffixLen
+	// Exposure host label format: <sandboxName>--p<port>.
+	// Keep sandbox name shorter than full DNS label to reserve suffix budget.
+	exposurePortDelimiter = "--p"
+	maxPortDigits         = 5
+	sandboxNameMaxLen     = dnsLabelMaxLen - len(exposurePortDelimiter) - maxPortDigits
+	defaultClusterID      = "default"
+	nameHashLength        = 8
+	clusterKeyMaxLen      = 32
+	clusterIDMaxLen       = 20
+	sandboxNamePrefix     = "rs"
 )
 
 const DefaultClusterID = defaultClusterID

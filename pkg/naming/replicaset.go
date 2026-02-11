@@ -58,6 +58,9 @@ func SandboxName(clusterID, templateName, randSuffix string) (string, error) {
 	if err := validateDNSLabel(name); err != nil {
 		return "", err
 	}
+	if len(name) > sandboxNameMaxLen {
+		return "", fmt.Errorf("sandbox name too long for exposure routing (%d > %d)", len(name), sandboxNameMaxLen)
+	}
 	return name, nil
 }
 

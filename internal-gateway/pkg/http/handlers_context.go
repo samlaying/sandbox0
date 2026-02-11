@@ -1,15 +1,22 @@
 package http
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/internal-gateway/pkg/middleware"
+	service "github.com/sandbox0-ai/infra/manager/pkg/service"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/naming"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
 	"go.uber.org/zap"
 )
@@ -24,15 +31,169 @@ func (s *Server) createContext(c *gin.Context) {
 		return
 	}
 
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid request body")
+		return
+	}
+
+	var req createContextRequestPayload
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid request body")
+			return
+		}
+	}
+
+	authCtx := middleware.GetAuthContext(c)
+	if authCtx == nil {
+		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "missing authentication")
+		return
+	}
+
+	var (
+		exposurePort *int
+		publicURL    string
+	)
+	if req.Type == "cmd" && req.Cmd != nil && req.Cmd.ExposePort != nil {
+		if *req.Cmd.ExposePort <= 0 || *req.Cmd.ExposePort > 65535 {
+			spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid expose_port")
+			return
+		}
+		procdURL, err := s.getProcdURL(c, sandboxID)
+		if err != nil {
+			return
+		}
+		if portStr := procdURL.Port(); portStr != "" {
+			if p, convErr := strconv.Atoi(portStr); convErr == nil && p == *req.Cmd.ExposePort {
+				spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "expose_port conflicts with reserved procd port")
+				return
+			}
+		}
+		label, err := naming.BuildExposureHostLabel(sandboxID, *req.Cmd.ExposePort)
+		if err != nil {
+			spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
+			return
+		}
+		publicURL = s.buildPublicExposureURL(label)
+		exposurePort = req.Cmd.ExposePort
+	}
+
 	procdURL, err := s.getProcdURL(c, sandboxID)
 	if err != nil {
 		return // Error response already sent
 	}
 
-	// Rewrite path for procd
-	c.Request.URL.Path = "/api/v1/contexts"
+	requestModifier, err := s.buildProcdRequestModifier(c)
+	if err != nil {
+		return
+	}
+	client := &http.Client{Timeout: s.cfg.ProxyTimeout.Duration}
+	if client.Timeout == 0 {
+		client.Timeout = 10 * time.Second
+	}
+	reqURL := *procdURL
+	reqURL.Path = "/api/v1/contexts"
+	upReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL.String(), bytes.NewReader(body))
+	if err != nil {
+		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "proxy initialization failed")
+		return
+	}
+	upReq.Header = c.Request.Header.Clone()
+	requestModifier(upReq)
 
-	s.proxyToProcd(c, procdURL)
+	resp, err := client.Do(upReq)
+	if err != nil {
+		spec.JSONError(c, http.StatusBadGateway, spec.CodeUnavailable, "failed to connect to sandbox process")
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode < 300 && exposurePort != nil {
+		autoWakeup := true
+		if req.Cmd != nil && req.Cmd.ExposeAutoWakeup != nil {
+			autoWakeup = *req.Cmd.ExposeAutoWakeup
+		}
+		if err := s.upsertExposePortPolicy(c, sandboxID, *exposurePort, autoWakeup); err != nil {
+			s.logger.Warn("Failed to update exposed port policy",
+				zap.String("sandbox_id", sandboxID),
+				zap.Int("port", *exposurePort),
+				zap.Bool("auto_wakeup", autoWakeup),
+				zap.Error(err),
+			)
+		}
+	}
+
+	if publicURL != "" && len(respBody) > 0 {
+		var payload map[string]any
+		if json.Unmarshal(respBody, &payload) == nil {
+			if data, ok := payload["data"].(map[string]any); ok {
+				data["public_url"] = publicURL
+				if exposurePort != nil {
+					data["exposed_port"] = *exposurePort
+				}
+				if newBody, mErr := json.Marshal(payload); mErr == nil {
+					respBody = newBody
+				}
+			}
+		}
+	}
+
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			c.Writer.Header().Add(k, v)
+		}
+	}
+	c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
+}
+
+type createContextRequestPayload struct {
+	Type string `json:"type"`
+	Cmd  *struct {
+		Command          []string `json:"command,omitempty"`
+		ExposePort       *int     `json:"expose_port,omitempty"`
+		ExposeAutoWakeup *bool    `json:"expose_auto_wakeup,omitempty"`
+	} `json:"cmd,omitempty"`
+}
+
+func (s *Server) buildPublicExposureURL(label string) string {
+	rootDomain := s.cfg.PublicRootDomain
+	if rootDomain == "" {
+		rootDomain = "sandbox0.app"
+	}
+	regionID := s.cfg.PublicRegionID
+	if regionID == "" {
+		return ""
+	}
+	return "https://" + label + "." + regionID + "." + rootDomain
+}
+
+func (s *Server) upsertExposePortPolicy(c *gin.Context, sandboxID string, port int, autoWakeup bool) error {
+	authCtx := middleware.GetAuthContext(c)
+	if authCtx == nil {
+		return errors.New("missing auth context")
+	}
+	sandbox, err := s.managerClient.GetSandbox(c.Request.Context(), sandboxID, authCtx.UserID, authCtx.TeamID)
+	if err != nil {
+		return err
+	}
+	ports := make([]service.ExposedPortConfig, 0, len(sandbox.ExposedPorts)+1)
+	updated := false
+	for _, item := range sandbox.ExposedPorts {
+		if item.Port == port {
+			item.AutoWakeup = autoWakeup
+			updated = true
+		}
+		ports = append(ports, item)
+	}
+	if !updated {
+		ports = append(ports, service.ExposedPortConfig{
+			Port:       port,
+			AutoWakeup: autoWakeup,
+		})
+	}
+	return s.managerClient.UpdateSandboxExposedPorts(c.Request.Context(), sandboxID, authCtx.UserID, authCtx.TeamID, ports)
 }
 
 // listContexts lists all contexts in a sandbox
@@ -253,6 +414,23 @@ func (s *Server) getProcdURL(c *gin.Context, sandboxID string) (*url.URL, error)
 		if sandbox.TeamID != authCtx.TeamID {
 			spec.JSONError(c, http.StatusForbidden, spec.CodeForbidden, "sandbox belongs to a different team")
 			return nil, errors.New("sandbox belongs to a different team")
+		}
+		if sandbox.Paused && sandbox.AutoResume {
+			resumeCtx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+			defer cancel()
+			if err := s.managerClient.ResumeSandbox(resumeCtx, sandboxID, authCtx.UserID, authCtx.TeamID); err != nil {
+				spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "sandbox is waking up")
+				return nil, err
+			}
+			sandbox, err = s.managerClient.GetSandbox(c.Request.Context(), sandboxID, authCtx.UserID, authCtx.TeamID)
+			if err != nil {
+				spec.JSONError(c, http.StatusNotFound, spec.CodeNotFound, "sandbox not found")
+				return nil, err
+			}
+		}
+		if sandbox.Paused && !sandbox.AutoResume {
+			spec.JSONError(c, http.StatusServiceUnavailable, spec.CodeUnavailable, "sandbox is paused and auto_resume is disabled")
+			return nil, errors.New("sandbox auto_resume is disabled")
 		}
 
 		// Parse procd address

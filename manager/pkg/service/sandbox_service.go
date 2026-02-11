@@ -29,16 +29,19 @@ import (
 
 // Sandbox represents a sandbox instance
 type Sandbox struct {
-	ID           string    `json:"id"`
-	TemplateID   string    `json:"template_id"`
-	TeamID       string    `json:"team_id"`
-	UserID       string    `json:"user_id"`
-	InternalAddr string    `json:"internal_addr"`
-	Status       string    `json:"status"`
-	PodName      string    `json:"pod_name"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	ClaimedAt    time.Time `json:"claimed_at"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string              `json:"id"`
+	TemplateID   string              `json:"template_id"`
+	TeamID       string              `json:"team_id"`
+	UserID       string              `json:"user_id"`
+	InternalAddr string              `json:"internal_addr"`
+	Status       string              `json:"status"`
+	Paused       bool                `json:"paused"`
+	AutoResume   bool                `json:"auto_resume"`
+	ExposedPorts []ExposedPortConfig `json:"exposed_ports,omitempty"`
+	PodName      string              `json:"pod_name"`
+	ExpiresAt    time.Time           `json:"expires_at"`
+	ClaimedAt    time.Time           `json:"claimed_at"`
+	CreatedAt    time.Time           `json:"created_at"`
 }
 
 // SandboxStatus represents possible sandbox statuses
@@ -158,11 +161,18 @@ type ClaimRequest struct {
 
 // SandboxConfig represents sandbox configuration
 type SandboxConfig struct {
-	EnvVars map[string]string                 `json:"env_vars,omitempty"`
-	TTL     int32                             `json:"ttl,omitempty"`      // Time-to-live in seconds
-	HardTTL int32                             `json:"hard_ttl,omitempty"` // Hard time-to-live in seconds (0 disables)
-	Network *v1alpha1.TplSandboxNetworkPolicy `json:"network,omitempty"`
-	Webhook *WebhookConfig                    `json:"webhook,omitempty"`
+	EnvVars      map[string]string                 `json:"env_vars,omitempty"`
+	TTL          int32                             `json:"ttl,omitempty"`      // Time-to-live in seconds
+	HardTTL      int32                             `json:"hard_ttl,omitempty"` // Hard time-to-live in seconds (0 disables)
+	Network      *v1alpha1.TplSandboxNetworkPolicy `json:"network,omitempty"`
+	Webhook      *WebhookConfig                    `json:"webhook,omitempty"`
+	AutoResume   *bool                             `json:"auto_resume,omitempty"`
+	ExposedPorts []ExposedPortConfig               `json:"exposed_ports,omitempty"`
+}
+
+type ExposedPortConfig struct {
+	Port       int  `json:"port"`
+	AutoWakeup bool `json:"auto_wakeup"`
 }
 
 // WebhookConfig represents outbound webhook configuration.
@@ -784,6 +794,12 @@ func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cf
 	if cfg.Webhook != nil {
 		merged.Webhook = cfg.Webhook
 	}
+	if cfg.AutoResume != nil {
+		merged.AutoResume = cfg.AutoResume
+	}
+	if cfg.ExposedPorts != nil {
+		merged.ExposedPorts = cfg.ExposedPorts
+	}
 
 	var networkSpec *v1alpha1.NetworkPolicySpec
 	if cfg.Network != nil {
@@ -1049,6 +1065,12 @@ func (s *SandboxService) podToSandbox(ctx context.Context, pod *corev1.Pod, sand
 		s.logger.Error("Failed to get procd address", zap.String("sandboxID", sandboxID), zap.Error(err))
 	}
 
+	cfg := parseSandboxConfig(pod.Annotations[controller.AnnotationConfig])
+	autoResume := false
+	if cfg.AutoResume != nil {
+		autoResume = *cfg.AutoResume
+	}
+
 	return &Sandbox{
 		ID:           sandboxID,
 		TemplateID:   pod.Labels[controller.LabelTemplateID],
@@ -1056,11 +1078,25 @@ func (s *SandboxService) podToSandbox(ctx context.Context, pod *corev1.Pod, sand
 		UserID:       pod.Annotations[controller.AnnotationUserID],
 		InternalAddr: internalAddr,
 		Status:       status,
+		Paused:       pod.Annotations[controller.AnnotationPaused] == "true",
+		AutoResume:   autoResume,
+		ExposedPorts: cfg.ExposedPorts,
 		PodName:      pod.Name,
 		ExpiresAt:    expiresAt,
 		ClaimedAt:    claimedAt,
 		CreatedAt:    createdAt,
 	}
+}
+
+func parseSandboxConfig(configJSON string) SandboxConfig {
+	if configJSON == "" {
+		return SandboxConfig{}
+	}
+	var cfg SandboxConfig
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		return SandboxConfig{}
+	}
+	return cfg
 }
 
 func (s *SandboxService) prodAddress(ctx context.Context, pod *corev1.Pod) (string, error) {

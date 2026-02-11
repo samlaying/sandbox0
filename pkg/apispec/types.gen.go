@@ -387,15 +387,17 @@ type ContextResourceUsage struct {
 
 // ContextResponse defines model for ContextResponse.
 type ContextResponse struct {
-	CreatedAt string             `json:"created_at"`
-	Cwd       *string            `json:"cwd,omitempty"`
-	EnvVars   *map[string]string `json:"env_vars,omitempty"`
-	Id        string             `json:"id"`
-	Language  *string            `json:"language,omitempty"`
-	Output    *string            `json:"output,omitempty"`
-	Paused    bool               `json:"paused"`
-	Running   bool               `json:"running"`
-	Type      ProcessType        `json:"type"`
+	CreatedAt   string             `json:"created_at"`
+	Cwd         *string            `json:"cwd,omitempty"`
+	EnvVars     *map[string]string `json:"env_vars,omitempty"`
+	ExposedPort *int32             `json:"exposed_port,omitempty"`
+	Id          string             `json:"id"`
+	Language    *string            `json:"language,omitempty"`
+	Output      *string            `json:"output,omitempty"`
+	Paused      bool               `json:"paused"`
+	PublicUrl   *string            `json:"public_url,omitempty"`
+	Running     bool               `json:"running"`
+	Type        ProcessType        `json:"type"`
 }
 
 // ContextStatsResponse defines model for ContextStatsResponse.
@@ -434,7 +436,9 @@ type CreateAPIKeyResponse struct {
 
 // CreateCMDContextRequest defines model for CreateCMDContextRequest.
 type CreateCMDContextRequest struct {
-	Command *[]string `json:"command,omitempty"`
+	Command          *[]string `json:"command,omitempty"`
+	ExposeAutoWakeup *bool     `json:"expose_auto_wakeup,omitempty"`
+	ExposePort       *int32    `json:"expose_port,omitempty"`
 }
 
 // CreateContextRequest defines model for CreateContextRequest.
@@ -505,6 +509,12 @@ type ErrorEnvelopeSuccess bool
 type ExecCandidate struct {
 	Args *[]string `json:"args,omitempty"`
 	Name string    `json:"name"`
+}
+
+// ExposedPortConfig defines model for ExposedPortConfig.
+type ExposedPortConfig struct {
+	AutoWakeup bool  `json:"auto_wakeup"`
+	Port       int32 `json:"port"`
 }
 
 // FileContentResponse defines model for FileContentResponse.
@@ -798,24 +808,29 @@ type ResumeSandboxResponse struct {
 
 // Sandbox defines model for Sandbox.
 type Sandbox struct {
-	ClaimedAt  time.Time `json:"claimed_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	Id         string    `json:"id"`
-	PodName    string    `json:"pod_name"`
-	Status     string    `json:"status"`
-	TeamId     string    `json:"team_id"`
-	TemplateId string    `json:"template_id"`
-	UserId     *string   `json:"user_id,omitempty"`
+	AutoResume   bool                 `json:"auto_resume"`
+	ClaimedAt    time.Time            `json:"claimed_at"`
+	CreatedAt    time.Time            `json:"created_at"`
+	ExpiresAt    time.Time            `json:"expires_at"`
+	ExposedPorts *[]ExposedPortConfig `json:"exposed_ports,omitempty"`
+	Id           string               `json:"id"`
+	Paused       bool                 `json:"paused"`
+	PodName      string               `json:"pod_name"`
+	Status       string               `json:"status"`
+	TeamId       string               `json:"team_id"`
+	TemplateId   string               `json:"template_id"`
+	UserId       *string              `json:"user_id,omitempty"`
 }
 
 // SandboxConfig defines model for SandboxConfig.
 type SandboxConfig struct {
-	EnvVars *map[string]string       `json:"env_vars,omitempty"`
-	HardTtl *int32                   `json:"hard_ttl,omitempty"`
-	Network *TplSandboxNetworkPolicy `json:"network,omitempty"`
-	Ttl     *int32                   `json:"ttl,omitempty"`
-	Webhook *WebhookConfig           `json:"webhook,omitempty"`
+	AutoResume   *bool                    `json:"auto_resume,omitempty"`
+	EnvVars      *map[string]string       `json:"env_vars,omitempty"`
+	ExposedPorts *[]ExposedPortConfig     `json:"exposed_ports,omitempty"`
+	HardTtl      *int32                   `json:"hard_ttl,omitempty"`
+	Network      *TplSandboxNetworkPolicy `json:"network,omitempty"`
+	Ttl          *int32                   `json:"ttl,omitempty"`
+	Webhook      *WebhookConfig           `json:"webhook,omitempty"`
 }
 
 // SandboxResourceUsage defines model for SandboxResourceUsage.

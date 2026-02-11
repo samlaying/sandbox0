@@ -2,6 +2,7 @@ package naming
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -64,4 +65,50 @@ func extractClusterKey(name, prefix string) (string, error) {
 		return "", fmt.Errorf("name '%s' does not include cluster key", name)
 	}
 	return parts[0], nil
+}
+
+// BuildExposureHostLabel builds the host label used for sandbox public exposure.
+// Format: <sandboxName>--p<port>.
+func BuildExposureHostLabel(sandboxName string, port int) (string, error) {
+	if sandboxName == "" {
+		return "", fmt.Errorf("sandboxName is empty")
+	}
+	if err := validateDNSLabel(sandboxName); err != nil {
+		return "", fmt.Errorf("invalid sandboxName: %w", err)
+	}
+	if port <= 0 || port > 65535 {
+		return "", fmt.Errorf("invalid port: %d", port)
+	}
+	label := fmt.Sprintf("%s%s%d", sandboxName, exposurePortDelimiter, port)
+	if len(label) > dnsLabelMaxLen {
+		return "", fmt.Errorf("exposure label too long (%d > %d)", len(label), dnsLabelMaxLen)
+	}
+	if err := validateDNSLabel(label); err != nil {
+		return "", err
+	}
+	return label, nil
+}
+
+// ParseExposureHostLabel parses a host label created by BuildExposureHostLabel.
+func ParseExposureHostLabel(label string) (sandboxName string, port int, err error) {
+	if label == "" {
+		return "", 0, fmt.Errorf("label is empty")
+	}
+	idx := strings.LastIndex(label, exposurePortDelimiter)
+	if idx <= 0 {
+		return "", 0, fmt.Errorf("invalid exposure label: missing '%s'", exposurePortDelimiter)
+	}
+	sandboxName = label[:idx]
+	if err := validateDNSLabel(sandboxName); err != nil {
+		return "", 0, fmt.Errorf("invalid sandbox name: %w", err)
+	}
+	portStr := label[idx+len(exposurePortDelimiter):]
+	if portStr == "" {
+		return "", 0, fmt.Errorf("invalid exposure label: empty port")
+	}
+	port, err = strconv.Atoi(portStr)
+	if err != nil || port <= 0 || port > 65535 {
+		return "", 0, fmt.Errorf("invalid port in exposure label: %s", portStr)
+	}
+	return sandboxName, port, nil
 }

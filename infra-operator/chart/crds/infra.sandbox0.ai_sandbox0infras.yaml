@@ -818,6 +818,20 @@ spec:
                             default: 30s
                             description: Timeouts
                             type: string
+                          publicExposureEnabled:
+                            default: false
+                            description: |-
+                              Public exposure host routing configuration.
+                              Host format is fixed as: <exposureLabel>.<region>.<rootDomain>
+                            type: boolean
+                          publicRegionId:
+                            type: string
+                          publicRootDomain:
+                            default: sandbox0.app
+                            type: string
+                          publicStrictHostValidation:
+                            default: true
+                            type: boolean
                           rateLimitBurst:
                             default: 200
                             type: integer
@@ -1104,6 +1118,20 @@ spec:
                             default: 10s
                             description: Proxy configuration
                             type: string
+                          publicExposureEnabled:
+                            default: false
+                            description: |-
+                              Public exposure host routing configuration.
+                              Host format is fixed as: <exposureLabel>.<region>.<rootDomain>
+                            type: boolean
+                          publicRegionId:
+                            type: string
+                          publicRootDomain:
+                            default: sandbox0.app
+                            type: string
+                          publicStrictHostValidation:
+                            default: true
+                            type: boolean
                           rateLimitBurst:
                             default: 200
                             type: integer

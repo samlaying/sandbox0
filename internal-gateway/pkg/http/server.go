@@ -180,12 +180,14 @@ func NewServer(
 	var publicOIDC *gatewayoidc.Manager
 	var publicJWT *gatewayjwt.Issuer
 
+	if pool != nil {
+		publicRepo = gatewaydb.NewRepository(pool)
+	}
+
 	if publicAuthEnabled {
-		if pool == nil {
+		if publicRepo == nil {
 			return nil, fmt.Errorf("public auth requires database connection")
 		}
-
-		publicRepo = gatewaydb.NewRepository(pool)
 
 		edgeCfg := &config.GatewayConfig{
 			DefaultTeamName:          cfg.DefaultTeamName,
@@ -399,6 +401,9 @@ func (s *Server) setupRoutes() {
 			internal.GET("/templates/stats", s.getTemplateStats)
 		}
 	}
+
+	// Host-based public exposure fallback (for non-/api paths)
+	s.router.NoRoute(s.handlePublicExposureNoRoute)
 }
 
 // Start starts the HTTP server
