@@ -2952,8 +2952,9 @@ components:
           type: boolean
         created_at:
           type: string
-        output:
+        output_raw:
           type: string
+          description: Raw PTY output for CMD contexts with wait=true, may contain terminal control characters
       required: [id, type, running, paused, created_at]
     ContextStatsResponse:
       type: object
@@ -2979,9 +2980,10 @@ components:
     ContextExecResponse:
       type: object
       properties:
-        output:
+        output_raw:
           type: string
-      required: [output]
+          description: Raw PTY output, may contain terminal control characters (e.g. \r)
+      required: [output_raw]
     ResizeContextRequest:
       type: object
       properties:

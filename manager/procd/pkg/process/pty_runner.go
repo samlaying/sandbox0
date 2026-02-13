@@ -43,7 +43,7 @@ func (r *PTYRunner) Start(cmd *exec.Cmd, size *PTYSize) error {
 
 	ptySize := size
 	if ptySize == nil {
-		ptySize = &PTYSize{Rows: 24, Cols: 80}
+		ptySize = &PTYSize{Rows: 100, Cols: 500}
 	}
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{

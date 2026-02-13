@@ -372,7 +372,8 @@ type ContainerSpec struct {
 
 // ContextExecResponse defines model for ContextExecResponse.
 type ContextExecResponse struct {
-	Output string `json:"output"`
+	// OutputRaw Raw PTY output, may contain terminal control characters (e.g. \r)
+	OutputRaw string `json:"output_raw"`
 }
 
 // ContextInputRequest defines model for ContextInputRequest.
@@ -397,10 +398,12 @@ type ContextResponse struct {
 	EnvVars   *map[string]string `json:"env_vars,omitempty"`
 	Id        string             `json:"id"`
 	Language  *string            `json:"language,omitempty"`
-	Output    *string            `json:"output,omitempty"`
-	Paused    bool               `json:"paused"`
-	Running   bool               `json:"running"`
-	Type      ProcessType        `json:"type"`
+
+	// OutputRaw Raw PTY output for CMD contexts with wait=true, may contain terminal control characters
+	OutputRaw *string     `json:"output_raw,omitempty"`
+	Paused    bool        `json:"paused"`
+	Running   bool        `json:"running"`
+	Type      ProcessType `json:"type"`
 }
 
 // ContextStatsResponse defines model for ContextStatsResponse.

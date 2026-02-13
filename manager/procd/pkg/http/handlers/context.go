@@ -81,7 +81,7 @@ type ContextResponse struct {
 	Running   bool                `json:"running"`
 	Paused    bool                `json:"paused"`
 	CreatedAt string              `json:"created_at"`
-	Output    string              `json:"output,omitempty"`
+	OutputRaw string              `json:"output_raw,omitempty"`
 }
 
 // ContextStatsResponse is the response body for context resource stats.
@@ -101,7 +101,7 @@ type ContextInputRequest struct {
 
 // ContextExecResponse is the response body for synchronous execution.
 type ContextExecResponse struct {
-	Output string `json:"output"`
+	OutputRaw string `json:"output_raw"`
 }
 
 // ResizeContextRequest is the request body for resizing a PTY.
@@ -252,7 +252,7 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Running:   ctx.IsRunning(),
 			Paused:    ctx.IsPaused(),
 			CreatedAt: ctx.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			Output:    output,
+			OutputRaw: output,
 		})
 		return
 	}
@@ -403,7 +403,7 @@ func (h *ContextHandler) Exec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ContextExecResponse{Output: output})
+	writeJSON(w, http.StatusOK, ContextExecResponse{OutputRaw: output})
 }
 
 // Stats returns resource usage statistics for a context.
