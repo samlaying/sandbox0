@@ -159,7 +159,7 @@ func (s *Server) deleteSandboxVolume(w http.ResponseWriter, r *http.Request) {
 	vol, err := s.repo.GetSandboxVolume(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			_ = spec.WriteError(w, http.StatusNotFound, spec.CodeNotFound, "not found")
+			_ = spec.WriteSuccess(w, http.StatusOK, map[string]bool{"deleted": true})
 			return
 		}
 		s.logger.WithError(err).Error("Failed to get sandbox volume")
@@ -197,7 +197,7 @@ func (s *Server) deleteSandboxVolume(w http.ResponseWriter, r *http.Request) {
 	// No active mounts, proceed with deletion
 	if err := s.repo.DeleteSandboxVolume(r.Context(), id); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			_ = spec.WriteError(w, http.StatusNotFound, spec.CodeNotFound, "not found")
+			_ = spec.WriteSuccess(w, http.StatusOK, map[string]bool{"deleted": true})
 			return
 		}
 		s.logger.WithError(err).Error("Failed to delete sandbox volume")

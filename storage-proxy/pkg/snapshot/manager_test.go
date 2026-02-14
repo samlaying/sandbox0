@@ -115,11 +115,19 @@ func (r *fakeRepo) DeleteSnapshotTx(ctx context.Context, tx pgx.Tx, id string) e
 }
 
 type fakeVolumeProvider struct {
-	ctx *volume.VolumeContext
-	err error
+	ctx          *volume.VolumeContext
+	err          error
+	beginPending int
+	beginErr     error
+	waitErr      error
+	beginCalled  bool
+	waitCalled   bool
+	lastVolumeID string
+	lastAckID    string
 }
 
 func (f *fakeVolumeProvider) GetVolume(volumeID string) (*volume.VolumeContext, error) {
+	f.lastVolumeID = volumeID
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -127,8 +135,29 @@ func (f *fakeVolumeProvider) GetVolume(volumeID string) (*volume.VolumeContext, 
 }
 
 func (f *fakeVolumeProvider) UpdateVolumeRoot(volumeID string, rootInode meta.Ino) error {
+	f.lastVolumeID = volumeID
 	if f.err != nil {
 		return f.err
+	}
+	return nil
+}
+
+func (f *fakeVolumeProvider) BeginInvalidate(volumeID, invalidateID string) (int, error) {
+	f.beginCalled = true
+	f.lastVolumeID = volumeID
+	f.lastAckID = invalidateID
+	if f.beginErr != nil {
+		return 0, f.beginErr
+	}
+	return f.beginPending, nil
+}
+
+func (f *fakeVolumeProvider) WaitForInvalidate(ctx context.Context, volumeID, invalidateID string) error {
+	f.waitCalled = true
+	f.lastVolumeID = volumeID
+	f.lastAckID = invalidateID
+	if f.waitErr != nil {
+		return f.waitErr
 	}
 	return nil
 }
@@ -412,6 +441,124 @@ func TestCreateSnapshot_CreatesVolumePathWhenMissing(t *testing.T) {
 
 	if _, ok := repo.snapshots[snapshot.ID]; !ok {
 		t.Fatalf("snapshot metadata not persisted in repository")
+	}
+}
+
+func TestRestoreSnapshot_WaitsForInvalidateAck(t *testing.T) {
+	repo := newFakeRepo()
+	repo.snapshots["snap1"] = &db.Snapshot{ID: "snap1", VolumeID: "vol1", TeamID: "team1"}
+	volMgr := &fakeVolumeProvider{
+		err:          errors.New("not mounted"),
+		beginPending: 1,
+	}
+	mgr := newTestManager(repo, volMgr)
+	mgr.config.RestoreRemountTimeout = "100ms"
+
+	metaClient := mgr.metaClient.(*fakeMeta)
+	volumePath, err := naming.JuiceFSVolumePath("vol1")
+	if err != nil {
+		t.Fatalf("volume path generation failed: %v", err)
+	}
+	snapshotPath, err := naming.JuiceFSSnapshotPath("vol1", "snap1")
+	if err != nil {
+		t.Fatalf("snapshot path generation failed: %v", err)
+	}
+	metaClient.ensurePath(volumePath)
+	metaClient.ensurePath(snapshotPath)
+
+	err = mgr.RestoreSnapshot(context.Background(), &RestoreSnapshotRequest{
+		VolumeID:   "vol1",
+		SnapshotID: "snap1",
+		TeamID:     "team1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !volMgr.beginCalled {
+		t.Fatalf("expected BeginInvalidate to be called")
+	}
+	if !volMgr.waitCalled {
+		t.Fatalf("expected WaitForInvalidate to be called")
+	}
+	if volMgr.lastAckID == "" {
+		t.Fatalf("expected invalidate id to be set")
+	}
+}
+
+func TestRestoreSnapshot_RemountTimeout(t *testing.T) {
+	repo := newFakeRepo()
+	repo.snapshots["snap1"] = &db.Snapshot{ID: "snap1", VolumeID: "vol1", TeamID: "team1"}
+	volMgr := &fakeVolumeProvider{
+		err:          errors.New("not mounted"),
+		beginPending: 1,
+		waitErr:      context.DeadlineExceeded,
+	}
+	mgr := newTestManager(repo, volMgr)
+	mgr.config.RestoreRemountTimeout = "1ms"
+
+	metaClient := mgr.metaClient.(*fakeMeta)
+	volumePath, err := naming.JuiceFSVolumePath("vol1")
+	if err != nil {
+		t.Fatalf("volume path generation failed: %v", err)
+	}
+	snapshotPath, err := naming.JuiceFSSnapshotPath("vol1", "snap1")
+	if err != nil {
+		t.Fatalf("snapshot path generation failed: %v", err)
+	}
+	metaClient.ensurePath(volumePath)
+	metaClient.ensurePath(snapshotPath)
+
+	err = mgr.RestoreSnapshot(context.Background(), &RestoreSnapshotRequest{
+		VolumeID:   "vol1",
+		SnapshotID: "snap1",
+		TeamID:     "team1",
+	})
+	if !errors.Is(err, ErrRemountTimeout) {
+		t.Fatalf("expected ErrRemountTimeout, got %v", err)
+	}
+	if !volMgr.beginCalled {
+		t.Fatalf("expected BeginInvalidate to be called")
+	}
+	if !volMgr.waitCalled {
+		t.Fatalf("expected WaitForInvalidate to be called")
+	}
+}
+
+func TestRestoreSnapshot_BeginInvalidateError(t *testing.T) {
+	repo := newFakeRepo()
+	repo.snapshots["snap1"] = &db.Snapshot{ID: "snap1", VolumeID: "vol1", TeamID: "team1"}
+	beginErr := errors.New("begin failed")
+	volMgr := &fakeVolumeProvider{
+		err:      errors.New("not mounted"),
+		beginErr: beginErr,
+	}
+	mgr := newTestManager(repo, volMgr)
+
+	metaClient := mgr.metaClient.(*fakeMeta)
+	volumePath, err := naming.JuiceFSVolumePath("vol1")
+	if err != nil {
+		t.Fatalf("volume path generation failed: %v", err)
+	}
+	snapshotPath, err := naming.JuiceFSSnapshotPath("vol1", "snap1")
+	if err != nil {
+		t.Fatalf("snapshot path generation failed: %v", err)
+	}
+	metaClient.ensurePath(volumePath)
+	metaClient.ensurePath(snapshotPath)
+
+	err = mgr.RestoreSnapshot(context.Background(), &RestoreSnapshotRequest{
+		VolumeID:   "vol1",
+		SnapshotID: "snap1",
+		TeamID:     "team1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "begin invalidate") {
+		t.Fatalf("expected begin invalidate error, got %v", err)
+	}
+	if !volMgr.beginCalled {
+		t.Fatalf("expected BeginInvalidate to be called")
+	}
+	if volMgr.waitCalled {
+		t.Fatalf("expected WaitForInvalidate not to be called")
 	}
 }
 

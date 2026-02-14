@@ -85,11 +85,11 @@ func (h *VolumeHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 	err := h.manager.Unmount(r.Context(), req.SandboxVolumeID, req.MountSessionID)
 	if err != nil {
 		if err == volume.ErrVolumeNotMounted {
-			writeError(w, http.StatusNotFound, "not_mounted", err.Error())
+			writeJSON(w, http.StatusOK, map[string]bool{"unmounted": true})
 			return
 		}
 		if err == volume.ErrMountSessionNotFound {
-			writeError(w, http.StatusNotFound, "not_mounted", err.Error())
+			writeJSON(w, http.StatusOK, map[string]bool{"unmounted": true})
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "unmount_failed", err.Error())

@@ -715,6 +715,10 @@ func (s *SandboxService) TerminateSandbox(ctx context.Context, sandboxID string)
 	// Find the pod by sandbox ID
 	pod, err := s.getSandboxPod(ctx, sandboxID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			s.logger.Info("Sandbox already terminated", zap.String("sandboxID", sandboxID))
+			return nil
+		}
 		return fmt.Errorf("get pod: %w", err)
 	}
 
@@ -1218,7 +1222,10 @@ func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*P
 
 	// Check if already paused
 	if pod.Annotations[controller.AnnotationPaused] == "true" {
-		return nil, fmt.Errorf("sandbox is already paused")
+		return &PauseSandboxResponse{
+			SandboxID: sandboxID,
+			Paused:    true,
+		}, nil
 	}
 
 	// Generate internal token for procd authentication
@@ -1397,7 +1404,10 @@ func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*
 
 	// Check if paused
 	if pod.Annotations[controller.AnnotationPaused] != "true" {
-		return nil, fmt.Errorf("sandbox is not paused")
+		return &ResumeSandboxResponse{
+			SandboxID: sandboxID,
+			Resumed:   true,
+		}, nil
 	}
 
 	// Restore original resources and TTL first (before resuming processes)

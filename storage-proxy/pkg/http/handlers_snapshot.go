@@ -206,6 +206,12 @@ func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	err := s.snapshotMgr.DeleteSnapshot(r.Context(), volumeID, snapshotID, claims.TeamID)
 	if err != nil {
+		if errors.Is(err, snapshot.ErrSnapshotNotFound) ||
+			errors.Is(err, snapshot.ErrSnapshotNotBelongToVolume) ||
+			errors.Is(err, snapshot.ErrVolumeNotFound) {
+			_ = spec.WriteSuccess(w, http.StatusOK, map[string]bool{"deleted": true})
+			return
+		}
 		s.handleSnapshotError(w, err)
 		return
 	}
