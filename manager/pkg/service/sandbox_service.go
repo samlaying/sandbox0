@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -17,7 +18,7 @@ import (
 	obsmetrics "github.com/sandbox0-ai/infra/pkg/observability/metrics"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -25,6 +26,8 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/util/retry"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // Sandbox represents a sandbox instance
@@ -52,6 +55,21 @@ const (
 	SandboxStatusFailed    = "failed"
 	SandboxStatusCompleted = "completed"
 )
+
+// errNoIdlePod is returned when no idle pod is available for claiming.
+var errNoIdlePod = errors.New("no idle pod available")
+
+// claimIdlePodBackoff is the retry backoff for claiming idle pods.
+// Designed to balance between:
+// - Quick retries to grab an idle pod before other clients
+// - Not waiting too long (cold start may be faster than long retries)
+// - Not overwhelming the API server with requests
+var claimIdlePodBackoff = wait.Backoff{
+	Steps:    3,              // Max 3 attempts
+	Duration: 15 * time.Millisecond,
+	Factor:   1.5,            // Mild exponential backoff: 15ms, 22ms, 33ms
+	Jitter:   0.1,            // 10% jitter to spread out concurrent requests
+}
 
 // SandboxServiceConfig handles configuration for SandboxService
 type SandboxServiceConfig struct {
@@ -231,7 +249,7 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 		}
 		template, err = s.templateLister.Get(publicNamespace, req.Template)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if k8serrors.IsNotFound(err) {
 				return nil, fmt.Errorf("template %s not found in namespace %s", req.Template, publicNamespace)
 			}
 			return nil, fmt.Errorf("get template: %w", err)
@@ -252,29 +270,14 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	_ = resolvedName // reserved for audit/debugging (name used is template.ObjectMeta.Name)
 
 	// Try to claim an idle pod first
-	var pod *corev1.Pod
-	claimType := "hot"
-	for i := 0; i < 2; i++ {
-		pod, err = s.claimIdlePod(ctx, template, req)
-		if err != nil && !errors.IsConflict(err) {
-			if metrics != nil {
-				metrics.SandboxClaimsTotal.WithLabelValues(req.Template, "error").Inc()
-			}
-			return nil, fmt.Errorf("claim idle pod: %w", err)
+	pod, err := s.claimIdlePod(ctx, template, req)
+	if err != nil {
+		if metrics != nil {
+			metrics.SandboxClaimsTotal.WithLabelValues(req.Template, "error").Inc()
 		}
-		if errors.IsConflict(err) {
-			s.logger.Info("Idle pod is already claimed, trying again",
-				zap.String("namespace", template.Namespace),
-				zap.String("template", template.Name),
-				zap.String("teamID", req.TeamID),
-				zap.Error(err),
-			)
-			continue
-		}
-		if err == nil {
-			break
-		}
+		return nil, fmt.Errorf("claim idle pod: %w", err)
 	}
+	claimType := "hot"
 
 	// If no idle pod available, create a new one (cold start)
 	if pod == nil {
@@ -319,99 +322,111 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 
 // claimIdlePod claims an idle pod from the pool
 func (s *SandboxService) claimIdlePod(ctx context.Context, template *v1alpha1.SandboxTemplate, req *ClaimRequest) (*corev1.Pod, error) {
-	// Get all idle pods for this template
-	pods, err := s.podLister.Pods(template.ObjectMeta.Namespace).List(labels.SelectorFromSet(map[string]string{
-		controller.LabelTemplateID: template.ObjectMeta.Name,
-		controller.LabelPoolType:   controller.PoolTypeIdle,
-	}))
+	var claimedPod *corev1.Pod
+	err := retry.OnError(claimIdlePodBackoff, k8serrors.IsConflict, func() error {
+		// Get all idle pods for this template
+		pods, listErr := s.podLister.Pods(template.ObjectMeta.Namespace).List(labels.SelectorFromSet(map[string]string{
+			controller.LabelTemplateID: template.ObjectMeta.Name,
+			controller.LabelPoolType:   controller.PoolTypeIdle,
+		}))
+		if listErr != nil {
+			return listErr
+		}
+
+		// Filter running pods
+		var runningPods []*corev1.Pod
+		for _, pod := range pods {
+			if pod.Status.Phase == corev1.PodRunning {
+				runningPods = append(runningPods, pod)
+			}
+		}
+
+		if len(runningPods) == 0 {
+			// No idle pod available, not an error - use a special error to stop retry
+			return errNoIdlePod
+		}
+
+		// Claim an available pod
+		pod := runningPods[rand.Intn(len(runningPods))]
+
+		s.logger.Info("Claiming idle pod",
+			zap.String("pod", pod.Name),
+			zap.String("sandboxID", pod.Name),
+		)
+
+		// Update pod labels and annotations
+		pod = pod.DeepCopy()
+
+		// Change pool type from idle to active
+		pod.Labels[controller.LabelPoolType] = controller.PoolTypeActive
+		pod.Labels[controller.LabelSandboxID] = pod.Name
+
+		// Remove owner reference (so it's no longer managed by ReplicaSet)
+		pod.OwnerReferences = nil
+
+		// Add annotations
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		pod.Annotations[controller.AnnotationSandboxID] = pod.Name
+		pod.Annotations[controller.AnnotationTeamID] = req.TeamID
+		pod.Annotations[controller.AnnotationUserID] = req.UserID
+		pod.Annotations[controller.AnnotationClaimedAt] = s.clock.Now().Format(time.RFC3339)
+		pod.Annotations[controller.AnnotationClaimType] = "hot"
+
+		// Set expiration time
+		ttl := int32(s.config.DefaultTTL.Seconds())
+		if req.Config != nil && req.Config.TTL > 0 {
+			ttl = req.Config.TTL
+		}
+		expiresAt := s.clock.Now().Add(time.Duration(ttl) * time.Second)
+		pod.Annotations[controller.AnnotationExpiresAt] = expiresAt.Format(time.RFC3339)
+		if req.Config != nil && req.Config.HardTTL > 0 {
+			hardExpiresAt := s.clock.Now().Add(time.Duration(req.Config.HardTTL) * time.Second)
+			pod.Annotations[controller.AnnotationHardExpiresAt] = hardExpiresAt.Format(time.RFC3339)
+		}
+
+		// Serialize config
+		if req.Config != nil {
+			configJSON, marshalErr := json.Marshal(req.Config)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal config: %w", marshalErr)
+			}
+			pod.Annotations[controller.AnnotationConfig] = string(configJSON)
+		}
+
+		// Build and add network policy annotation
+		networkSpec, policyErr := s.applyPoliciesForPod(ctx, pod, template, req)
+		if policyErr != nil {
+			return policyErr
+		}
+
+		// Update the pod
+		updatedPod, updateErr := s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, pod, metav1.UpdateOptions{})
+		if updateErr != nil {
+			return updateErr
+		}
+
+		if applyErr := s.applyNetworkProvider(ctx, updatedPod, req.TeamID, networkSpec); applyErr != nil {
+			return fmt.Errorf("apply network policy: %w", applyErr)
+		}
+
+		s.logger.Info("Successfully claimed idle pod",
+			zap.String("pod", updatedPod.Name),
+			zap.String("sandboxID", updatedPod.Name),
+			zap.Time("expiresAt", expiresAt),
+		)
+
+		claimedPod = updatedPod
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, errNoIdlePod) {
+			return nil, nil // No idle pod available
+		}
 		return nil, err
 	}
-
-	// Filter running pods
-	var runningPods []*corev1.Pod
-	for _, pod := range pods {
-		if pod.Status.Phase == corev1.PodRunning {
-			runningPods = append(runningPods, pod)
-		}
-	}
-
-	if len(runningPods) == 0 {
-		return nil, nil // No idle pod available
-	}
-
-	// Claim an available pod
-	pod := runningPods[rand.Intn(len(runningPods))]
-
-	s.logger.Info("Claiming idle pod",
-		zap.String("pod", pod.Name),
-		zap.String("sandboxID", pod.Name),
-	)
-
-	// Update pod labels and annotations
-	pod = pod.DeepCopy()
-
-	// Change pool type from idle to active
-	pod.Labels[controller.LabelPoolType] = controller.PoolTypeActive
-	pod.Labels[controller.LabelSandboxID] = pod.Name
-
-	// Remove owner reference (so it's no longer managed by ReplicaSet)
-	pod.OwnerReferences = nil
-
-	// Add annotations
-	if pod.Annotations == nil {
-		pod.Annotations = make(map[string]string)
-	}
-	pod.Annotations[controller.AnnotationSandboxID] = pod.Name
-	pod.Annotations[controller.AnnotationTeamID] = req.TeamID
-	pod.Annotations[controller.AnnotationUserID] = req.UserID
-	pod.Annotations[controller.AnnotationClaimedAt] = s.clock.Now().Format(time.RFC3339)
-	pod.Annotations[controller.AnnotationClaimType] = "hot"
-
-	// Set expiration time
-	ttl := int32(s.config.DefaultTTL.Seconds())
-	if req.Config != nil && req.Config.TTL > 0 {
-		ttl = req.Config.TTL
-	}
-	expiresAt := s.clock.Now().Add(time.Duration(ttl) * time.Second)
-	pod.Annotations[controller.AnnotationExpiresAt] = expiresAt.Format(time.RFC3339)
-	if req.Config != nil && req.Config.HardTTL > 0 {
-		hardExpiresAt := s.clock.Now().Add(time.Duration(req.Config.HardTTL) * time.Second)
-		pod.Annotations[controller.AnnotationHardExpiresAt] = hardExpiresAt.Format(time.RFC3339)
-	}
-
-	// Serialize config
-	if req.Config != nil {
-		configJSON, err := json.Marshal(req.Config)
-		if err != nil {
-			return nil, fmt.Errorf("marshal config: %w", err)
-		}
-		pod.Annotations[controller.AnnotationConfig] = string(configJSON)
-	}
-
-	// Build and add network policy annotation
-	networkSpec, err := s.applyPoliciesForPod(ctx, pod, template, req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Update the pod
-	updatedPod, err := s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, pod, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("update pod: %w", err)
-	}
-
-	if err := s.applyNetworkProvider(ctx, updatedPod, req.TeamID, networkSpec); err != nil {
-		return nil, fmt.Errorf("apply network policy: %w", err)
-	}
-
-	s.logger.Info("Successfully claimed idle pod",
-		zap.String("pod", updatedPod.Name),
-		zap.String("sandboxID", updatedPod.Name),
-		zap.Time("expiresAt", expiresAt),
-	)
-
-	return updatedPod, nil
+	return claimedPod, nil
 }
 
 // createNewPod creates a new pod for cold start
@@ -715,7 +730,7 @@ func (s *SandboxService) TerminateSandbox(ctx context.Context, sandboxID string)
 	// Find the pod by sandbox ID
 	pod, err := s.getSandboxPod(ctx, sandboxID)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			s.logger.Info("Sandbox already terminated", zap.String("sandboxID", sandboxID))
 			return nil
 		}
@@ -767,71 +782,82 @@ func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cf
 		return nil, fmt.Errorf("get pod: %w", err)
 	}
 
-	updatedPod := pod.DeepCopy()
-	if updatedPod.Annotations == nil {
-		updatedPod.Annotations = make(map[string]string)
-	}
-
-	merged := SandboxConfig{}
-	if configJSON := updatedPod.Annotations[controller.AnnotationConfig]; configJSON != "" {
-		if err := json.Unmarshal([]byte(configJSON), &merged); err != nil {
-			s.logger.Warn("Failed to parse existing sandbox config annotation",
-				zap.String("sandboxID", sandboxID),
-				zap.Error(err),
-			)
-		}
-	}
-
-	if cfg.EnvVars != nil {
-		merged.EnvVars = cfg.EnvVars
-	}
-	if cfg.TTL > 0 {
-		merged.TTL = cfg.TTL
-		expiresAt := s.clock.Now().Add(time.Duration(cfg.TTL) * time.Second)
-		updatedPod.Annotations[controller.AnnotationExpiresAt] = expiresAt.Format(time.RFC3339)
-	}
-	if cfg.HardTTL > 0 {
-		merged.HardTTL = cfg.HardTTL
-		hardExpiresAt := s.clock.Now().Add(time.Duration(cfg.HardTTL) * time.Second)
-		updatedPod.Annotations[controller.AnnotationHardExpiresAt] = hardExpiresAt.Format(time.RFC3339)
-	}
-	if cfg.Webhook != nil {
-		merged.Webhook = cfg.Webhook
-	}
-	if cfg.AutoResume != nil {
-		merged.AutoResume = cfg.AutoResume
-	}
-	if cfg.ExposedPorts != nil {
-		merged.ExposedPorts = cfg.ExposedPorts
-	}
-
 	var networkSpec *v1alpha1.NetworkPolicySpec
-	if cfg.Network != nil {
-		merged.Network = cfg.Network
-		if s.NetworkPolicyService == nil {
-			return nil, fmt.Errorf("network policy service not configured")
+	var updatedPod *corev1.Pod
+
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get the latest version of the pod
+		current, err := s.getSandboxPod(ctx, sandboxID)
+		if err != nil {
+			return err
 		}
 
-		teamID := updatedPod.Annotations[controller.AnnotationTeamID]
-		templateSpec := s.templateNetworkSpec(updatedPod)
-		networkSpec = s.NetworkPolicyService.BuildNetworkPolicySpec(&BuildNetworkPolicyRequest{
-			SandboxID:    updatedPod.Name,
-			TeamID:       teamID,
-			TemplateSpec: templateSpec,
-			RequestSpec:  cfg.Network,
-		})
-		if _, err := s.setNetworkPolicyAnnotations(updatedPod, networkSpec); err != nil {
-			return nil, err
+		updatedPod = current.DeepCopy()
+		if updatedPod.Annotations == nil {
+			updatedPod.Annotations = make(map[string]string)
 		}
-	}
 
-	updatedConfigJSON, err := json.Marshal(merged)
-	if err != nil {
-		return nil, fmt.Errorf("marshal sandbox config: %w", err)
-	}
-	updatedPod.Annotations[controller.AnnotationConfig] = string(updatedConfigJSON)
+		merged := SandboxConfig{}
+		if configJSON := updatedPod.Annotations[controller.AnnotationConfig]; configJSON != "" {
+			if err := json.Unmarshal([]byte(configJSON), &merged); err != nil {
+				s.logger.Warn("Failed to parse existing sandbox config annotation",
+					zap.String("sandboxID", sandboxID),
+					zap.Error(err),
+				)
+			}
+		}
 
-	updatedPod, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, updatedPod, metav1.UpdateOptions{})
+		if cfg.EnvVars != nil {
+			merged.EnvVars = cfg.EnvVars
+		}
+		if cfg.TTL > 0 {
+			merged.TTL = cfg.TTL
+			expiresAt := s.clock.Now().Add(time.Duration(cfg.TTL) * time.Second)
+			updatedPod.Annotations[controller.AnnotationExpiresAt] = expiresAt.Format(time.RFC3339)
+		}
+		if cfg.HardTTL > 0 {
+			merged.HardTTL = cfg.HardTTL
+			hardExpiresAt := s.clock.Now().Add(time.Duration(cfg.HardTTL) * time.Second)
+			updatedPod.Annotations[controller.AnnotationHardExpiresAt] = hardExpiresAt.Format(time.RFC3339)
+		}
+		if cfg.Webhook != nil {
+			merged.Webhook = cfg.Webhook
+		}
+		if cfg.AutoResume != nil {
+			merged.AutoResume = cfg.AutoResume
+		}
+		if cfg.ExposedPorts != nil {
+			merged.ExposedPorts = cfg.ExposedPorts
+		}
+
+		if cfg.Network != nil {
+			merged.Network = cfg.Network
+			if s.NetworkPolicyService == nil {
+				return fmt.Errorf("network policy service not configured")
+			}
+
+			teamID := updatedPod.Annotations[controller.AnnotationTeamID]
+			templateSpec := s.templateNetworkSpec(updatedPod)
+			networkSpec = s.NetworkPolicyService.BuildNetworkPolicySpec(&BuildNetworkPolicyRequest{
+				SandboxID:    updatedPod.Name,
+				TeamID:       teamID,
+				TemplateSpec: templateSpec,
+				RequestSpec:  cfg.Network,
+			})
+			if _, err := s.setNetworkPolicyAnnotations(updatedPod, networkSpec); err != nil {
+				return err
+			}
+		}
+
+		updatedConfigJSON, err := json.Marshal(merged)
+		if err != nil {
+			return fmt.Errorf("marshal sandbox config: %w", err)
+		}
+		updatedPod.Annotations[controller.AnnotationConfig] = string(updatedConfigJSON)
+
+		updatedPod, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, updatedPod, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("update pod: %w", err)
 	}
@@ -891,56 +917,72 @@ func (s *SandboxService) UpdateNetworkPolicy(
 		return nil, fmt.Errorf("get pod: %w", err)
 	}
 
-	teamID := ""
-	if pod.Annotations != nil {
-		teamID = pod.Annotations[controller.AnnotationTeamID]
-	}
-	templateSpec := s.templateNetworkSpec(pod)
+	var networkSpec *v1alpha1.NetworkPolicySpec
+	var updatedPod *corev1.Pod
 
-	networkSpec := s.NetworkPolicyService.BuildNetworkPolicySpec(&BuildNetworkPolicyRequest{
-		SandboxID:    pod.Name,
-		TeamID:       teamID,
-		TemplateSpec: templateSpec,
-		RequestSpec:  policy,
-	})
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get the latest version of the pod
+		current, err := s.getSandboxPod(ctx, sandboxID)
+		if err != nil {
+			return err
+		}
 
-	updatedPod := pod.DeepCopy()
-	if updatedPod.Annotations == nil {
-		updatedPod.Annotations = make(map[string]string)
-	}
-	if _, err := s.setNetworkPolicyAnnotations(updatedPod, networkSpec); err != nil {
-		return nil, err
-	}
+		teamID := ""
+		if current.Annotations != nil {
+			teamID = current.Annotations[controller.AnnotationTeamID]
+		}
+		templateSpec := s.templateNetworkSpec(current)
 
-	if configJSON := updatedPod.Annotations[controller.AnnotationConfig]; configJSON != "" {
-		var config SandboxConfig
-		if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
-			s.logger.Warn("Failed to parse sandbox config annotation",
-				zap.String("sandboxID", sandboxID),
-				zap.Error(err),
-			)
+		networkSpec = s.NetworkPolicyService.BuildNetworkPolicySpec(&BuildNetworkPolicyRequest{
+			SandboxID:    current.Name,
+			TeamID:       teamID,
+			TemplateSpec: templateSpec,
+			RequestSpec:  policy,
+		})
+
+		updatedPod = current.DeepCopy()
+		if updatedPod.Annotations == nil {
+			updatedPod.Annotations = make(map[string]string)
+		}
+		if _, err := s.setNetworkPolicyAnnotations(updatedPod, networkSpec); err != nil {
+			return err
+		}
+
+		if configJSON := updatedPod.Annotations[controller.AnnotationConfig]; configJSON != "" {
+			var config SandboxConfig
+			if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+				s.logger.Warn("Failed to parse sandbox config annotation",
+					zap.String("sandboxID", sandboxID),
+					zap.Error(err),
+				)
+			} else {
+				config.Network = policy
+				updatedConfigJSON, err := json.Marshal(config)
+				if err != nil {
+					return fmt.Errorf("marshal sandbox config: %w", err)
+				}
+				updatedPod.Annotations[controller.AnnotationConfig] = string(updatedConfigJSON)
+			}
 		} else {
-			config.Network = policy
+			config := SandboxConfig{Network: policy}
 			updatedConfigJSON, err := json.Marshal(config)
 			if err != nil {
-				return nil, fmt.Errorf("marshal sandbox config: %w", err)
+				return fmt.Errorf("marshal sandbox config: %w", err)
 			}
 			updatedPod.Annotations[controller.AnnotationConfig] = string(updatedConfigJSON)
 		}
-	} else {
-		config := SandboxConfig{Network: policy}
-		updatedConfigJSON, err := json.Marshal(config)
-		if err != nil {
-			return nil, fmt.Errorf("marshal sandbox config: %w", err)
-		}
-		updatedPod.Annotations[controller.AnnotationConfig] = string(updatedConfigJSON)
-	}
 
-	updatedPod, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, updatedPod, metav1.UpdateOptions{})
+		updatedPod, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, updatedPod, metav1.UpdateOptions{})
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("update pod annotations: %w", err)
 	}
 
+	teamID := ""
+	if updatedPod.Annotations != nil {
+		teamID = updatedPod.Annotations[controller.AnnotationTeamID]
+	}
 	if err := s.applyNetworkProvider(ctx, updatedPod, teamID, networkSpec); err != nil {
 		return nil, fmt.Errorf("apply network policy: %w", err)
 	}
@@ -962,7 +1004,7 @@ func (s *SandboxService) getSandboxPod(ctx context.Context, sandboxID string) (*
 		return nil, err
 	}
 	if len(pods) == 0 {
-		return nil, errors.NewNotFound(schema.GroupResource{Resource: "pod"}, sandboxID)
+		return nil, k8serrors.NewNotFound(schema.GroupResource{Resource: "pod"}, sandboxID)
 	}
 	return pods[0], nil
 }
