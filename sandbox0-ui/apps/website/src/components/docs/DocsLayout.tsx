@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { PixelSidebar } from "./PixelSidebar";
 import { PixelTableOfContents } from "./PixelTableOfContents";
-import { docsNavigation } from "./docs";
+import { docsNavigation } from "@/app/docs/docs";
 
 export interface DocsLayoutProps {
   children: React.ReactNode;
