@@ -282,6 +282,14 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 		if registryConfig.SourceSecretName != "" {
 			cfg.Registry.CredentialsFile = registryCredentialsPath
 		}
+		// For builtin provider, configure auth secret for push credentials
+		if registryConfig.Provider == infrav1alpha1.RegistryProviderBuiltin {
+			cfg.Registry.Builtin = &apiconfig.RegistryBuiltinConfig{
+				AuthSecretName: fmt.Sprintf("%s-registry-auth", infra.Name),
+				UsernameKey:    "username",
+				PasswordKey:    "password",
+			}
+		}
 	}
 	if infra.Spec.Registry != nil {
 		switch infra.Spec.Registry.Provider {

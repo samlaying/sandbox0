@@ -161,6 +161,10 @@ type RegistryConfig struct {
 	// Aliyun configures Aliyun registry integration.
 	// +optional
 	Aliyun *RegistryAliyunConfig `yaml:"aliyun" json:"-"`
+
+	// Builtin configures builtin registry integration.
+	// +optional
+	Builtin *RegistryBuiltinConfig `yaml:"builtin" json:"-"`
 }
 
 // RegistryAWSConfig defines AWS registry config.
@@ -198,6 +202,16 @@ type RegistryAliyunConfig struct {
 	CredentialsSecret string `yaml:"credentials_secret" json:"-"`
 	AccessKeyKey      string `yaml:"access_key_key" json:"-"`
 	SecretKeyKey      string `yaml:"secret_key_key" json:"-"`
+}
+
+// RegistryBuiltinConfig defines builtin registry config.
+type RegistryBuiltinConfig struct {
+	// AuthSecretName is the name of the secret containing registry auth credentials.
+	AuthSecretName string `yaml:"auth_secret_name" json:"-"`
+	// UsernameKey is the key for username in the auth secret.
+	UsernameKey string `yaml:"username_key" json:"-"`
+	// PasswordKey is the key for password in the auth secret.
+	PasswordKey string `yaml:"password_key" json:"-"`
 }
 
 // LoadManagerConfig returns the manager configuration.

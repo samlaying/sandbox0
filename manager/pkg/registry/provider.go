@@ -63,7 +63,14 @@ func NewProvider(cfg config.RegistryConfig, secretLister corelisters.SecretListe
 		}
 		return &aliyunProvider{cfg: *cfg.Aliyun, secrets: secretReader}, nil
 	case "builtin":
-		return nil, nil
+		if cfg.Builtin == nil {
+			return nil, fmt.Errorf("registry builtin config is required")
+		}
+		return &builtinProvider{
+			cfg:      *cfg.Builtin,
+			registry: normalizeRegistryHost(cfg.Registry),
+			secrets:  secretReader,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported registry provider: %s", provider)
 	}
@@ -116,4 +123,30 @@ func normalizeRegistryHost(raw string) string {
 	value = strings.TrimPrefix(value, "https://")
 	value = strings.TrimPrefix(value, "http://")
 	return value
+}
+
+// builtinProvider provides credentials for the builtin registry.
+type builtinProvider struct {
+	cfg      config.RegistryBuiltinConfig
+	registry string
+	secrets  secretReader
+}
+
+func (p *builtinProvider) GetPushCredentials(ctx context.Context, teamID string) (*Credential, error) {
+	username, err := p.secrets.read(ctx, p.cfg.AuthSecretName, p.cfg.UsernameKey)
+	if err != nil {
+		return nil, fmt.Errorf("read username: %w", err)
+	}
+	password, err := p.secrets.read(ctx, p.cfg.AuthSecretName, p.cfg.PasswordKey)
+	if err != nil {
+		return nil, fmt.Errorf("read password: %w", err)
+	}
+	// Builtin registry credentials don't expire, set a far future expiration
+	return &Credential{
+		Provider:  "builtin",
+		Registry:  p.registry,
+		Username:  username,
+		Password:  password,
+		ExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+	}, nil
 }
