@@ -91,7 +91,7 @@ export function PixelCallout({
               {title}
             </div>
           )}
-          <div className="text-sm leading-relaxed">{children}</div>
+          <div className="pixel-callout-body text-sm leading-relaxed pt-1">{children}</div>
         </div>
       </div>
     </div>

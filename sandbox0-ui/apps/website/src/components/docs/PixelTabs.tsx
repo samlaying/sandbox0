@@ -2,13 +2,19 @@
 
 import React, { useState, useEffect } from "react";
 import { cn } from "@sandbox0/ui";
+import { PixelCodeBlock } from "./PixelCodeBlock";
 
 const STORAGE_KEY = "sandbox0-docs-preferred-tab";
 const SYNC_EVENT = "sandbox0-tabs-sync";
 
 export interface PixelTab {
   label: string;
-  content: React.ReactNode;
+  /** React node content (takes precedence if provided) */
+  content?: React.ReactNode;
+  /** Code content for code tabs (will be rendered with syntax highlighting) */
+  code?: string;
+  /** Language for syntax highlighting (e.g., 'go', 'python', 'typescript', 'bash') */
+  language?: string;
 }
 
 export interface PixelTabsProps {
@@ -72,6 +78,21 @@ export function PixelTabs({
     window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: label }));
   };
 
+  // Render tab content with code block support
+  const renderTabContent = (tab: PixelTab) => {
+    if (tab.content) {
+      return tab.content;
+    }
+    if (tab.code) {
+      return (
+        <PixelCodeBlock language={tab.language}>
+          {tab.code}
+        </PixelCodeBlock>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className={cn("w-full", className)}>
       {/* Tab Headers */}
@@ -94,7 +115,7 @@ export function PixelTabs({
       </div>
 
       {/* Tab Content */}
-      <div className="mt-0">{tabs[activeTab]?.content}</div>
+      <div className="mt-0">{renderTabContent(tabs[activeTab])}</div>
     </div>
   );
 }

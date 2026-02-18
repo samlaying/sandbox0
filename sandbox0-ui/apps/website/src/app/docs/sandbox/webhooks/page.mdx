@@ -1,0 +1,627 @@
+# Webhooks
+
+Receive real-time event notifications from sandboxes via webhooks. Webhooks allow you to react to process events, sandbox lifecycle changes, and file modifications.
+
+## Webhook Configuration
+
+Configure webhooks when claiming a sandbox:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | string | Webhook endpoint URL (required) |
+| `secret` | string | Shared secret for payload signing (optional) |
+| `watch_dir` | string | Directory to monitor for file events (optional) |
+
+<Callout variant="info">
+Webhooks are configured per-sandbox at creation time. Each sandbox can have its own webhook configuration.
+</Callout>
+
+---
+
+## Event Types
+
+### Process Events
+
+| Event | Description |
+|-------|-------------|
+| `process.started` | A new process/context has started |
+| `process.exited` | A process has exited (includes exit code) |
+
+### Sandbox Events
+
+| Event | Description |
+|-------|-------------|
+| `sandbox.paused` | Sandbox has been paused |
+| `sandbox.resumed` | Sandbox has been resumed |
+
+### File Events
+
+| Event | Description |
+|-------|-------------|
+| `file.created` | A file was created |
+| `file.written` | A file was modified |
+| `file.renamed` | A file was renamed |
+| `file.chmodded` | File permissions were changed |
+| `file.removed` | A file was deleted |
+
+<Callout variant="info">
+File events require setting <code>watch_dir</code> in the webhook configuration.
+</Callout>
+
+---
+
+## Configure Webhook at Sandbox Creation
+
+Set up webhooks when claiming a sandbox.
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `webhookURL := os.Getenv("SANDBOX0_WEBHOOK_URL")
+webhookSecret := os.Getenv("SANDBOX0_WEBHOOK_SECRET")
+
+sandbox, err := client.ClaimSandbox(
+    ctx,
+    "default",
+    sandbox0.WithSandboxHardTTL(300),
+    sandbox0.WithSandboxWebhook(webhookURL, webhookSecret),
+    sandbox0.WithSandboxWebhookWatchDir("/tmp/webhook-demo"),
+)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Sandbox ID: %s\\n", sandbox.ID)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `import os
+
+webhook_url = os.environ["SANDBOX0_WEBHOOK_URL"]
+webhook_secret = os.environ.get("SANDBOX0_WEBHOOK_SECRET", "")
+
+sandbox = client.claim_sandbox(
+    template="default",
+    config={
+        "hard_ttl": 300,
+        "webhook": {
+            "url": webhook_url,
+            "secret": webhook_secret,
+            "watch_dir": "/tmp/webhook-demo",
+        },
+    },
+)
+print(f"Sandbox ID: {sandbox.id}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `const webhookUrl = process.env.SANDBOX0_WEBHOOK_URL;
+const webhookSecret = process.env.SANDBOX0_WEBHOOK_SECRET || '';
+
+const sandbox = await client.claimSandbox({
+    template: 'default',
+    config: {
+        hardTtl: 300,
+        webhook: {
+            url: webhookUrl,
+            secret: webhookSecret,
+            watchDir: '/tmp/webhook-demo',
+        },
+    },
+});
+console.log('Sandbox ID:', sandbox.id);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 sandbox create --template default --hard-ttl 300 \\
+  --webhook-url https://my-server.com/webhook \\
+  --webhook-secret my-secret \\
+  --webhook-watch-dir /tmp/webhook-demo`
+    }
+  ]}
+/>
+
+---
+
+## Webhook Payload Format
+
+### Payload Structure
+
+```json
+{
+  "event": "process.exited",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "context_id": "ctx_xyz789",
+    "exit_code": 0
+  }
+}
+```
+
+### Process Events
+
+```json
+// process.started
+{
+  "event": "process.started",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "context_id": "ctx_xyz789",
+    "type": "repl",
+    "language": "python"
+  }
+}
+
+// process.exited
+{
+  "event": "process.exited",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:05Z",
+  "data": {
+    "context_id": "ctx_xyz789",
+    "exit_code": 0
+  }
+}
+```
+
+### Sandbox Events
+
+```json
+// sandbox.paused
+{
+  "event": "sandbox.paused",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {}
+}
+
+// sandbox.resumed
+{
+  "event": "sandbox.resumed",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:05Z",
+  "data": {}
+}
+```
+
+### File Events
+
+```json
+// file.created
+{
+  "event": "file.created",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "path": "/tmp/webhook-demo/hello.txt"
+  }
+}
+
+// file.written
+{
+  "event": "file.written",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:01Z",
+  "data": {
+    "path": "/tmp/webhook-demo/hello.txt"
+  }
+}
+
+// file.removed
+{
+  "event": "file.removed",
+  "sandbox_id": "sb_abc123",
+  "timestamp": "2024-01-15T10:30:02Z",
+  "data": {
+    "path": "/tmp/webhook-demo/hello.txt"
+  }
+}
+```
+
+---
+
+## Signature Verification
+
+When a secret is configured, webhook payloads are signed using HMAC-SHA256.
+
+### Header
+
+```
+X-Sandbox0-Signature: sha256=<hex-encoded-signature>
+```
+
+### Verification Example
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "strings"
+)
+
+func verifySignature(payload []byte, signature string, secret string) bool {
+    // Parse signature header
+    if !strings.HasPrefix(signature, "sha256=") {
+        return false
+    }
+    expectedMAC, _ := hex.DecodeString(signature[7:])
+
+    // Calculate HMAC
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(payload)
+    actualMAC := mac.Sum(nil)
+
+    return hmac.Equal(expectedMAC, actualMAC)
+}
+
+// Usage in HTTP handler
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    payload, _ := io.ReadAll(r.Body)
+    signature := r.Header.Get("X-Sandbox0-Signature")
+    secret := os.Getenv("SANDBOX0_WEBHOOK_SECRET")
+
+    if !verifySignature(payload, signature, secret) {
+        http.Error(w, "Invalid signature", 401)
+        return
+    }
+
+    // Process webhook...
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `import hmac
+import hashlib
+from flask import Flask, request
+
+app = Flask(__name__)
+
+def verify_signature(payload, signature, secret):
+    if not signature.startswith('sha256='):
+        return False
+    expected = signature[7:]
+    mac = hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    )
+    return hmac.compare_digest(expected, mac.hexdigest())
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    payload = request.get_data()
+    signature = request.headers.get('X-Sandbox0-Signature')
+    secret = os.environ.get('SANDBOX0_WEBHOOK_SECRET')
+
+    if not verify_signature(payload, signature, secret):
+        return 'Invalid signature', 401
+
+    event = request.json
+    print(f"Received event: {event['event']}")
+    return 'OK', 200`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `import crypto from 'crypto';
+import express from 'express';
+
+const app = express();
+
+function verifySignature(payload: string, signature: string, secret: string): boolean {
+    if (!signature.startsWith('sha256=')) {
+        return false;
+    }
+    const expected = signature.slice(7);
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(payload);
+    const actual = hmac.digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
+}
+
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const payload = req.body.toString();
+  const signature = req.headers['x-sandbox0-signature'] as string;
+  const secret = process.env.SANDBOX0_WEBHOOK_SECRET || '';
+
+  if (!verifySignature(payload, signature, secret)) {
+    res.status(401).send('Invalid signature');
+    return;
+  }
+
+  const event = JSON.parse(payload);
+  console.log('Received event:', event.event);
+  res.status(200).send('OK');
+});`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Webhook server example using netcat (for testing)
+# In production, use a proper HTTP server
+
+while true; do
+    echo -e "HTTP/1.1 200 OK\\r\\n\\r\\nOK" | nc -l -p 8080 -q 1
+done`
+    }
+  ]}
+/>
+
+---
+
+## Triggering Webhook Events
+
+### Process Events
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Trigger process.started and process.exited events
+_, err := sandbox.Run(ctx, "bash", \`echo "hello world"\`)
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("Process events triggered")
+
+// Trigger process.exited with non-zero exit code
+_, err = sandbox.Cmd(ctx, \`/bin/sh -c "exit 2"\`)
+if err != nil {
+    log.Printf("Command failed (expected): %v", err)
+}
+log.Println("Process exited with error code")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Trigger process.started and process.exited events
+sandbox.run("bash", 'echo "hello world"')
+print("Process events triggered")
+
+# Trigger process.exited with non-zero exit code
+try:
+    sandbox.cmd('/bin/sh -c "exit 2"')
+except Exception as e:
+    print(f"Command failed (expected): {e}")
+print("Process exited with error code")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Trigger process.started and process.exited events
+await sandbox.run('bash', 'echo "hello world"');
+console.log('Process events triggered');
+
+// Trigger process.exited with non-zero exit code
+try {
+    await sandbox.cmd('/bin/sh -c "exit 2"');
+} catch (e) {
+    console.log('Command failed (expected):', e);
+}
+console.log('Process exited with error code');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Trigger process events
+s0 sandbox run sb_abc123 --language bash --code 'echo hello'
+
+# Trigger process with exit code
+s0 sandbox exec sb_abc123 -- /bin/sh -c "exit 2"`
+    }
+  ]}
+/>
+
+### Sandbox Events
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Trigger sandbox.paused event
+_, err := client.PauseSandbox(ctx, sandbox.ID)
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("Sandbox paused - webhook triggered")
+
+// Trigger sandbox.resumed event
+_, err = client.ResumeSandbox(ctx, sandbox.ID)
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("Sandbox resumed - webhook triggered")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Trigger sandbox.paused event
+client.pause_sandbox(sandbox.id)
+print("Sandbox paused - webhook triggered")
+
+# Trigger sandbox.resumed event
+client.resume_sandbox(sandbox.id)
+print("Sandbox resumed - webhook triggered")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Trigger sandbox.paused event
+await client.pauseSandbox(sandbox.id);
+console.log('Sandbox paused - webhook triggered');
+
+// Trigger sandbox.resumed event
+await client.resumeSandbox(sandbox.id);
+console.log('Sandbox resumed - webhook triggered');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Trigger sandbox.paused event
+s0 sandbox pause sb_abc123
+
+# Trigger sandbox.resumed event
+s0 sandbox resume sb_abc123`
+    }
+  ]}
+/>
+
+### File Events
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Ensure watch directory exists
+_, err := sandbox.Mkdir(ctx, "/tmp/webhook-demo", true)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Trigger file.created and file.written events
+_, err = sandbox.WriteFile(ctx, "/tmp/webhook-demo/file.txt", []byte("hello"))
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("File created/written - webhook triggered")
+
+// Trigger file.renamed event
+_, err = sandbox.MoveFile(ctx, "/tmp/webhook-demo/file.txt", "/tmp/webhook-demo/file-renamed.txt")
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("File renamed - webhook triggered")
+
+// Trigger file.chmodded event
+_, err = sandbox.Cmd(ctx, \`/bin/sh -c "chmod 600 /tmp/webhook-demo/file-renamed.txt"\`)
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("File chmodded - webhook triggered")
+
+// Trigger file.removed event
+_, err = sandbox.DeleteFile(ctx, "/tmp/webhook-demo/file-renamed.txt")
+if err != nil {
+    log.Fatal(err)
+}
+log.Println("File removed - webhook triggered")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Ensure watch directory exists
+sandbox.mkdir("/tmp/webhook-demo", recursive=True)
+
+# Trigger file.created and file.written events
+sandbox.write_file("/tmp/webhook-demo/file.txt", b"hello")
+print("File created/written - webhook triggered")
+
+# Trigger file.renamed event
+sandbox.move_file("/tmp/webhook-demo/file.txt", "/tmp/webhook-demo/file-renamed.txt")
+print("File renamed - webhook triggered")
+
+# Trigger file.chmodded event
+sandbox.cmd('/bin/sh -c "chmod 600 /tmp/webhook-demo/file-renamed.txt"')
+print("File chmodded - webhook triggered")
+
+# Trigger file.removed event
+sandbox.delete_file("/tmp/webhook-demo/file-renamed.txt")
+print("File removed - webhook triggered")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Ensure watch directory exists
+await sandbox.mkdir('/tmp/webhook-demo', true);
+
+// Trigger file.created and file.written events
+await sandbox.writeFile('/tmp/webhook-demo/file.txt', 'hello');
+console.log('File created/written - webhook triggered');
+
+// Trigger file.renamed event
+await sandbox.moveFile('/tmp/webhook-demo/file.txt', '/tmp/webhook-demo/file-renamed.txt');
+console.log('File renamed - webhook triggered');
+
+// Trigger file.chmodded event
+await sandbox.cmd('/bin/sh -c "chmod 600 /tmp/webhook-demo/file-renamed.txt"');
+console.log('File chmodded - webhook triggered');
+
+// Trigger file.removed event
+await sandbox.deleteFile('/tmp/webhook-demo/file-renamed.txt');
+console.log('File removed - webhook triggered');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Create watch directory
+s0 file mkdir sb_abc123 /tmp/webhook-demo
+
+# Trigger file events
+s0 file write sb_abc123 /tmp/webhook-demo/file.txt --content "hello"
+s0 file move sb_abc123 /tmp/webhook-demo/file.txt /tmp/webhook-demo/file-renamed.txt
+s0 sandbox exec sb_abc123 -- chmod 600 /tmp/webhook-demo/file-renamed.txt
+s0 file delete sb_abc123 /tmp/webhook-demo/file-renamed.txt`
+    }
+  ]}
+/>
+
+---
+
+## Best Practices
+
+<Callout variant="success">
+**Use a queue** - Webhook endpoints should respond quickly (within 5 seconds). Process events asynchronously using a message queue for reliability.
+</Callout>
+
+<Callout variant="warning">
+**Verify signatures** - Always verify the webhook signature to ensure requests are from Sandbox0.
+</Callout>
+
+<Callout variant="info">
+**Handle retries** - Sandbox0 retries failed webhook deliveries with exponential backoff. Make your endpoint idempotent.
+</Callout>
+
+---
+
+## Next Steps
+
+<CardGrid>
+  <LinkCard
+    title="Port Exposure"
+    href="/docs/sandbox/ports"
+    cta="Learn More"
+  >
+    Expose sandbox ports publicly
+  </LinkCard>
+
+  <LinkCard
+    title="Network Policy"
+    href="/docs/sandbox/network"
+    cta="Learn More"
+  >
+    Control network access
+  </LinkCard>
+
+  <LinkCard
+    title="Files"
+    href="/docs/sandbox/files"
+    cta="Learn More"
+  >
+    File operations and watching
+  </LinkCard>
+</CardGrid>

@@ -82,32 +82,39 @@ Subsections:
 
 ### 2) Sandbox
 
-Purpose: lifecycle, execution, files, and network controls for sandboxes.
+Purpose: lifecycle, execution, files, network controls, and port exposure for sandboxes.
 
 Subsections:
 
 - Overview
   - sandbox model and key IDs
+  - lifecycle states
 - Create & Manage
-  - claim sandbox
-  - get details
-  - patch settings
+  - claim sandbox (from template)
+  - get details / status
+  - update sandbox settings (PUT)
   - delete sandbox
-  - pause/resume/refresh
+  - pause/resume/refresh TTL
 - Contexts (Process Runtime)
+  - context types: REPL vs Cmd
   - create/list/get/delete context
-  - restart/input/resize/signal
-  - run command (`exec`) patterns
+  - restart/input/resize/signal/stats
+  - exec patterns (sync execution)
   - WebSocket stream usage
 - Files
   - read/write/delete
   - stat/list/move/mkdir
   - watch files via websocket
 - Network Policy
-  - get/patch network policy
-  - mode and egress rules
-- API Reference Mapping
-  - endpoint index with links to OpenAPI-backed behavior
+  - get/update network policy (PUT)
+  - modes: BlockAll / AllowAll / Custom
+  - egress rules: allowed/blocked domains
+- Port Exposure
+  - get/update/delete exposed ports
+  - public URL generation for sandbox services
+- Webhooks
+  - webhook configuration during sandbox creation
+  - event types: process events, sandbox events, file events
 
 ### 3) Volume
 
@@ -233,6 +240,8 @@ Planned route groups under `src/app/docs`:
 - `sandbox/contexts/page.mdx`
 - `sandbox/files/page.mdx`
 - `sandbox/network/page.mdx`
+- `sandbox/ports/page.mdx`
+- `sandbox/webhooks/page.mdx`
 - `volume/page.mdx`
 - `volume/mounts/page.mdx`
 - `volume/snapshots/page.mdx`
@@ -248,34 +257,6 @@ Planned route groups under `src/app/docs`:
 - `self-hosted/troubleshooting/page.mdx`
 
 Note: final route split can be adjusted during implementation, but the five top-level modules are fixed.
-
-## Execution Plan (Implementation Phases)
-
-### Phase 1 - Baseline Reset
-
-- remove/replace placeholder docs content under existing `/docs` pages
-- create new docs home aligned with 5 top-level modules
-
-### Phase 2 - Get Started + Sandbox
-
-- deliver onboarding and core sandbox operation docs
-- validate commands/examples against current API behavior
-
-### Phase 3 - Volume + Template
-
-- add persistent storage and template authoring docs
-- include snapshot and pool-related best practices
-
-### Phase 4 - Self-hosted
-
-- add operator-first docs: architecture, install, deploy scenarios, configuration
-- add focused day-2 and troubleshooting pages tied to infra-operator usage
-
-### Phase 5 - Consistency Pass
-
-- unify terminology and tabs style across all pages
-- check internal links and route coverage
-- ensure no placeholder wording remains
 
 ## Acceptance Criteria
 

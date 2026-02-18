@@ -1,1 +1,355 @@
 # Get Started
+
+Sandbox0 provides isolated execution environments for AI Agents with persistent storage, session state maintenance, sub-200ms cold starts, and easy self-hosted deployment.
+
+## What is Sandbox0?
+
+Sandbox0 is an enterprise-grade AI Agent Sandbox platform that enables you to:
+
+- **Run code securely** in isolated environments with full process control
+- **Persist data** across sandbox lifecycles with volume storage and snapshots
+- **Control network access** with fine-grained policies
+- **Scale efficiently** with template-based sandbox pools and fast cold starts
+
+### Control Plane vs Data Plane
+
+Sandbox0 follows a control plane / data plane architecture:
+
+| Layer | Components | Purpose |
+|-------|------------|---------|
+| **Control Plane** | edge-gateway, scheduler | Multi-cluster routing, tenant management, request forwarding |
+| **Data Plane** | internal-gateway, manager, storage-proxy, netd | Sandbox lifecycle, process execution, file operations, storage |
+
+Each provider/region (e.g., `aws/us-east-1`) has an independent data plane and control plane deployment with dedicated PostgreSQL and S3 storage.
+
+---
+
+## Quickstart
+
+Get your first sandbox running in minutes.
+
+### Prerequisites
+
+- A Sandbox0 account (or self-hosted deployment)
+- An API key or access token
+
+### Install SDK
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `go get github.com/sandbox0/sdk-go`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `pip install sandbox0`
+    },
+    {
+      label: "JavaScript",
+      language: "bash",
+      code: `npm install @sandbox0/sdk`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Download from https://github.com/sandbox0/sandbox0/releases
+# Or use the API directly with curl`
+    }
+  ]}
+/>
+
+### Authenticate
+
+Set up your credentials. You can use either an API key or a token:
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `import "github.com/sandbox0/sdk-go"
+
+// Option 1: Using API token
+client, err := sandbox0.NewClient(
+    sandbox0.WithToken(os.Getenv("SANDBOX0_TOKEN")),
+)
+
+// Option 2: Using API key (for server-to-server)
+client, err := sandbox0.NewClient(
+    sandbox0.WithAPIKey(os.Getenv("SANDBOX0_API_KEY")),
+)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `from sandbox0 import Client
+import os
+
+# Option 1: Using API token
+client = Client(token=os.environ["SANDBOX0_TOKEN"])
+
+# Option 2: Using API key
+client = Client(api_key=os.environ["SANDBOX0_API_KEY"])`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `import { Sandbox0 } from '@sandbox0/sdk';
+
+// Option 1: Using API token
+const client = new Sandbox0({ token: process.env.SANDBOX0_TOKEN });
+
+// Option 2: Using API key
+const client = new Sandbox0({ apiKey: process.env.SANDBOX0_API_KEY });`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Set environment variable
+export SANDBOX0_TOKEN="your-token-here"
+
+# Or configure via config file
+s0 config set token your-token-here`
+    }
+  ]}
+/>
+
+### Claim Your First Sandbox
+
+Create a sandbox from the default template:
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    "github.com/sandbox0/sdk-go"
+)
+
+func main() {
+    client, err := sandbox0.NewClient(
+        sandbox0.WithToken(os.Getenv("SANDBOX0_TOKEN")),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    ctx := context.Background()
+
+    // Claim a sandbox from the "default" template
+    sandbox, err := client.ClaimSandbox(ctx, "default",
+        sandbox0.WithSandboxTTL(300), // 5 minutes TTL
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Sandbox ID: %s\\n", sandbox.ID)
+    fmt.Printf("Status: %s\\n", sandbox.Status)
+
+    // Clean up when done
+    defer client.DeleteSandbox(ctx, sandbox.ID)
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `from sandbox0 import Client
+import os
+
+client = Client(token=os.environ["SANDBOX0_TOKEN"])
+
+# Claim a sandbox from the "default" template
+sandbox = client.claim_sandbox(
+    template="default",
+    config={"ttl": 300},  # 5 minutes TTL
+)
+print(f"Sandbox ID: {sandbox.id}")
+print(f"Status: {sandbox.status}")
+
+# Clean up when done
+client.delete_sandbox(sandbox.id)`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `import { Sandbox0 } from '@sandbox0/sdk';
+
+const client = new Sandbox0({ token: process.env.SANDBOX0_TOKEN });
+
+// Claim a sandbox from the "default" template
+const sandbox = await client.claimSandbox({
+    template: 'default',
+    config: { ttl: 300 },  // 5 minutes TTL
+});
+console.log('Sandbox ID:', sandbox.id);
+console.log('Status:', sandbox.status);
+
+// Clean up when done
+await client.deleteSandbox(sandbox.id);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Claim a sandbox
+s0 sandbox create --template default --ttl 300
+
+# Output:
+# Sandbox ID: sb_abc123
+# Status: running
+
+# Clean up when done
+s0 sandbox delete sb_abc123`
+    }
+  ]}
+/>
+
+### Run Your First Command
+
+Execute a command in your sandbox:
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Create a command context
+processType := sandbox0.Cmd
+ctxResp, err := client.CreateContext(ctx, sandbox.ID, &sandbox0.CreateContextRequest{
+    Type: &processType,
+    Cmd: &sandbox0.CreateCMDContextRequest{
+        Command: []string{"/bin/sh", "-c", "echo 'Hello, Sandbox0!'"},
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Context ID: %s\\n", ctxResp.ID)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Create and execute a command
+result = client.exec_command(
+    sandbox.id,
+    command=["/bin/sh", "-c", "echo 'Hello, Sandbox0!'"],
+)
+print(f"Output: {result.stdout}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Create and execute a command
+const result = await client.execCommand(sandbox.id, {
+    command: ['/bin/sh', '-c', "echo 'Hello, Sandbox0!'"],
+});
+console.log('Output:', result.stdout);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Execute a command in the sandbox
+s0 sandbox exec sb_abc123 -- echo "Hello, Sandbox0!"
+
+# Output:
+# Hello, Sandbox0!`
+    }
+  ]}
+/>
+
+### Basic File Operations
+
+Read and write files in your sandbox:
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Write a file
+err = client.WriteFile(ctx, sandbox.ID, "/tmp/hello.txt", []byte("Hello from Sandbox0!"), "")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Read the file back
+content, err := client.ReadFile(ctx, sandbox.ID, "/tmp/hello.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("File content: %s\\n", string(content))`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Write a file
+client.write_file(sandbox.id, "/tmp/hello.txt", b"Hello from Sandbox0!")
+
+# Read the file back
+content = client.read_file(sandbox.id, "/tmp/hello.txt")
+print(f"File content: {content.decode()}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Write a file
+await client.writeFile(sandbox.id, '/tmp/hello.txt', 'Hello from Sandbox0!');
+
+// Read the file back
+const content = await client.readFile(sandbox.id, '/tmp/hello.txt');
+console.log('File content:', content.toString());`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Write a file
+s0 file write sb_abc123 /tmp/hello.txt "Hello from Sandbox0!"
+
+# Read a file
+s0 file read sb_abc123 /tmp/hello.txt
+
+# Output:
+# Hello from Sandbox0!`
+    }
+  ]}
+/>
+
+---
+
+## Next Steps
+
+<CardGrid>
+  <LinkCard
+    title="Authentication"
+    href="/docs/get-started/authentication"
+    cta="Learn More"
+  >
+    Understand authentication methods, API keys, and token management
+  </LinkCard>
+
+  <LinkCard
+    title="Core Concepts"
+    href="/docs/get-started/concepts"
+    cta="Learn More"
+  >
+    Learn about sandbox lifecycle, contexts, templates, and volumes
+  </LinkCard>
+
+  <LinkCard
+    title="Sandbox API"
+    href="/docs/sandbox"
+    cta="View Docs"
+  >
+    Complete sandbox lifecycle and management documentation
+  </LinkCard>
+</CardGrid>

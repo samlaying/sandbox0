@@ -1,0 +1,496 @@
+# Port Exposure
+
+Expose sandbox ports to make services accessible via public URLs. This allows external access to web servers, APIs, and other services running inside a sandbox.
+
+## Exposed Port Model
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `port` | integer | Port number exposed inside the sandbox |
+| `resume` | boolean | Auto-resume sandbox when traffic hits this port |
+| `public_url` | string | Public URL for accessing the exposed port (read-only) |
+
+<Callout variant="info">
+When <code>resume</code> is enabled, a paused sandbox will automatically resume when receiving traffic on the exposed port.
+</Callout>
+
+---
+
+## Get Exposed Ports
+
+List all exposed ports for a sandbox.
+
+<Endpoint method="GET">
+/api/v1/sandboxes/{'{id}'}/exposed-ports
+</Endpoint>
+
+### Response
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `sandbox_id` | string | Sandbox ID |
+| `exposed_ports` | array | List of exposed port configurations |
+| `exposure_domain` | string | Base domain for public URLs (e.g., `aws-us-east-1.sandbox0.app`) |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Get all exposed ports
+ports, err := sandbox.GetExposedPorts(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Exposure domain: %s\\n", ports.ExposureDomain)
+for _, p := range ports.Ports {
+    fmt.Printf("Port %d: %s\\n", p.Port, p.PublicURL)
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Get all exposed ports
+ports = sandbox.get_exposed_ports()
+print(f"Exposure domain: {ports.exposure_domain}")
+for p in ports.ports:
+    print(f"Port {p.port}: {p.public_url}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Get all exposed ports
+const ports = await sandbox.getExposedPorts();
+console.log('Exposure domain:', ports.exposureDomain);
+for (const p of ports.ports) {
+    console.log(\`Port \${p.port}: \${p.publicUrl}\`);
+}`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 ports list sb_abc123
+
+# Output:
+# Exposure domain: aws-us-east-1.sandbox0.app
+# Port 8080: https://sb-abc123-8080.aws-us-east-1.sandbox0.app`
+    }
+  ]}
+/>
+
+---
+
+## Expose a Port
+
+Expose a port to make it publicly accessible.
+
+<Endpoint method="PUT">
+/api/v1/sandboxes/{'{id}'}/exposed-ports
+</Endpoint>
+
+### Request Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ports` | array | List of port configurations to expose |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Expose port 8080 with auto-resume
+resp, err := sandbox.ExposePort(ctx, 8080, true)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Exposure domain: %s\\n", resp.ExposureDomain)
+for _, p := range resp.Ports {
+    fmt.Printf("Port %d -> %s\\n", p.Port, p.PublicURL)
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Expose port 8080 with auto-resume
+resp = sandbox.expose_port(8080, resume=True)
+print(f"Exposure domain: {resp.exposure_domain}")
+for p in resp.ports:
+    print(f"Port {p.port} -> {p.public_url}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Expose port 8080 with auto-resume
+const resp = await sandbox.exposePort(8080, true);
+console.log('Exposure domain:', resp.exposureDomain);
+for (const p of resp.ports) {
+    console.log(\`Port \${p.port} -> \${p.publicUrl}\`);
+}`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 ports expose sb_abc123 8080 --resume
+
+# Output:
+# Port 8080 exposed at:
+# https://sb-abc123-8080.aws-us-east-1.sandbox0.app`
+    }
+  ]}
+/>
+
+---
+
+## Expose Multiple Ports
+
+Expose multiple ports at once.
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Expose multiple ports
+resp, err := sandbox.ExposePorts(ctx, []sandbox0.ExposedPortConfig{
+    {Port: 8080, Resume: true},
+    {Port: 3000, Resume: false},
+    {Port: 9000, Resume: true},
+})
+if err != nil {
+    log.Fatal(err)
+}
+for _, p := range resp.Ports {
+    fmt.Printf("Port %d -> %s (resume: %v)\\n", p.Port, p.PublicURL, p.Resume)
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Expose multiple ports
+resp = sandbox.expose_ports([
+    {"port": 8080, "resume": True},
+    {"port": 3000, "resume": False},
+    {"port": 9000, "resume": True},
+])
+for p in resp.ports:
+    print(f"Port {p.port} -> {p.public_url} (resume: {p.resume})")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Expose multiple ports
+const resp = await sandbox.exposePorts([
+    { port: 8080, resume: true },
+    { port: 3000, resume: false },
+    { port: 9000, resume: true },
+]);
+for (const p of resp.ports) {
+    console.log(\`Port \${p.port} -> \${p.publicUrl} (resume: \${p.resume})\`);
+}`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 ports expose sb_abc123 8080 --resume
+s0 ports expose sb_abc123 3000
+s0 ports expose sb_abc123 9000 --resume`
+    }
+  ]}
+/>
+
+---
+
+## Remove Exposed Port
+
+Remove a specific exposed port.
+
+<Endpoint method="DELETE">
+/api/v1/sandboxes/{'{id}'}/exposed-ports/{'{port}'}
+</Endpoint>
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Remove exposed port 8080
+_, err := sandbox.UnexposePort(ctx, 8080)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Port 8080 no longer exposed")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Remove exposed port 8080
+sandbox.unexpose_port(8080)
+print("Port 8080 no longer exposed")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Remove exposed port 8080
+await sandbox.unexposePort(8080);
+console.log('Port 8080 no longer exposed');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 ports unexpose sb_abc123 8080`
+    }
+  ]}
+/>
+
+---
+
+## Clear All Exposed Ports
+
+Remove all exposed ports from a sandbox.
+
+<Endpoint method="DELETE">
+/api/v1/sandboxes/{'{id}'}/exposed-ports
+</Endpoint>
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Clear all exposed ports
+_, err := sandbox.ClearExposedPorts(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("All ports unexposed")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Clear all exposed ports
+sandbox.clear_exposed_ports()
+print("All ports unexposed")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Clear all exposed ports
+await sandbox.clearExposedPorts();
+console.log('All ports unexposed');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 ports clear sb_abc123`
+    }
+  ]}
+/>
+
+---
+
+## Complete Example: Web Server
+
+Start a web server and expose it publicly.
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Start a web server (async, don't wait for completion)
+result, err := sandbox.Cmd(ctx,
+    "python3 -m http.server 8080 --directory /tmp",
+    sandbox0.WithCmdWait(false),
+)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Server started, context: %s\\n", result.ContextID)
+
+// Wait for server to start
+time.Sleep(2 * time.Second)
+
+// Expose port 8080
+portsResp, err := sandbox.ExposePort(ctx, 8080, true)
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Server accessible at:\\n")
+for _, p := range portsResp.Ports {
+    fmt.Printf("  %s\\n", p.PublicURL)
+}
+
+// Verify the server is working
+resp, err := sandbox.Cmd(ctx, "curl -s http://localhost:8080/")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Local response: %s\\n", resp.OutputRaw)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `import time
+
+# Start a web server (async)
+result = sandbox.cmd(
+    "python3 -m http.server 8080 --directory /tmp",
+    wait=False,
+)
+print(f"Server started, context: {result.context_id}")
+
+# Wait for server to start
+time.sleep(2)
+
+# Expose port 8080
+ports_resp = sandbox.expose_port(8080, resume=True)
+
+print("Server accessible at:")
+for p in ports_resp.ports:
+    print(f"  {p.public_url}")
+
+# Verify the server is working
+resp = sandbox.cmd("curl -s http://localhost:8080/")
+print(f"Local response: {resp.output_raw}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Start a web server (async)
+const result = await sandbox.cmd(
+    'python3 -m http.server 8080 --directory /tmp',
+    { wait: false },
+);
+console.log('Server started, context:', result.contextId);
+
+// Wait for server to start
+await new Promise((r) => setTimeout(r, 2000));
+
+// Expose port 8080
+const portsResp = await sandbox.exposePort(8080, true);
+
+console.log('Server accessible at:');
+for (const p of portsResp.ports) {
+    console.log(\`  \${p.publicUrl}\`);
+}
+
+// Verify the server is working
+const resp = await sandbox.cmd('curl -s http://localhost:8080/');
+console.log('Local response:', resp.outputRaw);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Start a web server in background
+s0 sandbox exec sb_abc123 -- python3 -m http.server 8080 --directory /tmp &
+
+# Wait for server to start
+sleep 2
+
+# Expose port 8080
+s0 ports expose sb_abc123 8080 --resume
+
+# Output:
+# Port 8080 exposed at:
+# https://sb-abc123-8080.aws-us-east-1.sandbox0.app
+
+# Test locally
+s0 sandbox exec sb_abc123 -- curl -s http://localhost:8080/`
+    }
+  ]}
+/>
+
+---
+
+## Auto-Resume Feature
+
+When a sandbox is paused with `resume: true` on an exposed port, incoming traffic will automatically resume the sandbox.
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Expose port with auto-resume
+_, err := sandbox.ExposePort(ctx, 8080, true)
+
+// Pause the sandbox
+_, err = client.PauseSandbox(ctx, sandbox.ID)
+
+// Incoming HTTP request to the public URL will automatically
+// resume the sandbox before routing the request`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Expose port with auto-resume
+sandbox.expose_port(8080, resume=True)
+
+# Pause the sandbox
+client.pause_sandbox(sandbox.id)
+
+# Incoming HTTP request to the public URL will automatically
+# resume the sandbox before routing the request`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Expose port with auto-resume
+await sandbox.exposePort(8080, true);
+
+// Pause the sandbox
+await client.pauseSandbox(sandbox.id);
+
+// Incoming HTTP request to the public URL will automatically
+// resume the sandbox before routing the request`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Expose port with auto-resume
+s0 ports expose sb_abc123 8080 --resume
+
+# Pause the sandbox
+s0 sandbox pause sb_abc123
+
+# Incoming HTTP request to the public URL will automatically
+# resume the sandbox before routing the request`
+    }
+  ]}
+/>
+
+<Callout variant="info">
+Auto-resume adds a small delay to the first request after pausing (typically 2-5 seconds) while the sandbox resumes. Subsequent requests are served immediately.
+</Callout>
+
+---
+
+## Next Steps
+
+<CardGrid>
+  <LinkCard
+    title="Webhooks"
+    href="/docs/sandbox/webhooks"
+    cta="Learn More"
+  >
+    Receive event notifications
+  </LinkCard>
+
+  <LinkCard
+    title="Network Policy"
+    href="/docs/sandbox/network"
+    cta="Learn More"
+  >
+    Control network access
+  </LinkCard>
+
+  <LinkCard
+    title="Volumes"
+    href="/docs/volume"
+    cta="Learn More"
+  >
+    Persistent storage for sandboxes
+  </LinkCard>
+</CardGrid>

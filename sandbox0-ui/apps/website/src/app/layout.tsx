@@ -4,7 +4,7 @@ import "@sandbox0/ui/globals.css";
 export const metadata: Metadata = {
   title: "Sandbox0 - AI-Native Sandbox Infrastructure",
   description:
-    "Persistent storage, session state retention, 100ms cold start, and easy private deployment.",
+    "Persistent storage, session state retention, 200ms cold start, and easy private deployment.",
 };
 
 export default function RootLayout({

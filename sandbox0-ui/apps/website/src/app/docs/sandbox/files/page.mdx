@@ -1,1 +1,686 @@
-# Sandbox Files
+# Files
+
+Manage files and directories within a sandbox. The Files API provides full POSIX file operations including read, write, delete, move, and real-time file watching.
+
+## File Model
+
+### FileInfo
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | File name |
+| `path` | string | Full path |
+| `type` | string | File type: `file`, `dir`, `symlink` |
+| `size` | integer | File size in bytes |
+| `mode` | string | Unix file mode (e.g., `0755`) |
+| `mod_time` | string | Last modification time (ISO 8601) |
+| `is_link` | boolean | Whether it's a symlink |
+| `link_target` | string | Symlink target path (if applicable) |
+
+---
+
+## Read File
+
+Read file content from a sandbox.
+
+<Endpoint method="GET">
+/api/v1/sandboxes/{'{id}'}/files
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | File path to read (required) |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Read file content
+content, err := sandbox.ReadFile(ctx, "/workspace/hello.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Content: %s\\n", string(content))`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Read file content
+content = sandbox.read_file("/workspace/hello.txt")
+print(f"Content: {content.decode()}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Read file content
+const content = await sandbox.readFile('/workspace/hello.txt');
+console.log('Content:', content.toString());`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file read sb_abc123 /workspace/hello.txt
+
+# Output:
+# Hello, World!`
+    }
+  ]}
+/>
+
+---
+
+## Write File
+
+Write content to a file. Creates the file if it doesn't exist.
+
+<Endpoint method="POST">
+/api/v1/sandboxes/{'{id}'}/files
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | File path to write (required) |
+
+### Request Body
+
+Binary file content (raw bytes).
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Write file content
+content := []byte("Hello from Sandbox0!\\n")
+_, err := sandbox.WriteFile(ctx, "/workspace/hello.txt", content)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("File written successfully")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Write file content
+sandbox.write_file("/workspace/hello.txt", b"Hello from Sandbox0!\\n")
+print("File written successfully")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Write file content
+await sandbox.writeFile('/workspace/hello.txt', 'Hello from Sandbox0!\\n');
+console.log('File written successfully');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file write sb_abc123 /workspace/hello.txt --content "Hello from Sandbox0!"`
+    }
+  ]}
+/>
+
+---
+
+## Create Directory
+
+Create a new directory.
+
+<Endpoint method="POST">
+/api/v1/sandboxes/{'{id}'}/files
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Directory path to create (required) |
+| `mkdir` | boolean | Set to `true` to create directory |
+| `recursive` | boolean | Create parent directories if needed |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Create directory (with parent directories)
+_, err := sandbox.Mkdir(ctx, "/workspace/project/src", true)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Directory created")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Create directory (with parent directories)
+sandbox.mkdir("/workspace/project/src", recursive=True)
+print("Directory created")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Create directory (with parent directories)
+await sandbox.mkdir('/workspace/project/src', true);
+console.log('Directory created');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file mkdir sb_abc123 /workspace/project/src --recursive`
+    }
+  ]}
+/>
+
+---
+
+## Delete File or Directory
+
+Delete a file or directory.
+
+<Endpoint method="DELETE">
+/api/v1/sandboxes/{'{id}'}/files
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Path to delete (required) |
+
+<Callout variant="warning">
+Deleting a directory removes all its contents recursively. This action cannot be undone.
+</Callout>
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Delete file
+_, err := sandbox.DeleteFile(ctx, "/workspace/hello.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("File deleted")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Delete file
+sandbox.delete_file("/workspace/hello.txt")
+print("File deleted")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Delete file
+await sandbox.deleteFile('/workspace/hello.txt');
+console.log('File deleted');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file delete sb_abc123 /workspace/hello.txt`
+    }
+  ]}
+/>
+
+---
+
+## Move File or Directory
+
+Move or rename a file or directory.
+
+<Endpoint method="POST">
+/api/v1/sandboxes/{'{id}'}/files/move
+</Endpoint>
+
+### Request Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | string | Source path |
+| `destination` | string | Destination path |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Move/rename file
+_, err := sandbox.MoveFile(ctx, "/workspace/old.txt", "/workspace/new.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("File moved")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Move/rename file
+sandbox.move_file("/workspace/old.txt", "/workspace/new.txt")
+print("File moved")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Move/rename file
+await sandbox.moveFile('/workspace/old.txt', '/workspace/new.txt');
+console.log('File moved');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file move sb_abc123 /workspace/old.txt /workspace/new.txt`
+    }
+  ]}
+/>
+
+---
+
+## Get File Info (Stat)
+
+Get metadata about a file or directory.
+
+<Endpoint method="GET">
+/api/v1/sandboxes/{'{id}'}/files/stat
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | File path to stat (required) |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Get file info
+info, err := sandbox.StatFile(ctx, "/workspace/hello.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Name: %s\\n", info.Name)
+fmt.Printf("Size: %d bytes\\n", info.Size)
+fmt.Printf("Type: %s\\n", info.Type)
+fmt.Printf("Mode: %s\\n", info.Mode)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Get file info
+info = sandbox.stat_file("/workspace/hello.txt")
+print(f"Name: {info.name}")
+print(f"Size: {info.size} bytes")
+print(f"Type: {info.type}")
+print(f"Mode: {info.mode}")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Get file info
+const info = await sandbox.statFile('/workspace/hello.txt');
+console.log('Name:', info.name);
+console.log('Size:', info.size, 'bytes');
+console.log('Type:', info.type);
+console.log('Mode:', info.mode);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file stat sb_abc123 /workspace/hello.txt
+
+# Output:
+# Name: hello.txt
+# Size: 24 bytes
+# Type: file
+# Mode: 0644
+# Modified: 2024-01-15T10:30:00Z`
+    }
+  ]}
+/>
+
+---
+
+## List Directory
+
+List contents of a directory.
+
+<Endpoint method="GET">
+/api/v1/sandboxes/{'{id}'}/files/list
+</Endpoint>
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `path` | string | Directory path to list (required) |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// List directory contents
+entries, err := sandbox.ListFiles(ctx, "/workspace")
+if err != nil {
+    log.Fatal(err)
+}
+for _, entry := range entries {
+    if path, ok := entry.Path.Get(); ok {
+        fmt.Printf("- %s (%s, %d bytes)\\n", path, entry.Type, entry.Size)
+    }
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# List directory contents
+entries = sandbox.list_files("/workspace")
+for entry in entries:
+    print(f"- {entry.path} ({entry.type}, {entry.size} bytes)")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// List directory contents
+const { entries } = await sandbox.listFiles('/workspace');
+for (const entry of entries) {
+    console.log(\`- \${entry.path} (\${entry.type}, \${entry.size} bytes)\`);
+}`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 file list sb_abc123 /workspace
+
+# Output:
+# hello.txt    file   24 bytes
+# project/     dir    4096 bytes
+# data.json    file   1024 bytes`
+    }
+  ]}
+/>
+
+---
+
+## Watch Files
+
+Watch a directory for file system changes in real-time via WebSocket.
+
+<Endpoint method="GET">
+/api/v1/sandboxes/{'{id}'}/files/watch
+</Endpoint>
+
+### WebSocket Protocol
+
+**Client Messages:**
+
+| Action | Description | Example |
+|--------|-------------|---------|
+| `subscribe` | Subscribe to a path | `{"action": "subscribe", "path": "/tmp", "recursive": true}` |
+| `unsubscribe` | Unsubscribe from a watch | `{"action": "unsubscribe", "watch_id": "watch-123"}` |
+
+**Server Messages:**
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `subscribed` | Subscription confirmed | `{"type": "subscribed", "watch_id": "watch-123", "path": "/tmp"}` |
+| `event` | File event occurred | `{"type": "event", "watch_id": "watch-123", "event": "write", "path": "/tmp/a.txt"}` |
+| `unsubscribed` | Unsubscription confirmed | `{"type": "unsubscribed", "watch_id": "watch-123"}` |
+| `error` | Error occurred | `{"type": "error", "error": "permission denied"}` |
+
+### File Events
+
+| Event | Description |
+|-------|-------------|
+| `create` | File or directory created |
+| `write` | File content modified |
+| `rename` | File or directory renamed |
+| `chmod` | File permissions changed |
+| `remove` | File or directory deleted |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Watch files for changes
+watchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+defer cancel()
+
+events, errs, unsubscribe, err := sandbox.WatchFiles(watchCtx, "/workspace", true)
+if err != nil {
+    log.Fatal(err)
+}
+defer unsubscribe()
+
+// Process events
+for {
+    select {
+    case ev, ok := <-events:
+        if !ok {
+            return
+        }
+        fmt.Printf("Event: %s on %s\\n", ev.Event, ev.Path)
+    case err, ok := <-errs:
+        if ok && err != nil {
+            log.Printf("Watch error: %v", err)
+        }
+    case <-watchCtx.Done():
+        fmt.Println("Watch timeout")
+        return
+    }
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Watch files for changes
+import time
+
+events, errors, unsubscribe = sandbox.watch_files("/workspace", recursive=True)
+
+try:
+    for event in events:
+        print(f"Event: {event.event} on {event.path}")
+        if event.event == "write":
+            print(f"File modified: {event.path}")
+except KeyboardInterrupt:
+    pass
+finally:
+    unsubscribe()`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Watch files for changes
+const { events, errors, unsubscribe } = await sandbox.watchFiles('/workspace', true);
+
+events.on('data', (event) => {
+    console.log(\`Event: \${event.event} on \${event.path}\`);
+    if (event.event === 'write') {
+        console.log(\`File modified: \${event.path}\`);
+    }
+});
+
+errors.on('data', (error) => {
+    console.error('Watch error:', error);
+});
+
+// Unsubscribe after 30 seconds
+setTimeout(() => {
+    unsubscribe();
+}, 30000);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Watch files for changes
+s0 file watch sb_abc123 /workspace --recursive
+
+# Output (live):
+# [create] /workspace/newfile.txt
+# [write] /workspace/newfile.txt
+# [rename] /workspace/newfile.txt -> /workspace/renamed.txt
+# [remove] /workspace/renamed.txt`
+    }
+  ]}
+/>
+
+---
+
+## Complete Example
+
+A complete example showing common file operations.
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Create directory
+_, err := sandbox.Mkdir(ctx, "/tmp/sdk-go", true)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Write a file
+_, err = sandbox.WriteFile(ctx, "/tmp/sdk-go/hello.txt", []byte("hello from file\\n"))
+if err != nil {
+    log.Fatal(err)
+}
+
+// Read the file
+content, err := sandbox.ReadFile(ctx, "/tmp/sdk-go/hello.txt")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("File content: %s\\n", strings.TrimSpace(string(content)))
+
+// List directory
+entries, err := sandbox.ListFiles(ctx, "/tmp/sdk-go")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Directory entries: %d\\n", len(entries))
+
+// Move/rename file
+_, err = sandbox.MoveFile(ctx, "/tmp/sdk-go/hello.txt", "/tmp/sdk-go/hello-renamed.txt")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Delete file
+_, err = sandbox.DeleteFile(ctx, "/tmp/sdk-go/hello-renamed.txt")
+if err != nil {
+    log.Fatal(err)
+}`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Create directory
+sandbox.mkdir("/tmp/sdk-py", recursive=True)
+
+# Write a file
+sandbox.write_file("/tmp/sdk-py/hello.txt", b"hello from file\\n")
+
+# Read the file
+content = sandbox.read_file("/tmp/sdk-py/hello.txt")
+print(f"File content: {content.decode().strip()}")
+
+# List directory
+entries = sandbox.list_files("/tmp/sdk-py")
+print(f"Directory entries: {len(entries)}")
+
+# Move/rename file
+sandbox.move_file("/tmp/sdk-py/hello.txt", "/tmp/sdk-py/hello-renamed.txt")
+
+# Delete file
+sandbox.delete_file("/tmp/sdk-py/hello-renamed.txt")`
+    },
+    {
+      label: "JavaScript",
+      language: "typescript",
+      code: `// Create directory
+await sandbox.mkdir('/tmp/sdk-js', true);
+
+// Write a file
+await sandbox.writeFile('/tmp/sdk-js/hello.txt', 'hello from file\\n');
+
+// Read the file
+const content = await sandbox.readFile('/tmp/sdk-js/hello.txt');
+console.log('File content:', content.toString().trim());
+
+// List directory
+const { entries } = await sandbox.listFiles('/tmp/sdk-js');
+console.log('Directory entries:', entries.length);
+
+// Move/rename file
+await sandbox.moveFile('/tmp/sdk-js/hello.txt', '/tmp/sdk-js/hello-renamed.txt');
+
+// Delete file
+await sandbox.deleteFile('/tmp/sdk-js/hello-renamed.txt');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `# Create directory
+s0 file mkdir sb_abc123 /tmp/sdk-cli --recursive
+
+# Write a file
+s0 file write sb_abc123 /tmp/sdk-cli/hello.txt --content "hello from file"
+
+# Read the file
+s0 file read sb_abc123 /tmp/sdk-cli/hello.txt
+
+# List directory
+s0 file list sb_abc123 /tmp/sdk-cli
+
+# Move/rename file
+s0 file move sb_abc123 /tmp/sdk-cli/hello.txt /tmp/sdk-cli/hello-renamed.txt
+
+# Delete file
+s0 file delete sb_abc123 /tmp/sdk-cli/hello-renamed.txt`
+    }
+  ]}
+/>
+
+---
+
+## Next Steps
+
+<CardGrid>
+  <LinkCard
+    title="Contexts"
+    href="/docs/sandbox/contexts"
+    cta="Learn More"
+  >
+    Run commands and manage processes
+  </LinkCard>
+
+  <LinkCard
+    title="Network Policy"
+    href="/docs/sandbox/network"
+    cta="Learn More"
+  >
+    Control network access and egress rules
+  </LinkCard>
+
+  <LinkCard
+    title="Port Exposure"
+    href="/docs/sandbox/ports"
+    cta="Learn More"
+  >
+    Expose sandbox ports publicly
+  </LinkCard>
+</CardGrid>

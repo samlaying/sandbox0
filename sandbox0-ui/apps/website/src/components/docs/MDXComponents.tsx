@@ -143,11 +143,13 @@ function Endpoint({ method, children }: { method: string; children: React.ReactN
   }[method.toUpperCase()] || "default";
 
   return (
-    <div className="flex items-center gap-3 mb-4">
+    <div className="flex items-baseline gap-3 mb-4">
       <PixelBadge variant={methodVariant as any} size="sm">
         {method.toUpperCase()}
       </PixelBadge>
-      <code className="text-sm font-mono text-muted">{children}</code>
+      <code className="block text-sm font-mono text-muted">
+        {children}
+      </code>
     </div>
   );
 }
@@ -196,18 +198,17 @@ export const mdxComponents: MDXComponents = {
 
   // Lists
   ul: ({ children, ...props }) => (
-    <ul className="mb-4 ml-6 space-y-2 list-none" {...props}>
+    <ul className="mb-4 ml-4 space-y-2 list-none pixel-list" {...props}>
       {children}
     </ul>
   ),
   ol: ({ children, ...props }) => (
-    <ol className="mb-4 ml-6 space-y-2 list-decimal list-inside" {...props}>
+    <ol className="mb-4 ml-4 space-y-2 list-decimal list-inside" {...props}>
       {children}
     </ol>
   ),
   li: ({ children, ...props }) => (
     <li className="text-muted" {...props}>
-      <span className="inline-block w-2 h-2 bg-accent mr-3 -ml-6 translate-y-[-2px]" />
       {children}
     </li>
   ),
@@ -296,7 +297,7 @@ export const mdxComponents: MDXComponents = {
   table: ({ children, ...props }) => (
     <div className="mb-6 overflow-x-auto">
       <table
-        className="w-full border border-foreground/15 text-sm"
+        className="w-full border border-muted/35 text-sm"
         {...props}
       >
         {children}
@@ -310,7 +311,7 @@ export const mdxComponents: MDXComponents = {
   ),
   th: ({ children, ...props }) => (
     <th
-      className="px-4 py-2 text-left font-pixel text-xs border border-foreground/12"
+      className="px-4 py-2 text-left font-pixel text-xs border border-muted/35"
       {...props}
     >
       {children}
@@ -318,7 +319,7 @@ export const mdxComponents: MDXComponents = {
   ),
   td: ({ children, ...props }) => (
     <td
-      className="px-4 py-2 text-muted border border-foreground/12"
+      className="px-4 py-2 text-muted border border-muted/30"
       {...props}
     >
       {children}

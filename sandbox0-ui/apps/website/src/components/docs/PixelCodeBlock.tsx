@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { cn, getPixelShadowClass, type PixelScale } from "@sandbox0/ui";
 import Prism from "prismjs";
 import "prismjs/components/prism-bash";
+import "prismjs/components/prism-go";
 import "prismjs/components/prism-json";
 import "prismjs/components/prism-javascript";
 import "prismjs/components/prism-typescript";
@@ -36,6 +37,7 @@ function normalizeLanguage(language?: string): string | undefined {
     shell: "bash",
     sh: "bash",
     zsh: "bash",
+    golang: "go",
   };
 
   return aliases[lang] ?? lang;
@@ -114,7 +116,7 @@ export function PixelCodeBlock({
     <div className={cn("relative", className)}>
       <pre
         className={cn(
-          "pixel-codeblock group relative",
+          "pixel-codeblock group",
           "bg-surface overflow-x-auto font-mono text-sm leading-relaxed",
           getPixelShadowClass(scale, accent),
           "p-4",
@@ -128,60 +130,6 @@ export function PixelCodeBlock({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleCopy}
-          aria-label={copied ? "Copied" : "Copy code"}
-          className={cn(
-            "absolute right-3 top-3",
-            "inline-flex items-center justify-center",
-            "h-8 w-8",
-            "bg-background/30 hover:bg-background/50",
-            copied ? "text-accent" : "text-muted hover:text-foreground",
-            "shadow-pixel-sm",
-            "transition-colors"
-          )}
-        >
-          {copied ? (
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-              shapeRendering="crispEdges"
-            >
-              <rect x="3" y="8" width="2" height="2" fill="currentColor" />
-              <rect x="5" y="10" width="2" height="2" fill="currentColor" />
-              <rect x="7" y="8" width="2" height="2" fill="currentColor" />
-              <rect x="9" y="6" width="2" height="2" fill="currentColor" />
-              <rect x="11" y="4" width="2" height="2" fill="currentColor" />
-            </svg>
-          ) : (
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-              shapeRendering="crispEdges"
-            >
-              <path
-                d="M6 2H14V10H6V2Z"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M2 6H10V14H2V6Z"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-            </svg>
-          )}
-        </button>
-
         <code
           className={cn(
             "block whitespace-pre",
@@ -190,6 +138,60 @@ export function PixelCodeBlock({
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       </pre>
+
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={copied ? "Copied" : "Copy code"}
+        className={cn(
+          "absolute right-3 top-3",
+          "inline-flex items-center justify-center",
+          "h-8 w-8",
+          "bg-background/30 hover:bg-background/50",
+          copied ? "text-accent" : "text-muted hover:text-foreground",
+          "shadow-pixel-sm",
+          "transition-colors"
+        )}
+      >
+        {copied ? (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            shapeRendering="crispEdges"
+          >
+            <rect x="3" y="8" width="2" height="2" fill="currentColor" />
+            <rect x="5" y="10" width="2" height="2" fill="currentColor" />
+            <rect x="7" y="8" width="2" height="2" fill="currentColor" />
+            <rect x="9" y="6" width="2" height="2" fill="currentColor" />
+            <rect x="11" y="4" width="2" height="2" fill="currentColor" />
+          </svg>
+        ) : (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            shapeRendering="crispEdges"
+          >
+            <path
+              d="M6 2H14V10H6V2Z"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+            <path
+              d="M2 6H10V14H2V6Z"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }

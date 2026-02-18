@@ -34,7 +34,7 @@ export default function Home() {
 
           {/* Subheadline */}
           <p className="text-lg md:text-xl text-muted mb-8 max-w-2xl mx-auto">
-            Persistent storage, session state retention, 100ms cold start, and
+            Persistent storage, session state retention, 200ms cold start, and
             easy private deployment.
           </p>
 
@@ -79,7 +79,7 @@ Hello from Sandbox0!`}</code>
           </PixelHeading>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <PixelCard header="⚡ 100ms Cold Start" scale="md" accent>
+            <PixelCard header="⚡ 200ms Cold Start" scale="md" accent>
               <p className="text-muted">
                 Pre-warmed sandbox pools ensure your AI agents start instantly.
                 No waiting, just coding.

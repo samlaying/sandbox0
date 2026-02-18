@@ -18,6 +18,8 @@ export const docsNavigation: PixelSidebarItem[] = [
       { label: "Contexts", href: "/docs/sandbox/contexts" },
       { label: "Files", href: "/docs/sandbox/files" },
       { label: "Network", href: "/docs/sandbox/network" },
+      { label: "Ports", href: "/docs/sandbox/ports" },
+      { label: "Webhooks", href: "/docs/sandbox/webhooks" },
     ],
   },
   {
@@ -35,7 +37,7 @@ export const docsNavigation: PixelSidebarItem[] = [
     items: [
       { label: "Overview", href: "/docs/template" },
       { label: "Spec", href: "/docs/template/spec" },
-      { label: "Visibility", href: "/docs/template/visibility" },
+      { label: "Images", href: "/docs/template/image" },
     ],
   },
   {

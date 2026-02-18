@@ -11,9 +11,9 @@ const config: Config = {
       colors: {
         background: "#000000",
         foreground: "#FFFFFF",
-        accent: "#2E51FF",
+        accent: "rgb(var(--color-accent-rgb) / <alpha-value>)",
         surface: "#1A1A1A",
-        primary: "#2E51FF",
+        primary: "rgb(var(--color-accent-rgb) / <alpha-value>)",
         muted: "#888888",
       },
       fontFamily: {
@@ -24,7 +24,7 @@ const config: Config = {
       boxShadow: {
         // Softer pixel shadows: keep the crisp offset, reduce visual weight.
         "pixel-sm": "1px 1px 0 0 rgba(0,0,0,0.65)",
-        "pixel-sm-accent": "1px 1px 0 0 rgba(46,81,255,0.85)",
+        "pixel-sm-accent": "1px 1px 0 0 rgb(var(--color-accent-rgb) / 0.85)",
         "pixel-md": [
           "-1px 0 0 0 rgba(255,255,255,0.28)",
           "1px 0 0 0 rgba(255,255,255,0.28)",
@@ -37,7 +37,7 @@ const config: Config = {
           "1px 0 0 0 rgba(255,255,255,0.28)",
           "0 -1px 0 0 rgba(255,255,255,0.28)",
           "0 1px 0 0 rgba(255,255,255,0.28)",
-          "3px 3px 0 0 rgba(46,81,255,0.85)",
+          "3px 3px 0 0 rgb(var(--color-accent-rgb) / 0.85)",
         ].join(", "),
         "pixel-md-inset": [
           "inset -1px 0 0 0 rgba(255,255,255,0.22)",
@@ -57,7 +57,7 @@ const config: Config = {
           "2px 0 0 0 rgba(255,255,255,0.28)",
           "0 -2px 0 0 rgba(255,255,255,0.28)",
           "0 2px 0 0 rgba(255,255,255,0.28)",
-          "4px 4px 0 0 rgba(46,81,255,0.85)",
+          "4px 4px 0 0 rgb(var(--color-accent-rgb) / 0.85)",
         ].join(", "),
       },
       borderRadius: {

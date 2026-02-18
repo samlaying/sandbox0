@@ -10,7 +10,9 @@
     color-scheme: dark;
     --color-background: #000000;
     --color-foreground: #FFFFFF;
-    --color-accent: #2E51FF;
+    /* RGB components (space-separated) for use with Tailwind opacity modifiers, e.g. bg-accent/60 */
+    --color-accent-rgb: 249 115 22;
+    --color-accent: rgb(var(--color-accent-rgb));
     --color-surface: #1A1A1A;
     --color-muted: #888888;
   }
@@ -189,5 +191,47 @@
   }
   .pixel-codeblock .token.italic {
     font-style: italic;
+  }
+
+  /* Keep operators in docs code blocks as raw characters (e.g. "!="). */
+  .pixel-codeblock code {
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  /* Render inline code in callouts with badge-like visual style. */
+  .pixel-callout-body :not(pre) > code,
+  .pixel-callout-body p code,
+  .pixel-callout-body li code {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: baseline;
+    padding: 0.125rem 0.5rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--color-foreground);
+    background-color: var(--color-accent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+    box-shadow: none;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "calt" 0;
+  }
+
+  /* Pixel list style - square bullet for ul */
+  .pixel-list > li {
+    position: relative;
+    padding-left: 1.25rem;
+  }
+  .pixel-list > li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 0.5rem;
+    height: 0.5rem;
+    background-color: var(--color-accent);
+    transform: translateY(-50%);
   }
 }
