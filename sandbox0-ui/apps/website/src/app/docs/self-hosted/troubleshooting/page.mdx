@@ -12,12 +12,8 @@ Common issues and solutions when deploying and operating sandbox0.
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check detailed status and conditions
+```bash
+# Check detailed status and conditions
 kubectl describe sandbox0infra <name> -n sandbox0-system
 
 # Check operator logs
@@ -25,70 +21,34 @@ kubectl logs -n sandbox0-system -l app.kubernetes.io/name=infra-operator
 
 # Check specific component pods
 kubectl get pods -n sandbox0-system
-kubectl describe pod <pod-name> -n sandbox0-system`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-installing-diagnosis",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl describe pod <pod-name> -n sandbox0-system
+```
 
 **Common Causes:**
 
 1. **Image Pull Failures**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `# Check for ImagePullBackOff errors
-kubectl get pods -n sandbox0-system | grep ImagePull
+   ```bash
+   # Check for ImagePullBackOff errors
+   kubectl get pods -n sandbox0-system | grep ImagePull
 
-# Verify image pull secrets
-kubectl get secrets -n sandbox0-system | grep pull`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-imagepull",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   # Verify image pull secrets
+   kubectl get secrets -n sandbox0-system | grep pull
+   ```
 
 2. **PVC Pending**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `# Check PVC status
-kubectl get pvc -n sandbox0-system
+   ```bash
+   # Check PVC status
+   kubectl get pvc -n sandbox0-system
 
-# Verify storage class exists
-kubectl get storageclass`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-pvc",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   # Verify storage class exists
+   kubectl get storageclass
+   ```
 
 3. **Resource Constraints**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `# Check node resources
-kubectl describe nodes | grep -A 5 "Allocated resources"`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-resource-constraints",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   ```bash
+   # Check node resources
+   kubectl describe nodes | grep -A 5 "Allocated resources"
+   ```
 
 ### Database Connection Failures
 
@@ -98,47 +58,27 @@ kubectl describe nodes | grep -A 5 "Allocated resources"`,
 
 **For Built-in Database:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check database pod status
+```bash
+# Check database pod status
 kubectl get pods -n sandbox0-system -l app.kubernetes.io/component=database
 
 # Check database logs
 kubectl logs -n sandbox0-system -l app.kubernetes.io/component=database
 
 # Verify database is ready
-kubectl exec -n sandbox0-system <database-pod> -- pg_isready`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-db-builtin",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl exec -n sandbox0-system <database-pod> -- pg_isready
+```
 
 **For External Database:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Verify credentials secret exists
+```bash
+# Verify credentials secret exists
 kubectl get secret <secret-name> -n sandbox0-system
 
 # Test connectivity from a test pod
 kubectl run pg-test --rm -it --image=postgres:16-alpine -- \
-  psql "postgresql://<username>:<password>@<host>:<port>/<database>"`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-db-external",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+  psql "postgresql://<username>:<password>@<host>:<port>/<database>"
+```
 
 **Common Fixes:**
 
@@ -156,64 +96,34 @@ kubectl run pg-test --rm -it --image=postgres:16-alpine -- \
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check storage-proxy status
+```bash
+# Check storage-proxy status
 kubectl get pods -n sandbox0-system -l app.kubernetes.io/component=storage-proxy
 
 # Check storage-proxy logs
 kubectl logs -n sandbox0-system -l app.kubernetes.io/component=storage-proxy
 
 # Check sandbox pod events
-kubectl describe pod <sandbox-pod> -n <sandbox-namespace>`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-volume-diagnosis",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl describe pod <sandbox-pod> -n <sandbox-namespace>
+```
 
 **Common Causes:**
 
 1. **S3/OSS Credentials Invalid**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `# Verify credentials secret
-kubectl get secret <credentials-secret> -n sandbox0-system -o yaml
+   ```bash
+   # Verify credentials secret
+   kubectl get secret <credentials-secret> -n sandbox0-system -o yaml
 
-# Test S3 access (from storage-proxy pod)
-kubectl exec -n sandbox0-system <storage-proxy-pod> -- \
-  aws s3 ls --endpoint-url <endpoint>`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-storage-credentials",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   # Test S3 access (from storage-proxy pod)
+   kubectl exec -n sandbox0-system <storage-proxy-pod> -- \
+     aws s3 ls --endpoint-url <endpoint>
+   ```
 
 2. **JuiceFS Mount Issues**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `# Check JuiceFS logs in storage-proxy
-kubectl logs -n sandbox0-system <storage-proxy-pod> -c juicefs`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-juicefs",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   ```bash
+   # Check JuiceFS logs in storage-proxy
+   kubectl logs -n sandbox0-system <storage-proxy-pod> -c juicefs
+   ```
 
 ### FUSE-Related Errors
 
@@ -225,23 +135,13 @@ kubectl logs -n sandbox0-system <storage-proxy-pod> -c juicefs`,
 
 Ensure nodes have FUSE available and the storage-proxy pod has appropriate capabilities:
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check if FUSE is available on nodes
+```bash
+# Check if FUSE is available on nodes
 kubectl debug node/<node-name> -it --image=alpine -- ls /dev/fuse
 
 # Verify storage-proxy has necessary capabilities
-kubectl get pod <storage-proxy-pod> -n sandbox0-system -o yaml | grep -A 5 capabilities`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-fuse",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get pod <storage-proxy-pod> -n sandbox0-system -o yaml | grep -A 5 capabilities
+```
 
 <Callout variant="info">
 For Kubernetes environments without FUSE support, you may need to use a CSI driver or privileged mode for storage-proxy.
@@ -257,26 +157,16 @@ For Kubernetes environments without FUSE support, you may need to use a CSI driv
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check netd DaemonSet
+```bash
+# Check netd DaemonSet
 kubectl get daemonset -n sandbox0-system -l app.kubernetes.io/component=netd
 
 # Check netd logs on specific node
 kubectl logs -n sandbox0-system <netd-pod>
 
 # Verify pod annotations
-kubectl get pod <sandbox-pod> -n <namespace> -o jsonpath='{.metadata.annotations}'`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-netd-policy",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get pod <sandbox-pod> -n <namespace> -o jsonpath='{.metadata.annotations}'
+```
 
 **Common Fixes:**
 
@@ -292,23 +182,13 @@ kubectl get pod <sandbox-pod> -n <namespace> -o jsonpath='{.metadata.annotations
 
 **Solution:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Verify TPROXY module is loaded on nodes
+```bash
+# Verify TPROXY module is loaded on nodes
 kubectl debug node/<node-name> -it --image=alpine -- lsmod | grep TPROXY
 
 # Load module if missing (on node)
-sudo modprobe xt_TPROXY`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-tproxy",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+sudo modprobe xt_TPROXY
+```
 
 ## Service Communication Issues
 
@@ -320,23 +200,13 @@ sudo modprobe xt_TPROXY`,
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check internal auth secrets
+```bash
+# Check internal auth secrets
 kubectl get secrets -n sandbox0-system | grep auth
 
 # Verify public key is accessible
-kubectl get secret <public-key-secret> -n sandbox0-system -o jsonpath='{.data.public\.key}' | base64 -d`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-internal-auth",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get secret <public-key-secret> -n sandbox0-system -o jsonpath='{.data.public\.key}' | base64 -d
+```
 
 **Solution:**
 
@@ -352,24 +222,14 @@ kubectl get secret <public-key-secret> -n sandbox0-system -o jsonpath='{.data.pu
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Test connectivity from data plane
+```bash
+# Test connectivity from data plane
 kubectl run curl-test --rm -it --image=curlimages/curl -- \
   curl -v https://<control-plane-url>/health
 
 # Check control plane configuration
-kubectl get sandbox0infra -n sandbox0-system -o yaml | grep -A 5 controlPlane`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-controlplane-connection",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get sandbox0infra -n sandbox0-system -o yaml | grep -A 5 controlPlane
+```
 
 **Common Fixes:**
 
@@ -387,25 +247,15 @@ kubectl get sandbox0infra -n sandbox0-system -o yaml | grep -A 5 controlPlane`,
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check manager metrics
+```bash
+# Check manager metrics
 kubectl port-forward -n sandbox0-system <manager-pod> 8080:8080 &
 curl http://localhost:8080/metrics
 
 # Check warm pool status
 kubectl get sandboxtemplate -A
-kubectl get replicaset -A -l sandbox0.io/template-id`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-startup-performance",
-      setup: ["command -v kubectl >/dev/null", "command -v curl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get replicaset -A -l sandbox0.io/template-id
+```
 
 **Common Fixes:**
 
@@ -421,35 +271,21 @@ kubectl get replicaset -A -l sandbox0.io/template-id`,
 
 **Diagnosis:**
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Check resource usage
+```bash
+# Check resource usage
 kubectl top pods -n sandbox0-system
 kubectl top nodes
 
 # Check resource limits
-kubectl describe pod <pod-name> -n sandbox0-system | grep -A 5 "Limits:"`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-high-resource",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl describe pod <pod-name> -n sandbox0-system | grep -A 5 "Limits:"
+```
 
 **Solution:**
 
 Adjust resource requests and limits in the services configuration:
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   services:
     manager:
       resources:
@@ -458,24 +294,15 @@ Adjust resource requests and limits in the services configuration:
           memory: "256Mi"
         limits:
           cpu: "1000m"
-          memory: "1Gi"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-troubleshoot-manager-resources-yaml"
-    }
-  ]}
-/>
+          memory: "1Gi"
+```
 
 ## Debug Commands Reference
 
 ### Useful kubectl Commands
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Get all sandbox0 resources
+```bash
+# Get all sandbox0 resources
 kubectl get all -n sandbox0-system
 
 # Watch pod status
@@ -494,37 +321,21 @@ kubectl logs -n sandbox0-system <pod-name> --timestamps
 kubectl exec -it -n sandbox0-system <pod-name> -- /bin/sh
 
 # Port forward for local debugging
-kubectl port-forward -n sandbox0-system svc/<service-name> 8080:80`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-debug-commands",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl port-forward -n sandbox0-system svc/<service-name> 8080:80
+```
 
 ### Checking Sandbox0Infra Status
 
-<Tabs
-  tabs={[
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Quick status overview
+```bash
+# Quick status overview
 kubectl get sandbox0infra -n sandbox0-system
 
 # Detailed status with conditions
 kubectl get sandbox0infra -n sandbox0-system -o yaml
 
 # Watch for changes
-kubectl get sandbox0infra -n sandbox0-system -w`,
-      mode: "run",
-      needs: "k8s",
-      session: "selfhosted-troubleshoot-sandbox0infra-status",
-      setup: ["command -v kubectl >/dev/null"]
-    }
-  ]}
-/>
+kubectl get sandbox0infra -n sandbox0-system -w
+```
 
 ## Getting Help
 
@@ -533,17 +344,7 @@ If you continue to experience issues:
 1. **Check the logs** of the affected component
 2. **Review the conditions** in `Sandbox0Infra` status
 3. **Gather diagnostic information:**
-   <Tabs
-     tabs={[
-       {
-         label: "CLI",
-         language: "bash",
-         code: `kubectl cluster-info dump -n sandbox0-system > cluster-dump.txt`,
-         mode: "run",
-         needs: "k8s",
-         session: "selfhosted-troubleshoot-cluster-dump",
-         setup: ["command -v kubectl >/dev/null"]
-       }
-     ]}
-   />
+   ```bash
+   kubectl cluster-info dump -n sandbox0-system > cluster-dump.txt
+   ```
 4. **Contact support** with the diagnostic information and a description of the issue

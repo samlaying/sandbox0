@@ -55,10 +55,7 @@ if err != nil {
 
 fmt.Printf("Access token: %s\\n", resp.AccessToken)
 fmt.Printf("Refresh token: %s\\n", resp.RefreshToken)
-fmt.Printf("Expires at: %d\\n", resp.ExpiresAt)`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-go"
+fmt.Printf("Expires at: %d\\n", resp.ExpiresAt)`
     },
     {
       label: "Python",
@@ -73,10 +70,7 @@ resp = client.login(
     password="your-password",
 )
 print(f"Access token: {resp.access_token}")
-print(f"Refresh token: {resp.refresh_token}")`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-python"
+print(f"Refresh token: {resp.refresh_token}")`
     },
     {
       label: "JavaScript",
@@ -91,10 +85,7 @@ const resp = await client.login({
     password: 'your-password',
 });
 console.log('Access token:', resp.accessToken);
-console.log('Refresh token:', resp.refreshToken);`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-typescript"
+console.log('Refresh token:', resp.refreshToken);`
     },
     {
       label: "CLI",
@@ -103,11 +94,7 @@ console.log('Refresh token:', resp.refreshToken);`,
 s0 auth login --email user@example.com
 
 # You will be prompted for your password
-# Tokens are stored in the config file`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+# Tokens are stored in the config file`
     }
   ]}
 />
@@ -140,10 +127,7 @@ if err != nil {
 }
 for _, p := range providers {
     fmt.Printf("- %s (%s)\\n", p.Name, p.Type)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-go"
+}`
     },
     {
       label: "Python",
@@ -151,10 +135,7 @@ for _, p := range providers {
       code: `# Get available auth providers
 providers = client.get_auth_providers()
 for p in providers:
-    print(f"- {p.name} ({p.type})")`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-python"
+    print(f"- {p.name} ({p.type})")`
     },
     {
       label: "JavaScript",
@@ -163,20 +144,13 @@ for p in providers:
 const providers = await client.getAuthProviders();
 for (const p of providers) {
     console.log(\`- \${p.name} (\${p.type})\`);
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-typescript"
+}`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# List available auth providers
-s0 auth providers`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 auth providers`
     }
   ]}
 />
@@ -209,20 +183,14 @@ if err != nil {
 }
 
 // Update stored tokens
-fmt.Printf("New access token: %s\\n", resp.AccessToken)`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-go"
+fmt.Printf("New access token: %s\\n", resp.AccessToken)`
     },
     {
       label: "Python",
       language: "python",
       code: `# Refresh the access token
 resp = client.refresh_token(refresh_token=stored_refresh_token)
-print(f"New access token: {resp.access_token}")`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-python"
+print(f"New access token: {resp.access_token}")`
     },
     {
       label: "JavaScript",
@@ -231,20 +199,13 @@ print(f"New access token: {resp.access_token}")`,
 const resp = await client.refreshToken({
     refreshToken: storedRefreshToken,
 });
-console.log('New access token:', resp.accessToken);`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-typescript"
+console.log('New access token:', resp.accessToken);`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Refresh tokens (handled automatically by CLI)
-s0 auth refresh`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 auth refresh`
     }
   ]}
 />
@@ -292,11 +253,7 @@ Pass the API key in the `Authorization` header as a Bearer token:
 
 client, err := sandbox0.NewClient(
     sandbox0.WithAPIKey(os.Getenv("SANDBOX0_API_KEY")),
-)`,
-      mode: "run",
-      needs: "none",
-      session: "auth-go",
-      env: ["SANDBOX0_API_KEY"]
+)`
     },
     {
       label: "Python",
@@ -304,11 +261,7 @@ client, err := sandbox0.NewClient(
       code: `from sandbox0 import Client
 import os
 
-client = Client(api_key=os.environ["SANDBOX0_API_KEY"])`,
-      mode: "run",
-      needs: "none",
-      session: "auth-python",
-      env: ["SANDBOX0_API_KEY"]
+client = Client(api_key=os.environ["SANDBOX0_API_KEY"])`
     },
     {
       label: "JavaScript",
@@ -317,11 +270,7 @@ client = Client(api_key=os.environ["SANDBOX0_API_KEY"])`,
 
 const client = new Sandbox0({
     apiKey: process.env.SANDBOX0_API_KEY,
-});`,
-      mode: "run",
-      needs: "none",
-      session: "auth-typescript",
-      env: ["SANDBOX0_API_KEY"]
+});`
     },
     {
       label: "CLI",
@@ -330,11 +279,7 @@ const client = new Sandbox0({
 export SANDBOX0_API_KEY="your-api-key"
 
 # Or in config
-s0 config set api-key your-api-key`,
-      mode: "run",
-      needs: "none",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 config set api-key your-api-key`
     }
   ]}
 />
@@ -372,11 +317,7 @@ if err != nil {
 }
 for _, team := range teams {
     fmt.Printf("- %s (%s)\\n", team.Name, team.ID)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-go",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "Python",
@@ -384,11 +325,7 @@ for _, team := range teams {
       code: `# List teams
 teams = client.list_teams()
 for team in teams:
-    print(f"- {team.name} ({team.id})")`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-python",
-      env: ["SANDBOX0_TOKEN"]
+    print(f"- {team.name} ({team.id})")`
     },
     {
       label: "JavaScript",
@@ -397,11 +334,7 @@ for team in teams:
 const { teams } = await client.listTeams();
 for (const team of teams) {
     console.log(\`- \${team.name} (\${team.id})\`);
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-typescript",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "CLI",
@@ -410,11 +343,7 @@ for (const team of teams) {
 s0 team list
 
 # Switch team context
-s0 config set team team-id-here`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 config set team team-id-here`
     }
   ]}
 />
@@ -474,11 +403,7 @@ if err != nil {
         log.Println("Insufficient permissions for this operation")
     }
     log.Fatal(err)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-go",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "Python",
@@ -492,11 +417,7 @@ except errors.UnauthorizedError:
     print("Token expired, please re-authenticate")
 except errors.ForbiddenError:
     # Insufficient permissions
-    print("Insufficient permissions for this operation")`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-python",
-      env: ["SANDBOX0_TOKEN"]
+    print("Insufficient permissions for this operation")`
     },
     {
       label: "JavaScript",
@@ -513,11 +434,7 @@ try {
         // Insufficient permissions
         console.log('Insufficient permissions for this operation');
     }
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-typescript",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "CLI",
@@ -525,41 +442,7 @@ try {
       code: `# CLI returns clear error messages
 # Example output for auth error:
 # Error: Unauthorized (401) - Token has expired
-# Run 's0 auth login' to authenticate`,
-      mode: "run",
-      needs: "infra",
-      session: "auth-cli",
-      setup: ["command -v s0 >/dev/null"]
+# Run 's0 auth login' to authenticate`
     }
   ]}
 />
-
----
-
-## Next Steps
-
-<CardGrid>
-  <LinkCard
-    title="Core Concepts"
-    href="/docs/get-started/concepts"
-    cta="Learn Concepts"
-  >
-    Understand lifecycle, contexts, templates, and storage primitives
-  </LinkCard>
-
-  <LinkCard
-    title="Get Started Overview"
-    href="/docs/get-started"
-    cta="Back to Overview"
-  >
-    Return to the quickstart flow and run your first sandbox end-to-end
-  </LinkCard>
-
-  <LinkCard
-    title="Sandbox API"
-    href="/docs/sandbox"
-    cta="View API Docs"
-  >
-    Continue with complete sandbox lifecycle and operation references
-  </LinkCard>
-</CardGrid>

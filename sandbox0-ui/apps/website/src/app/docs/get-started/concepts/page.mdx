@@ -79,11 +79,7 @@ fmt.Println(output.Stdout) // Output: 3
 // State persists - x is still defined
 input = "print(x * 2)"
 output, err = client.ExecContext(ctx, sandbox.ID, ctxResp.ID, input)
-fmt.Println(output.Stdout) // Output: 6`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-go",
-      env: ["SANDBOX0_TOKEN"]
+fmt.Println(output.Stdout) // Output: 6`
     },
     {
       label: "Python",
@@ -101,11 +97,7 @@ print(output.stdout)  # Output: 3
 
 # State persists
 output = client.exec_context(sandbox.id, context.id, "print(x * 2)")
-print(output.stdout)  # Output: 6`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-python",
-      env: ["SANDBOX0_TOKEN"]
+print(output.stdout)  # Output: 6`
     },
     {
       label: "JavaScript",
@@ -122,11 +114,7 @@ console.log(output.stdout); // Output: 3
 
 // State persists
 output = await client.execContext(sandbox.id, context.id, 'print(x * 2)');
-console.log(output.stdout); // Output: 6`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-typescript",
-      env: ["SANDBOX0_TOKEN"]
+console.log(output.stdout); // Output: 6`
     },
     {
       label: "CLI",
@@ -141,11 +129,7 @@ s0 context exec sb_abc123 ctx_xyz789 --input "x = 1 + 2; print(x)"
 
 # State persists
 s0 context exec sb_abc123 ctx_xyz789 --input "print(x * 2)"
-# Output: 6`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-cli",
-      setup: ["command -v s0 >/dev/null"]
+# Output: 6`
     }
   ]}
 />
@@ -170,11 +154,7 @@ ctxResp, err := client.CreateContext(ctx, sandbox.ID, &sandbox0.CreateContextReq
 
 // Wait for completion
 status, err := client.GetContext(ctx, sandbox.ID, ctxResp.ID)
-fmt.Printf("Exit code: %d\\n", status.ExitCode)`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-go",
-      env: ["SANDBOX0_TOKEN"]
+fmt.Printf("Exit code: %d\\n", status.ExitCode)`
     },
     {
       label: "Python",
@@ -188,11 +168,7 @@ context = client.create_context(
 
 # Wait for completion
 status = client.get_context(sandbox.id, context.id)
-print(f"Exit code: {status.exit_code}")`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-python",
-      env: ["SANDBOX0_TOKEN"]
+print(f"Exit code: {status.exit_code}")`
     },
     {
       label: "JavaScript",
@@ -205,21 +181,13 @@ const context = await client.createContext(sandbox.id, {
 
 // Wait for completion
 const status = await client.getContext(sandbox.id, context.id);
-console.log('Exit code:', status.exitCode);`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-typescript",
-      env: ["SANDBOX0_TOKEN"]
+console.log('Exit code:', status.exitCode);`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Execute a command
-s0 context create sb_abc123 --type cmd --command "/bin/sh -c 'echo Hello && sleep 1 && echo World'"`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 context create sb_abc123 --type cmd --command "/bin/sh -c 'echo Hello && sleep 1 && echo World'"`
     }
   ]}
 />
@@ -317,11 +285,7 @@ err = client.MountVolume(ctx, sandbox.ID, &sandbox0.MountVolumeRequest{
     VolumeId:   volume.ID,
     MountPath:  "/data",
     ReadOnly:   false,
-})`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-go",
-      env: ["SANDBOX0_TOKEN"]
+})`
     },
     {
       label: "Python",
@@ -335,11 +299,7 @@ client.mount_volume(
     volume_id=volume.id,
     mount_path="/data",
     read_only=False,
-)`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-python",
-      env: ["SANDBOX0_TOKEN"]
+)`
     },
     {
       label: "JavaScript",
@@ -352,11 +312,7 @@ await client.mountVolume(sandbox.id, {
     volumeId: volume.id,
     mountPath: '/data',
     readOnly: false,
-});`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-typescript",
-      env: ["SANDBOX0_TOKEN"]
+});`
     },
     {
       label: "CLI",
@@ -365,11 +321,7 @@ await client.mountVolume(sandbox.id, {
 s0 volume create --name my-persistent-data
 
 # Mount to a sandbox
-s0 volume mount sb_abc123 --volume-id vol_xyz --path /data`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 volume mount sb_abc123 --volume-id vol_xyz --path /data`
     }
   ]}
 />
@@ -418,11 +370,7 @@ _, err := client.UpdateNetworkPolicy(ctx, sandbox.ID, &sandbox0.NetworkPolicyReq
             "malicious-site.com",
         },
     },
-})`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-go",
-      env: ["SANDBOX0_TOKEN"]
+})`
     },
     {
       label: "Python",
@@ -440,11 +388,7 @@ client.update_network_policy(
             "malicious-site.com",
         ],
     },
-)`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-python",
-      env: ["SANDBOX0_TOKEN"]
+)`
     },
     {
       label: "JavaScript",
@@ -461,11 +405,7 @@ await client.updateNetworkPolicy(sandbox.id, {
             'malicious-site.com',
         ],
     },
-});`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-typescript",
-      env: ["SANDBOX0_TOKEN"]
+});`
     },
     {
       label: "CLI",
@@ -473,11 +413,7 @@ await client.updateNetworkPolicy(sandbox.id, {
       code: `# Set custom network policy
 s0 network update sb_abc123 --mode custom \\
     --allow api.openai.com,api.anthropic.com \\
-    --block malicious-site.com`,
-      mode: "run",
-      needs: "infra",
-      session: "concepts-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --block malicious-site.com`
     }
   ]}
 />

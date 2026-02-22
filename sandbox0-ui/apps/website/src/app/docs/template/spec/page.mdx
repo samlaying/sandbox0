@@ -70,10 +70,7 @@ The primary container where your code runs.
         RunAsUser:  sandbox0.NewOptInt64(1000),
         RunAsGroup: sandbox0.NewOptInt64(1000),
     },
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -93,10 +90,7 @@ The primary container where your code runs.
         "runAsUser": 1000,
         "runAsGroup": 1000,
     },
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -116,10 +110,7 @@ The primary container where your code runs.
         runAsUser: 1000,
         runAsGroup: 1000,
     },
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -128,11 +119,7 @@ The primary container where your code runs.
     --image python:3.11-slim \\
     --cpu 1 --memory 512Mi \\
     --env PYTHONUNBUFFERED=1 \\
-    --env LOG_LEVEL=info`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --env LOG_LEVEL=info`
     }
   ]}
 />
@@ -161,10 +148,7 @@ Sidecars are additional containers that run alongside the main container in the 
             Memory: sandbox0.NewOptString("64Mi"),
         },
     },
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -177,10 +161,7 @@ Sidecars are additional containers that run alongside the main container in the 
             "memory": "64Mi",
         },
     },
-],
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+]`
     },
     {
       label: "JavaScript",
@@ -193,19 +174,13 @@ Sidecars are additional containers that run alongside the main container in the 
             memory: '64Mi',
         },
     },
-];`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+];`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Sidecars currently require API or SDK usage
-# CLI support coming soon`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli"
+# CLI support coming soon`
     }
   ]}
 />
@@ -237,10 +212,7 @@ Higher <code>minIdle</code> values provide faster response times but consume mor
     MinIdle:   2,     // Always keep 2 sandboxes ready
     MaxIdle:   10,    // Scale up to 10 idle sandboxes
     AutoScale: true,  // Automatically adjust based on demand
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -249,10 +221,7 @@ Higher <code>minIdle</code> values provide faster response times but consume mor
     "minIdle": 2,     # Always keep 2 sandboxes ready
     "maxIdle": 10,    # Scale up to 10 idle sandboxes
     "autoScale": True,  # Automatically adjust based on demand
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -261,10 +230,7 @@ Higher <code>minIdle</code> values provide faster response times but consume mor
     minIdle: 2,     // Always keep 2 sandboxes ready
     maxIdle: 10,    // Scale up to 10 idle sandboxes
     autoScale: true,  // Automatically adjust based on demand
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -272,11 +238,7 @@ Higher <code>minIdle</code> values provide faster response times but consume mor
       code: `s0 template create my-template \\
     --min-idle 2 \\
     --max-idle 10 \\
-    --auto-scale`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --auto-scale`
     }
   ]}
 />
@@ -316,10 +278,7 @@ Control sandbox lifetime and cleanup behavior.
         Command: []string{"/bin/sh", "-c", "cleanup.sh"},
         TimeoutSeconds: sandbox0.NewOptInt32(30),
     },
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -332,10 +291,7 @@ Control sandbox lifetime and cleanup behavior.
         "command": ["/bin/sh", "-c", "cleanup.sh"],
         "timeoutSeconds": 30,
     },
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -348,10 +304,7 @@ Control sandbox lifetime and cleanup behavior.
         command: ['/bin/sh', '-c', 'cleanup.sh'],
         timeoutSeconds: 30,
     },
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -359,11 +312,7 @@ Control sandbox lifetime and cleanup behavior.
       code: `s0 template create my-template \\
     --default-ttl 3600 \\
     --max-ttl 86400 \\
-    --idle-timeout 300`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --idle-timeout 300`
     }
   ]}
 />
@@ -394,10 +343,7 @@ network := &sandbox0.TplSandboxNetworkPolicy{
 // Block all network access
 network := &sandbox0.TplSandboxNetworkPolicy{
     Mode: sandbox0.BlockAll,
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -410,10 +356,7 @@ network = {
 # Block all network access
 network = {
     "mode": "block-all",
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -426,10 +369,7 @@ const network = {
 // Block all network access
 const network = {
     mode: 'block-all',
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -438,11 +378,7 @@ const network = {
 s0 template create my-template --network-mode allow-all
 
 # Block all network access
-s0 template create my-template --network-mode block-all`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+s0 template create my-template --network-mode block-all`
     }
   ]}
 />
@@ -466,10 +402,7 @@ Define default environment variables for all sandboxes.
     "APP_ENV":     "production",
     "LOG_LEVEL":   "info",
     "CACHE_TTL":   "300",
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -478,10 +411,7 @@ Define default environment variables for all sandboxes.
     "APP_ENV": "production",
     "LOG_LEVEL": "info",
     "CACHE_TTL": "300",
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -490,10 +420,7 @@ Define default environment variables for all sandboxes.
     APP_ENV: 'production',
     LOG_LEVEL: 'info',
     CACHE_TTL: '300',
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -501,11 +428,7 @@ Define default environment variables for all sandboxes.
       code: `s0 template create my-template \\
     --env APP_ENV=production \\
     --env LOG_LEVEL=info \\
-    --env CACHE_TTL=300`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --env CACHE_TTL=300`
     }
   ]}
 />
@@ -535,10 +458,7 @@ Advanced Kubernetes pod configuration options.
         "node-type": "compute-optimized",
     },
     ServiceAccountName: sandbox0.NewOptString("sandbox-sa"),
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -548,10 +468,7 @@ Advanced Kubernetes pod configuration options.
         "node-type": "compute-optimized",
     },
     "serviceAccountName": "sandbox-sa",
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -561,19 +478,13 @@ Advanced Kubernetes pod configuration options.
         'node-type': 'compute-optimized',
     },
     serviceAccountName: 'sandbox-sa',
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Pod overrides currently require API or SDK usage
-# CLI support coming soon`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli"
+# CLI support coming soon`
     }
   ]}
 />
@@ -605,10 +516,7 @@ spec := &sandbox0.SandboxTemplateSpec{
     // ...
     Public: sandbox0.NewOptBool(false),
     AllowedTeams: []string{"team-alpha", "team-beta"},
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-go"
+}`
     },
     {
       label: "Python",
@@ -624,10 +532,7 @@ spec = {
     # ...
     "public": False,
     "allowedTeams": ["team-alpha", "team-beta"],
-}`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-python"
+}`
     },
     {
       label: "JavaScript",
@@ -643,10 +548,7 @@ const spec = {
     // ...
     public: false,
     allowedTeams: ['team-alpha', 'team-beta'],
-};`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-typescript"
+};`
     },
     {
       label: "CLI",
@@ -657,11 +559,7 @@ s0 template create my-template --public
 # Private template with team access
 s0 template create my-template \\
     --private \\
-    --allowed-teams team-alpha,team-beta`,
-      mode: "run",
-      needs: "none",
-      session: "template-spec-cli",
-      setup: ["command -v s0 >/dev/null"]
+    --allowed-teams team-alpha,team-beta`
     }
   ]}
 />

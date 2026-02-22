@@ -72,11 +72,7 @@ sandbox, err := client.ClaimSandbox(
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Sandbox ID: %s\\n", sandbox.ID)`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-go",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+fmt.Printf("Sandbox ID: %s\\n", sandbox.ID)`
     },
     {
       label: "Python",
@@ -97,11 +93,7 @@ sandbox = client.claim_sandbox(
         },
     },
 )
-print(f"Sandbox ID: {sandbox.id}")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-python",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+print(f"Sandbox ID: {sandbox.id}")`
     },
     {
       label: "JavaScript",
@@ -120,24 +112,15 @@ const sandbox = await client.claimSandbox({
         },
     },
 });
-console.log('Sandbox ID:', sandbox.id);`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-typescript",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+console.log('Sandbox ID:', sandbox.id);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `SANDBOX_ID="$(s0 sandbox create --template default --hard-ttl 300 \\
-  --webhook-url "$SANDBOX0_WEBHOOK_URL" \\
-  --webhook-watch-dir /tmp/webhook-demo | awk '/Sandbox ID:/ {print $3}')"
-echo "Sandbox ID: $SANDBOX_ID"`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-cli",
-      setup: ["command -v s0 >/dev/null"],
-      env: ["SANDBOX0_WEBHOOK_URL"]
+      code: `s0 sandbox create --template default --hard-ttl 300 \\
+  --webhook-url https://my-server.com/webhook \\
+  --webhook-secret my-secret \\
+  --webhook-watch-dir /tmp/webhook-demo`
     }
   ]}
 />
@@ -260,113 +243,118 @@ X-Sandbox0-Signature: sha256=<hex-encoded-signature>
     {
       label: "Go",
       language: "go",
-      code: `package main
-
-import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"log"
-	"strings"
+      code: `import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "strings"
 )
 
 func verifySignature(payload []byte, signature string, secret string) bool {
-	if !strings.HasPrefix(signature, "sha256=") {
-		return false
-	}
-	expectedMAC, err := hex.DecodeString(signature[7:])
-	if err != nil {
-		return false
-	}
+    // Parse signature header
+    if !strings.HasPrefix(signature, "sha256=") {
+        return false
+    }
+    expectedMAC, _ := hex.DecodeString(signature[7:])
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(payload)
-	actualMAC := mac.Sum(nil)
-	return hmac.Equal(expectedMAC, actualMAC)
+    // Calculate HMAC
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(payload)
+    actualMAC := mac.Sum(nil)
+
+    return hmac.Equal(expectedMAC, actualMAC)
 }
 
-func main() {
-	payload := []byte("{\"event\":\"process.exited\",\"sandbox_id\":\"sb_demo\"}")
-	secret := "demo-secret"
+// Usage in HTTP handler
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    payload, _ := io.ReadAll(r.Body)
+    signature := r.Header.Get("X-Sandbox0-Signature")
+    secret := os.Getenv("SANDBOX0_WEBHOOK_SECRET")
 
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(payload)
-	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    if !verifySignature(payload, signature, secret) {
+        http.Error(w, "Invalid signature", 401)
+        return
+    }
 
-	if !verifySignature(payload, signature, secret) {
-		log.Fatal("signature verification failed")
-	}
-	fmt.Println("signature verified")
-}`,
-      mode: "run",
-      needs: "none",
-      session: "webhooks-signature-go"
+    // Process webhook...
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `import hashlib
-import hmac
+      code: `import hmac
+import hashlib
+from flask import Flask, request
 
+app = Flask(__name__)
 
-def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
-    if not signature.startswith("sha256="):
+def verify_signature(payload, signature, secret):
+    if not signature.startswith('sha256='):
         return False
     expected = signature[7:]
-    mac = hmac.new(secret.encode(), payload, hashlib.sha256)
+    mac = hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    )
     return hmac.compare_digest(expected, mac.hexdigest())
 
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    payload = request.get_data()
+    signature = request.headers.get('X-Sandbox0-Signature')
+    secret = os.environ.get('SANDBOX0_WEBHOOK_SECRET')
 
-payload = b'{"event":"process.exited","sandbox_id":"sb_demo"}'
-secret = "demo-secret"
-signature = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    if not verify_signature(payload, signature, secret):
+        return 'Invalid signature', 401
 
-print("signature verified" if verify_signature(payload, signature, secret) else "invalid signature")`,
-      mode: "run",
-      needs: "none",
-      session: "webhooks-signature-python"
+    event = request.json
+    print(f"Received event: {event['event']}")
+    return 'OK', 200`
     },
     {
       label: "JavaScript",
       language: "typescript",
       code: `import crypto from 'crypto';
+import express from 'express';
+
+const app = express();
 
 function verifySignature(payload: string, signature: string, secret: string): boolean {
     if (!signature.startsWith('sha256=')) {
         return false;
     }
     const expected = signature.slice(7);
-    const actual = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(actual, 'hex'));
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(payload);
+    const actual = hmac.digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
 
-const payload = JSON.stringify({ event: 'process.exited', sandbox_id: 'sb_demo' });
-const secret = 'demo-secret';
-const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  const payload = req.body.toString();
+  const signature = req.headers['x-sandbox0-signature'] as string;
+  const secret = process.env.SANDBOX0_WEBHOOK_SECRET || '';
 
-console.log(verifySignature(payload, signature, secret) ? 'signature verified' : 'invalid signature');`,
-      mode: "run",
-      needs: "none",
-      session: "webhooks-signature-typescript"
+  if (!verifySignature(payload, signature, secret)) {
+    res.status(401).send('Invalid signature');
+    return;
+  }
+
+  const event = JSON.parse(payload);
+  console.log('Received event:', event.event);
+  res.status(200).send('OK');
+});`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `PAYLOAD='{"event":"process.exited","sandbox_id":"sb_demo"}'
-SECRET='demo-secret'
-SIG="sha256=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')"
+      code: `# Webhook server example using netcat (for testing)
+# In production, use a proper HTTP server
 
-CALC="$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')"
-if [ "\${SIG#sha256=}" = "$CALC" ]; then
-  echo "signature verified"
-else
-  echo "invalid signature"
-  exit 1
-fi`,
-      mode: "run",
-      needs: "none",
-      session: "webhooks-signature-cli"
+while true; do
+    echo -e "HTTP/1.1 200 OK\\r\\n\\r\\nOK" | nc -l -p 8080 -q 1
+done`
     }
   ]}
 />
@@ -394,11 +382,7 @@ _, err = sandbox.Cmd(ctx, \`/bin/sh -c "exit 2"\`)
 if err != nil {
     log.Printf("Command failed (expected): %v", err)
 }
-log.Println("Process exited with error code")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-go",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+log.Println("Process exited with error code")`
     },
     {
       label: "Python",
@@ -412,11 +396,7 @@ try:
     sandbox.cmd('/bin/sh -c "exit 2"')
 except Exception as e:
     print(f"Command failed (expected): {e}")
-print("Process exited with error code")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-python",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+print("Process exited with error code")`
     },
     {
       label: "JavaScript",
@@ -431,23 +411,16 @@ try {
 } catch (e) {
     console.log('Command failed (expected):', e);
 }
-console.log('Process exited with error code');`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-typescript",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+console.log('Process exited with error code');`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Trigger process events
-s0 sandbox run "$SANDBOX_ID" --language bash --code 'echo hello'
+s0 sandbox run sb_abc123 --language bash --code 'echo hello'
 
 # Trigger process with exit code
-s0 sandbox exec "$SANDBOX_ID" -- /bin/sh -c "exit 2"`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-cli"
+s0 sandbox exec sb_abc123 -- /bin/sh -c "exit 2"`
     }
   ]}
 />
@@ -471,11 +444,7 @@ _, err = client.ResumeSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
-log.Println("Sandbox resumed - webhook triggered")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-go",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+log.Println("Sandbox resumed - webhook triggered")`
     },
     {
       label: "Python",
@@ -486,11 +455,7 @@ print("Sandbox paused - webhook triggered")
 
 # Trigger sandbox.resumed event
 client.resume_sandbox(sandbox.id)
-print("Sandbox resumed - webhook triggered")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-python",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+print("Sandbox resumed - webhook triggered")`
     },
     {
       label: "JavaScript",
@@ -501,23 +466,16 @@ console.log('Sandbox paused - webhook triggered');
 
 // Trigger sandbox.resumed event
 await client.resumeSandbox(sandbox.id);
-console.log('Sandbox resumed - webhook triggered');`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-typescript",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+console.log('Sandbox resumed - webhook triggered');`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Trigger sandbox.paused event
-s0 sandbox pause "$SANDBOX_ID"
+s0 sandbox pause sb_abc123
 
 # Trigger sandbox.resumed event
-s0 sandbox resume "$SANDBOX_ID"`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-cli"
+s0 sandbox resume sb_abc123`
     }
   ]}
 />
@@ -561,11 +519,7 @@ _, err = sandbox.DeleteFile(ctx, "/tmp/webhook-demo/file-renamed.txt")
 if err != nil {
     log.Fatal(err)
 }
-log.Println("File removed - webhook triggered")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-go",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+log.Println("File removed - webhook triggered")`
     },
     {
       label: "Python",
@@ -587,11 +541,7 @@ print("File chmodded - webhook triggered")
 
 # Trigger file.removed event
 sandbox.delete_file("/tmp/webhook-demo/file-renamed.txt")
-print("File removed - webhook triggered")`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-python",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+print("File removed - webhook triggered")`
     },
     {
       label: "JavaScript",
@@ -613,26 +563,19 @@ console.log('File chmodded - webhook triggered');
 
 // Trigger file.removed event
 await sandbox.deleteFile('/tmp/webhook-demo/file-renamed.txt');
-console.log('File removed - webhook triggered');`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-typescript",
-      env: ["SANDBOX0_TOKEN", "SANDBOX0_WEBHOOK_URL"]
+console.log('File removed - webhook triggered');`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Create watch directory
-s0 file mkdir "$SANDBOX_ID" /tmp/webhook-demo
+s0 file mkdir sb_abc123 /tmp/webhook-demo
 
 # Trigger file events
-s0 file write "$SANDBOX_ID" /tmp/webhook-demo/file.txt --content "hello"
-s0 file move "$SANDBOX_ID" /tmp/webhook-demo/file.txt /tmp/webhook-demo/file-renamed.txt
-s0 sandbox exec "$SANDBOX_ID" -- chmod 600 /tmp/webhook-demo/file-renamed.txt
-s0 file delete "$SANDBOX_ID" /tmp/webhook-demo/file-renamed.txt`,
-      mode: "run",
-      needs: "infra",
-      session: "webhooks-cli"
+s0 file write sb_abc123 /tmp/webhook-demo/file.txt --content "hello"
+s0 file move sb_abc123 /tmp/webhook-demo/file.txt /tmp/webhook-demo/file-renamed.txt
+s0 sandbox exec sb_abc123 -- chmod 600 /tmp/webhook-demo/file-renamed.txt
+s0 file delete sb_abc123 /tmp/webhook-demo/file-renamed.txt`
     }
   ]}
 />

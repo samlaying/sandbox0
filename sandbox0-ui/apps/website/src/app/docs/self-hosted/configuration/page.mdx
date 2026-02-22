@@ -8,37 +8,19 @@ This page documents all available configuration options in the `Sandbox0Infra` c
 
 Specifies the version of sandbox0 components to deploy.
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
-  version: "latest"  # or specific version like "v1.0.0"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-version-yaml"
-    }
-  ]}
-/>
+```yaml
+spec:
+  version: "latest"  # or specific version like "v1.0.0"
+```
 
 ### Region
 
 Identifies the region for multi-cluster deployments.
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
-  region: "aws/us-east-1"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-region-yaml"
-    }
-  ]}
-/>
+```yaml
+spec:
+  region: "aws/us-east-1"
+```
 
 ## Database Configuration
 
@@ -48,12 +30,8 @@ Configure the PostgreSQL database for sandbox0 metadata.
 
 For development and testing:
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   database:
     type: builtin
     builtin:
@@ -66,24 +44,15 @@ For development and testing:
       persistence:
         enabled: true
         size: "20Gi"
-        storageClass: ""  # empty for default`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-db-builtin-yaml"
-    }
-  ]}
-/>
+        storageClass: ""  # empty for default
+```
 
 ### External Database
 
 For production:
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   database:
     type: external
     external:
@@ -94,36 +63,22 @@ For production:
       passwordSecret:
         name: "db-credentials"
         key: "password"
-      sslMode: "require"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-db-external-yaml"
-    }
-  ]}
-/>
+      sslMode: "require"
+```
 
 ### JuiceFS Database
 
 JuiceFS can share the main database or use a separate one:
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   juicefsDatabase:
     shareWithMain: true  # default
     # Or use separate database:
     # external:
     #   host: "juicefs-db.rds.amazonaws.com"
-    #   ...`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-juicefs-db-yaml"
-    }
-  ]}
-/>
+    #   ...
+```
 
 ## Storage Configuration
 
@@ -133,12 +88,8 @@ Configure the object storage backend for JuiceFS.
 
 For development only:
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   storage:
     type: builtin
     builtin:
@@ -155,22 +106,13 @@ For development only:
         size: "20Gi"
       credentials:  # optional, auto-generated if omitted
         accessKey: "minioadmin"
-        secretKey: "minioadmin"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-storage-builtin-yaml"
-    }
-  ]}
-/>
+        secretKey: "minioadmin"
+```
 
 ### AWS S3
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   storage:
     type: s3
     s3:
@@ -181,22 +123,13 @@ For development only:
         name: "aws-credentials"
         accessKeyKey: "accessKeyId"
         secretKeyKey: "secretAccessKey"
-      sessionTokenKey: "sessionToken"  # optional`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-storage-s3-yaml"
-    }
-  ]}
-/>
+      sessionTokenKey: "sessionToken"  # optional
+```
 
 ### Aliyun OSS
 
-<Tabs
-  tabs={[
-    {
-      label: "YAML",
-      language: "yaml",
-      code: `spec:
+```yaml
+spec:
   storage:
     type: oss
     oss:
@@ -206,13 +139,8 @@ For development only:
       credentialsSecret:
         name: "oss-credentials"
         accessKeyKey: "accessKeyId"
-        secretKeyKey: "accessKeySecret"`,
-      mode: "read",
-      needs: "none",
-      session: "selfhosted-config-storage-oss-yaml"
-    }
-  ]}
-/>
+        secretKeyKey: "accessKeySecret"
+```
 
 ## Registry Configuration
 

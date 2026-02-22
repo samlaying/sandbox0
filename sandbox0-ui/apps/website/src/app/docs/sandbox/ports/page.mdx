@@ -45,11 +45,7 @@ if err != nil {
 fmt.Printf("Exposure domain: %s\\n", ports.ExposureDomain)
 for _, p := range ports.Ports {
     fmt.Printf("Port %d: %s\\n", p.Port, p.PublicURL)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "Python",
@@ -58,11 +54,7 @@ for _, p := range ports.Ports {
 ports = sandbox.get_exposed_ports()
 print(f"Exposure domain: {ports.exposure_domain}")
 for p in ports.ports:
-    print(f"Port {p.port}: {p.public_url}")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+    print(f"Port {p.port}: {p.public_url}")`
     },
     {
       label: "JavaScript",
@@ -72,21 +64,16 @@ const ports = await sandbox.getExposedPorts();
 console.log('Exposure domain:', ports.exposureDomain);
 for (const p of ports.ports) {
     console.log(\`Port \${p.port}: \${p.publicUrl}\`);
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `SANDBOX_ID="$(s0 sandbox create --template default --hard-ttl 600 | awk '/Sandbox ID:/ {print $3}')"
-s0 ports list "$SANDBOX_ID"`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli",
-      setup: ["command -v s0 >/dev/null"]
+      code: `s0 ports list sb_abc123
+
+# Output:
+# Exposure domain: aws-us-east-1.sandbox0.app
+# Port 8080: https://sb-abc123-8080.aws-us-east-1.sandbox0.app`
     }
   ]}
 />
@@ -120,11 +107,7 @@ if err != nil {
 fmt.Printf("Exposure domain: %s\\n", resp.ExposureDomain)
 for _, p := range resp.Ports {
     fmt.Printf("Port %d -> %s\\n", p.Port, p.PublicURL)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "Python",
@@ -133,11 +116,7 @@ for _, p := range resp.Ports {
 resp = sandbox.expose_port(8080, resume=True)
 print(f"Exposure domain: {resp.exposure_domain}")
 for p in resp.ports:
-    print(f"Port {p.port} -> {p.public_url}")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+    print(f"Port {p.port} -> {p.public_url}")`
     },
     {
       label: "JavaScript",
@@ -147,19 +126,16 @@ const resp = await sandbox.exposePort(8080, true);
 console.log('Exposure domain:', resp.exposureDomain);
 for (const p of resp.ports) {
     console.log(\`Port \${p.port} -> \${p.publicUrl}\`);
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 ports expose "$SANDBOX_ID" 8080 --resume`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+      code: `s0 ports expose sb_abc123 8080 --resume
+
+# Output:
+# Port 8080 exposed at:
+# https://sb-abc123-8080.aws-us-east-1.sandbox0.app`
     }
   ]}
 />
@@ -186,11 +162,7 @@ if err != nil {
 }
 for _, p := range resp.Ports {
     fmt.Printf("Port %d -> %s (resume: %v)\\n", p.Port, p.PublicURL, p.Resume)
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "Python",
@@ -202,11 +174,7 @@ resp = sandbox.expose_ports([
     {"port": 9000, "resume": True},
 ])
 for p in resp.ports:
-    print(f"Port {p.port} -> {p.public_url} (resume: {p.resume})")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+    print(f"Port {p.port} -> {p.public_url} (resume: {p.resume})")`
     },
     {
       label: "JavaScript",
@@ -219,21 +187,14 @@ const resp = await sandbox.exposePorts([
 ]);
 for (const p of resp.ports) {
     console.log(\`Port \${p.port} -> \${p.publicUrl} (resume: \${p.resume})\`);
-}`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+}`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 ports expose "$SANDBOX_ID" 8080 --resume
-s0 ports expose "$SANDBOX_ID" 3000
-s0 ports expose "$SANDBOX_ID" 9000 --resume`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+      code: `s0 ports expose sb_abc123 8080 --resume
+s0 ports expose sb_abc123 3000
+s0 ports expose sb_abc123 9000 --resume`
     }
   ]}
 />
@@ -258,41 +219,26 @@ _, err := sandbox.UnexposePort(ctx, 8080)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println("Port 8080 no longer exposed")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+fmt.Println("Port 8080 no longer exposed")`
     },
     {
       label: "Python",
       language: "python",
       code: `# Remove exposed port 8080
 sandbox.unexpose_port(8080)
-print("Port 8080 no longer exposed")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+print("Port 8080 no longer exposed")`
     },
     {
       label: "JavaScript",
       language: "typescript",
       code: `// Remove exposed port 8080
 await sandbox.unexposePort(8080);
-console.log('Port 8080 no longer exposed');`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+console.log('Port 8080 no longer exposed');`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 ports unexpose "$SANDBOX_ID" 8080`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+      code: `s0 ports unexpose sb_abc123 8080`
     }
   ]}
 />
@@ -317,41 +263,26 @@ _, err := sandbox.ClearExposedPorts(ctx)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println("All ports unexposed")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+fmt.Println("All ports unexposed")`
     },
     {
       label: "Python",
       language: "python",
       code: `# Clear all exposed ports
 sandbox.clear_exposed_ports()
-print("All ports unexposed")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+print("All ports unexposed")`
     },
     {
       label: "JavaScript",
       language: "typescript",
       code: `// Clear all exposed ports
 await sandbox.clearExposedPorts();
-console.log('All ports unexposed');`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+console.log('All ports unexposed');`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 ports clear "$SANDBOX_ID"`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+      code: `s0 ports clear sb_abc123`
     }
   ]}
 />
@@ -396,11 +327,7 @@ resp, err := sandbox.Cmd(ctx, "curl -s http://localhost:8080/")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Local response: %s\\n", resp.OutputRaw)`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+fmt.Printf("Local response: %s\\n", resp.OutputRaw)`
     },
     {
       label: "Python",
@@ -426,11 +353,7 @@ for p in ports_resp.ports:
 
 # Verify the server is working
 resp = sandbox.cmd("curl -s http://localhost:8080/")
-print(f"Local response: {resp.output_raw}")`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+print(f"Local response: {resp.output_raw}")`
     },
     {
       label: "JavaScript",
@@ -455,29 +378,26 @@ for (const p of portsResp.ports) {
 
 // Verify the server is working
 const resp = await sandbox.cmd('curl -s http://localhost:8080/');
-console.log('Local response:', resp.outputRaw);`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+console.log('Local response:', resp.outputRaw);`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Start a web server in background
-s0 sandbox exec "$SANDBOX_ID" -- python3 -m http.server 8080 --directory /tmp &
+s0 sandbox exec sb_abc123 -- python3 -m http.server 8080 --directory /tmp &
 
 # Wait for server to start
 sleep 2
 
 # Expose port 8080
-s0 ports expose "$SANDBOX_ID" 8080 --resume
+s0 ports expose sb_abc123 8080 --resume
+
+# Output:
+# Port 8080 exposed at:
+# https://sb-abc123-8080.aws-us-east-1.sandbox0.app
 
 # Test locally
-s0 sandbox exec "$SANDBOX_ID" -- curl -s http://localhost:8080/`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+s0 sandbox exec sb_abc123 -- curl -s http://localhost:8080/`
     }
   ]}
 />
@@ -500,11 +420,7 @@ _, err := sandbox.ExposePort(ctx, 8080, true)
 _, err = client.PauseSandbox(ctx, sandbox.ID)
 
 // Incoming HTTP request to the public URL will automatically
-// resume the sandbox before routing the request`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-go",
-      env: ["SANDBOX0_TOKEN"]
+// resume the sandbox before routing the request`
     },
     {
       label: "Python",
@@ -516,11 +432,7 @@ sandbox.expose_port(8080, resume=True)
 client.pause_sandbox(sandbox.id)
 
 # Incoming HTTP request to the public URL will automatically
-# resume the sandbox before routing the request`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-python",
-      env: ["SANDBOX0_TOKEN"]
+# resume the sandbox before routing the request`
     },
     {
       label: "JavaScript",
@@ -532,26 +444,19 @@ await sandbox.exposePort(8080, true);
 await client.pauseSandbox(sandbox.id);
 
 // Incoming HTTP request to the public URL will automatically
-// resume the sandbox before routing the request`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-typescript",
-      env: ["SANDBOX0_TOKEN"]
+// resume the sandbox before routing the request`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Expose port with auto-resume
-s0 ports expose "$SANDBOX_ID" 8080 --resume
+s0 ports expose sb_abc123 8080 --resume
 
 # Pause the sandbox
-s0 sandbox pause "$SANDBOX_ID"
+s0 sandbox pause sb_abc123
 
 # Incoming HTTP request to the public URL will automatically
-# resume the sandbox before routing the request`,
-      mode: "run",
-      needs: "infra",
-      session: "ports-cli"
+# resume the sandbox before routing the request`
     }
   ]}
 />
