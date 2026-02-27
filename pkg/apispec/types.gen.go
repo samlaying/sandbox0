@@ -947,9 +947,23 @@ type SandboxTemplateSpec struct {
 	Tags             *[]string                `json:"tags,omitempty"`
 }
 
+// SandboxUpdateConfig Subset of SandboxConfig fields that can be updated at runtime without restarting the sandbox.
+// Note: env_vars and webhook are not included as they only affect new processes or require restart.
+type SandboxUpdateConfig struct {
+	// AutoResume Sandbox-level resume gate for paused sandboxes. When false, any inbound request
+	// (API or public exposure) must not auto resume the sandbox.
+	AutoResume   *bool                    `json:"auto_resume,omitempty"`
+	ExposedPorts *[]ExposedPortConfig     `json:"exposed_ports,omitempty"`
+	HardTtl      *int32                   `json:"hard_ttl,omitempty"`
+	Network      *TplSandboxNetworkPolicy `json:"network,omitempty"`
+	Ttl          *int32                   `json:"ttl,omitempty"`
+}
+
 // SandboxUpdateRequest defines model for SandboxUpdateRequest.
 type SandboxUpdateRequest struct {
-	Config *SandboxConfig `json:"config,omitempty"`
+	// Config Subset of SandboxConfig fields that can be updated at runtime without restarting the sandbox.
+	// Note: env_vars and webhook are not included as they only affect new processes or require restart.
+	Config *SandboxUpdateConfig `json:"config,omitempty"`
 }
 
 // SandboxVolume defines model for SandboxVolume.

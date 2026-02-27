@@ -14,7 +14,7 @@ import (
 )
 
 type updateSandboxRequest struct {
-	Config *service.SandboxConfig `json:"config"`
+	Config *service.SandboxUpdateConfig `json:"config"`
 }
 
 // claimSandbox claims a sandbox

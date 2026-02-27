@@ -205,6 +205,17 @@ type SandboxConfig struct {
 	ExposedPorts []ExposedPortConfig               `json:"exposed_ports,omitempty"`
 }
 
+// SandboxUpdateConfig represents sandbox configuration fields that can be updated at runtime.
+// Unlike SandboxConfig, env_vars and webhook are excluded as they only affect new processes
+// or require restart to take effect.
+type SandboxUpdateConfig struct {
+	TTL          int32                             `json:"ttl,omitempty"`
+	HardTTL      int32                             `json:"hard_ttl,omitempty"`
+	Network      *v1alpha1.TplSandboxNetworkPolicy `json:"network,omitempty"`
+	AutoResume   *bool                             `json:"auto_resume,omitempty"`
+	ExposedPorts []ExposedPortConfig               `json:"exposed_ports,omitempty"`
+}
+
 type ExposedPortConfig struct {
 	Port   int  `json:"port"`
 	Resume bool `json:"resume"`
@@ -811,7 +822,7 @@ func (s *SandboxService) GetSandbox(ctx context.Context, sandboxID string) (*San
 }
 
 // UpdateSandbox updates mutable sandbox configuration fields.
-func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cfg *SandboxConfig) (*Sandbox, error) {
+func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cfg *SandboxUpdateConfig) (*Sandbox, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("sandbox config is required")
 	}
@@ -846,9 +857,6 @@ func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cf
 			}
 		}
 
-		if cfg.EnvVars != nil {
-			merged.EnvVars = cfg.EnvVars
-		}
 		if cfg.TTL > 0 {
 			merged.TTL = cfg.TTL
 			expiresAt := s.clock.Now().Add(time.Duration(cfg.TTL) * time.Second)
@@ -858,9 +866,6 @@ func (s *SandboxService) UpdateSandbox(ctx context.Context, sandboxID string, cf
 			merged.HardTTL = cfg.HardTTL
 			hardExpiresAt := s.clock.Now().Add(time.Duration(cfg.HardTTL) * time.Second)
 			updatedPod.Annotations[controller.AnnotationHardExpiresAt] = hardExpiresAt.Format(time.RFC3339)
-		}
-		if cfg.Webhook != nil {
-			merged.Webhook = cfg.Webhook
 		}
 		if cfg.AutoResume != nil {
 			merged.AutoResume = cfg.AutoResume
@@ -1653,7 +1658,7 @@ type RefreshResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// RefreshSandbox refreshes the TTL of a sandbox
+// RefreshSandbox refreshes the TTL and HardTTL of a sandbox
 func (s *SandboxService) RefreshSandbox(ctx context.Context, sandboxID string, req *RefreshRequest) (*RefreshResponse, error) {
 	s.logger.Info("Refreshing sandbox TTL", zap.String("sandboxID", sandboxID))
 
@@ -1663,22 +1668,33 @@ func (s *SandboxService) RefreshSandbox(ctx context.Context, sandboxID string, r
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
 
+	// Parse original config to get TTL and HardTTL values
+	var originalConfig SandboxConfig
+	if configJSON := pod.Annotations[controller.AnnotationConfig]; configJSON != "" {
+		if err := json.Unmarshal([]byte(configJSON), &originalConfig); err != nil {
+			s.logger.Warn("Failed to parse original config, using defaults", zap.Error(err))
+		}
+	}
+
 	// Determine the TTL duration
 	var ttlDuration time.Duration
 	if req != nil && req.Duration > 0 {
 		ttlDuration = time.Duration(req.Duration) * time.Second
 	} else {
-		// Try to get original TTL from config annotation
+		// Use original TTL from config, or default
 		ttlDuration = s.config.DefaultTTL
-		if configJSON := pod.Annotations[controller.AnnotationConfig]; configJSON != "" {
-			var config SandboxConfig
-			if err := json.Unmarshal([]byte(configJSON), &config); err == nil && config.TTL > 0 {
-				ttlDuration = time.Duration(config.TTL) * time.Second
-			}
+		if originalConfig.TTL > 0 {
+			ttlDuration = time.Duration(originalConfig.TTL) * time.Second
 		}
 	}
 
-	// Calculate new expiration time
+	// Determine the HardTTL duration
+	var hardTTLDuration time.Duration
+	if originalConfig.HardTTL > 0 {
+		hardTTLDuration = time.Duration(originalConfig.HardTTL) * time.Second
+	}
+
+	// Calculate new expiration times
 	newExpiresAt := s.clock.Now().Add(ttlDuration)
 
 	// Update pod annotation
@@ -1687,6 +1703,17 @@ func (s *SandboxService) RefreshSandbox(ctx context.Context, sandboxID string, r
 		podCopy.Annotations = make(map[string]string)
 	}
 	podCopy.Annotations[controller.AnnotationExpiresAt] = newExpiresAt.Format(time.RFC3339)
+
+	// Also refresh HardTTL if configured
+	if hardTTLDuration > 0 {
+		newHardExpiresAt := s.clock.Now().Add(hardTTLDuration)
+		podCopy.Annotations[controller.AnnotationHardExpiresAt] = newHardExpiresAt.Format(time.RFC3339)
+		s.logger.Info("Refreshing hard TTL",
+			zap.String("sandboxID", sandboxID),
+			zap.Time("newHardExpiresAt", newHardExpiresAt),
+			zap.Duration("hardTTLDuration", hardTTLDuration),
+		)
+	}
 
 	// Apply the update
 	_, err = s.k8sClient.CoreV1().Pods(pod.Namespace).Update(ctx, podCopy, metav1.UpdateOptions{})

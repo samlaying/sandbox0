@@ -147,7 +147,7 @@ func (s *Server) updateExposedPorts(c *gin.Context) {
 		}
 	}
 
-	cfg := &service.SandboxConfig{
+	cfg := &service.SandboxUpdateConfig{
 		ExposedPorts: req.Ports,
 	}
 	updated, err := s.sandboxService.UpdateSandbox(c.Request.Context(), sandboxID, cfg)
@@ -194,7 +194,7 @@ func (s *Server) clearExposedPorts(c *gin.Context) {
 		return
 	}
 
-	cfg := &service.SandboxConfig{
+	cfg := &service.SandboxUpdateConfig{
 		ExposedPorts: []service.ExposedPortConfig{},
 	}
 	updated, err := s.sandboxService.UpdateSandbox(c.Request.Context(), sandboxID, cfg)
@@ -263,7 +263,7 @@ func (s *Server) deleteExposedPort(c *gin.Context) {
 		return
 	}
 
-	cfg := &service.SandboxConfig{
+	cfg := &service.SandboxUpdateConfig{
 		ExposedPorts: newPorts,
 	}
 	updated, err := s.sandboxService.UpdateSandbox(c.Request.Context(), sandboxID, cfg)

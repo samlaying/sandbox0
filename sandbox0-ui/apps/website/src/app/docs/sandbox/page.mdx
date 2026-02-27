@@ -47,20 +47,43 @@ Claim a sandbox from a template. The sandbox is created from a pre-warmed pool f
 | Field | Type | Description |
 |-------|------|-------------|
 | `env_vars` | object | Environment variables |
-| `ttl` | integer | Time to live in seconds |
-| `hard_ttl` | integer | Maximum TTL (cannot be extended) |
+| `ttl` | integer | Time to live in seconds (soft limit, triggers auto-pause) |
+| `hard_ttl` | integer | Maximum lifetime in seconds (hard limit, triggers deletion) |
 | `network` | object | Network policy configuration |
 | `webhook` | object | Webhook configuration |
 | `auto_resume` | boolean | Auto-resume when accessed (default: true) |
 | `exposed_ports` | array | Ports to expose publicly |
+
+### TTL vs Hard TTL
+
+Sandbox0 uses two-tier TTL to balance resource efficiency and flexibility:
+
+| Field | Behavior | Use Case |
+|-------|----------|----------|
+| `ttl` | **Soft pause**: When expired, sandbox is automatically paused. Processes stop but state is preserved. Can be extended via refresh API. | Keep sandboxes alive during active use while freeing compute resources during idle periods. |
+| `hard_ttl` | **Hard delete**: When expired, sandbox is permanently deleted regardless of pause state. Can also be extended via refresh API. | Enforce maximum lifetime for security or cost control. The difference from `ttl` is the expiration behavior (delete vs pause). |
+
+<Callout variant="info">
+The relationship: <code>ttl {'<='} hard_ttl</code>. When <code>ttl</code> expires first, sandbox pauses but can be resumed.
+When <code>hard_ttl</code> expires, sandbox is deleted immediately. Both can be extended via the refresh API.
+</Callout>
+
+**Example timeline:**
+- `t=0`: Sandbox created with `ttl=300` (5 min), `hard_ttl=3600` (1 hour)
+- `t=300`: TTL expires → sandbox auto-pauses
+- `t=310`: User calls refresh → sandbox resumes, TTL reset to 300, Hard TTL reset to 3600 (new hard deadline at `t=3910`)
+- `t=610`: TTL expires again → sandbox auto-pauses
+- `t=3910`: Hard TTL expires → sandbox deleted
 
 <Tabs
   tabs={[
     {
       label: "Go",
       language: "go",
-      code: `client, err := sandbox0.NewClient(
+      code: `ctx := context.Background()
+client, err := sandbox0.NewClient(
     sandbox0.WithToken(os.Getenv("SANDBOX0_TOKEN")),
+    sandbox0.WithBaseURL(os.Getenv("SANDBOX0_BASE_URL")),
 )
 if err != nil {
     log.Fatal(err)
@@ -82,17 +105,22 @@ defer client.DeleteSandbox(ctx, sandbox.ID)`
     {
       label: "Python",
       language: "python",
-      code: `from sandbox0 import Client
+      code: `import os
+from sandbox0 import Client
+from sandbox0.apispec.models.sandbox_config import SandboxConfig
 
-client = Client(token=os.environ["SANDBOX0_TOKEN"])
+client = Client(
+    token=os.environ["SANDBOX0_TOKEN"],
+    base_url=os.environ.get("SANDBOX0_BASE_URL", "http://localhost:30080"),
+)
 
 # Claim a sandbox from the "default" template
 sandbox = client.claim_sandbox(
     template="default",
-    config={
+    config=SandboxConfig.from_dict({
         "hard_ttl": 300,
         "env_vars": {"APP_ENV": "development"},
-    },
+    }),
 )
 print(f"Sandbox ID: {sandbox.id}")
 
@@ -104,7 +132,10 @@ client.delete_sandbox(sandbox.id)`
       language: "typescript",
       code: `import { Client } from 'sandbox0';
 
-const client = new Client({ token: process.env.SANDBOX0_TOKEN! });
+const client = new Client({
+    token: process.env.SANDBOX0_TOKEN!,
+    baseUrl: process.env.SANDBOX0_BASE_URL || 'http://localhost:30080',
+});
 
 // Claim a sandbox from the "default" template
 const sandbox = await client.sandboxes.claim('default', {
@@ -120,11 +151,7 @@ await client.sandboxes.delete(sandbox.id);`
       label: "CLI",
       language: "bash",
       code: `# Claim a sandbox from the "default" template
-s0 sandbox create --template default --hard-ttl 300
-
-# Output:
-# Sandbox ID: sb_abc123
-# Status: running`
+s0 sandbox create --template default --hard-ttl 300`
     }
   ]}
 />
@@ -144,40 +171,34 @@ Retrieve full details about a sandbox.
     {
       label: "Go",
       language: "go",
-      code: `sandbox, err := client.GetSandbox(ctx, "sb_abc123")
+      code: `sb, err := client.GetSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Status: %s\\n", sandbox.Status)
-fmt.Printf("Template: %s\\n", sandbox.TemplateID)
-fmt.Printf("Expires at: %s\\n", sandbox.ExpiresAt)`
+fmt.Printf("Status: %s\\n", sb.Status)
+fmt.Printf("Template: %s\\n", sb.TemplateID)
+fmt.Printf("Expires at: %s\\n", sb.ExpiresAt)`
     },
     {
       label: "Python",
       language: "python",
-      code: `sandbox = client.get_sandbox("sb_abc123")
-print(f"Status: {sandbox.status}")
-print(f"Template: {sandbox.template_id}")
-print(f"Expires at: {sandbox.expires_at}")`
+      code: `sb = client.get_sandbox(sandbox.id)
+print(f"Status: {sb.status}")
+print(f"Template: {sb.template_id}")
+print(f"Expires at: {sb.expires_at}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const sandbox = await client.getSandbox('sb_abc123');
-console.log('Status:', sandbox.status);
-console.log('Template:', sandbox.templateId);
-console.log('Expires at:', sandbox.expiresAt);`
+      code: `const sb = await client.sandboxes.get(sandbox.id);
+console.log('Status:', sb.status);
+console.log('Template:', sb.templateId);
+console.log('Expires at:', sb.expiresAt);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 sandbox get sb_abc123
-
-# Output:
-# ID: sb_abc123
-# Status: running
-# Template: default
-# Expires at: 2024-01-15T10:30:00Z`
+      code: `s0 sandbox get sb_abc123`
     }
   ]}
 />
@@ -197,22 +218,22 @@ Get the current status of a sandbox (lighter weight than full details).
     {
       label: "Go",
       language: "go",
-      code: `status, err := client.GetSandboxStatus(ctx, "sb_abc123")
+      code: `status, err := client.StatusSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Status: %s\\n", status.Status)`
+fmt.Printf("Status: %s\\n", status.Status.Value)`
     },
     {
       label: "Python",
       language: "python",
-      code: `status = client.get_sandbox_status("sb_abc123")
+      code: `status = client.status_sandbox(sandbox.id)
 print(f"Status: {status.status}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const status = await client.getSandboxStatus('sb_abc123');
+      code: `const status = await client.sandboxes.status(sandbox.id);
 console.log('Status:', status.status);`
     },
     {
@@ -248,15 +269,16 @@ List all sandboxes with optional filters.
     {
       label: "Go",
       language: "go",
-      code: `sandboxes, err := client.ListSandboxes(ctx, &sandbox0.ListSandboxesOptions{
+      code: `limit := 10
+sandboxes, err := client.ListSandboxes(ctx, &sandbox0.ListSandboxesOptions{
     Status:     "running",
     TemplateID: "default",
-    Limit:      10,
+    Limit:      &limit,
 })
 if err != nil {
     log.Fatal(err)
 }
-for _, sb := range sandboxes {
+for _, sb := range sandboxes.Sandboxes {
     fmt.Printf("- %s (status: %s)\\n", sb.ID, sb.Status)
 }`
     },
@@ -274,7 +296,7 @@ for sb in sandboxes:
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const { sandboxes } = await client.listSandboxes({
+      code: `const { sandboxes } = await client.sandboxes.list({
     status: 'running',
     templateId: 'default',
     limit: 10,
@@ -286,11 +308,7 @@ for (const sb of sandboxes) {
     {
       label: "CLI",
       language: "bash",
-      code: `s0 sandbox list --status running --template default
-
-# Output:
-# sb_abc123  running   default   2024-01-15T10:00:00Z
-# sb_def456  running   default   2024-01-15T10:05:00Z`
+      code: `s0 sandbox list --status running --template-id default`
     }
   ]}
 />
@@ -299,44 +317,65 @@ for (const sb of sandboxes) {
 
 ## Update Sandbox
 
-Update sandbox configuration.
+Update sandbox configuration at runtime without restarting the sandbox.
 
 <Endpoint method="PUT">
 /api/v1/sandboxes/{'{id}'}
 </Endpoint>
+
+### Updatable Fields
+
+Only the following fields can be updated at runtime:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ttl` | integer | Time to live in seconds (soft limit) |
+| `hard_ttl` | integer | Maximum lifetime in seconds (hard limit) |
+| `network` | object | Network policy configuration |
+| `auto_resume` | boolean | Auto-resume when accessed |
+| `exposed_ports` | array | Ports to expose publicly |
+
+<Callout variant="warning">
+<code>env_vars</code> and <code>webhook</code> cannot be updated at runtime. These fields only take effect when the sandbox is created. To use different environment variables, create a new sandbox.
+</Callout>
 
 <Tabs
   tabs={[
     {
       label: "Go",
       language: "go",
-      code: `_, err := client.UpdateSandbox(ctx, "sb_abc123", &sandbox0.UpdateSandboxRequest{
-    Config: &sandbox0.SandboxConfig{
-        EnvVars: map[string]string{
-            "DEBUG": "true",
-        },
-    },
+      code: `_, err := client.UpdateSandbox(ctx, "sb_abc123", apispec.SandboxUpdateRequest{
+    Config: apispec.NewOptSandboxUpdateConfig(apispec.SandboxUpdateConfig{
+        TTL:        apispec.NewOptInt32(600),
+        AutoResume: apispec.NewOptBool(false),
+    }),
 })`
     },
     {
       label: "Python",
       language: "python",
-      code: `client.update_sandbox(
+      code: `from sandbox0.apispec.models.sandbox_update_config import SandboxUpdateConfig
+from sandbox0.apispec.models.sandbox_update_request import SandboxUpdateRequest
+
+client.update_sandbox(
     "sb_abc123",
-    config={"env_vars": {"DEBUG": "true"}},
+    SandboxUpdateRequest(config=SandboxUpdateConfig.from_dict({
+        "ttl": 600,
+        "auto_resume": False,
+    })),
 )`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await client.updateSandbox('sb_abc123', {
-    config: { envVars: { DEBUG: 'true' } },
+      code: `await client.sandboxes.update('sb_abc123', {
+    config: { ttl: 600, autoResume: false },
 });`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 sandbox update sb_abc123 --env DEBUG=true`
+      code: `s0 sandbox update sb_abc123 --ttl 600 --auto-resume false`
     }
   ]}
 />
@@ -432,14 +471,14 @@ console.log('Sandbox resumed');`
 
 ## Refresh Sandbox TTL
 
-Extend the sandbox time-to-live.
+Extend the sandbox time-to-live. This resets both `ttl` and `hard_ttl` (if configured) to their original durations from the current time.
 
 <Endpoint method="POST">
 /api/v1/sandboxes/{'{id}'}/refresh
 </Endpoint>
 
-<Callout variant="warning">
-TTL cannot be extended beyond the <code>hard_ttl</code> limit set during creation.
+<Callout variant="info">
+Refreshing extends both <code>ttl</code> and <code>hard_ttl</code>. Use this to keep a sandbox alive as long as the user is actively using it.
 </Callout>
 
 <Tabs
