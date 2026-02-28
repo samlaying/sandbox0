@@ -17,108 +17,14 @@ Contexts are execution units within a sandbox. Each context runs a process and c
 
 ```python
 # REPL: State preserved between calls
->>> x = 2
->>> print(x)
+_S0_> x = 2
+_S0_> print(x)
 2
 
 # Cmd: Each command is independent
 $ x=2
 $ echo $x    # Empty - variable not preserved
 ```
-
----
-
-## Create Context
-
-Create a new context in a sandbox.
-
-<Endpoint method="POST">
-/api/v1/sandboxes/{'{id}'}/contexts
-</Endpoint>
-
-### Request Body
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `type` | string | Context type: `repl` or `cmd` |
-| `repl` | object | REPL configuration (required if type=repl) |
-| `cmd` | object | Command configuration (required if type=cmd) |
-| `cwd` | string | Working directory |
-| `env_vars` | object | Environment variables |
-| `pty_size` | object | Terminal size `{rows, cols}` |
-| `ttl_sec` | integer | Context time-to-live in seconds |
-| `idle_timeout_sec` | integer | Idle timeout in seconds |
-| `wait_until_done` | boolean | Wait for completion (default: false) |
-
-### REPL Configuration
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `language` | string | REPL language (python, bash, node, etc.) |
-| `input` | string | Initial input to send |
-
-### Cmd Configuration
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `command` | array | Command and arguments |
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `// Create REPL context
-ctxResp, err := sandbox.CreateContext(ctx, apispec.CreateContextRequest{
-    Type: apispec.NewOptProcessType(apispec.ProcessTypeRepl),
-    Repl: apispec.NewOptCreateREPLContextRequest(apispec.CreateREPLContextRequest{
-        Language: apispec.NewOptString("python"),
-    }),
-    Cwd:         apispec.NewOptString("/workspace"),
-    EnvVars:     apispec.NewOptMapStrStr(map[string]string{"DEBUG": "true"}),
-    TtlSec:      apispec.NewOptInt(120),
-})
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Printf("Context ID: %s\\n", ctxResp.ID)`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `# Create REPL context
-context = sandbox.create_context(
-    type="repl",
-    repl={"language": "python"},
-    cwd="/workspace",
-    env_vars={"DEBUG": "true"},
-    ttl_sec=120,
-)
-print(f"Context ID: {context.id}")`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `// Create REPL context
-const context = await sandbox.createContext({
-    type: 'repl',
-    repl: { language: 'python' },
-    cwd: '/workspace',
-    envVars: { DEBUG: 'true' },
-    ttlSec: 120,
-});
-console.log('Context ID:', context.id);`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 context create sb_abc123 --type repl --language python
-
-# Output:
-# Context ID: ctx_xyz789`
-    }
-  ]}
-/>
 
 ---
 
@@ -136,47 +42,40 @@ Execute code in a REPL context. State is preserved between calls.
       label: "Go",
       language: "go",
       code: `// First call - set variable
-result, err := sandbox.Run(ctx, "python", \`x = 2\`)
+result, err := sandbox.Run(ctx, "python", "x = 2")
 if err != nil {
     log.Fatal(err)
 }
 fmt.Print(result.OutputRaw)
 
 // Second call - variable preserved
-result, err = sandbox.Run(ctx, "python", \`print(x)\`)
+result, err = sandbox.Run(ctx, "python", "print(x)")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Print(result.OutputRaw)  // Output: 2`
+fmt.Print(result.OutputRaw)`
     },
     {
       label: "Python",
       language: "python",
       code: `# First call - set variable
 result = sandbox.run("python", "x = 2")
-print(result.output_raw)
+print(result.output_raw, end="")
 
 # Second call - variable preserved
 result = sandbox.run("python", "print(x)")
-print(result.output_raw)  # Output: 2`
+print(result.output_raw, end="")`
     },
     {
       label: "TypeScript",
       language: "typescript",
       code: `// First call - set variable
-let result = await sandbox.run('python', 'x = 2');
-console.log(result.outputRaw);
+let runResult = await sandbox.run('python', 'x = 2');
+process.stdout.write(runResult.outputRaw);
 
 // Second call - variable preserved
-result = await sandbox.run('python', 'print(x)');
-console.log(result.outputRaw);  // Output: 2`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 sandbox run sb_abc123 --language python --code "x = 2"
-s0 sandbox run sb_abc123 --language python --code "print(x)"
-# Output: 2`
+runResult = await sandbox.run('python', 'print(x)');
+process.stdout.write(runResult.outputRaw);`
     }
   ]}
 />
@@ -188,51 +87,90 @@ s0 sandbox run sb_abc123 --language python --code "print(x)"
     {
       label: "Go",
       language: "go",
-      code: `result, err := sandbox.Run(
+      code: `// Create a custom context with specific cwd, env vars, and TTL
+customCtx, err := sandbox.CreateContext(ctx, apispec.CreateContextRequest{
+    Type: apispec.NewOptProcessType(apispec.ProcessTypeRepl),
+    Repl: apispec.NewOptCreateREPLContextRequest(apispec.CreateREPLContextRequest{
+        Alias: apispec.NewOptString("python"),
+    }),
+    Cwd:            apispec.NewOptString("/workspace"),
+    EnvVars:        apispec.NewOptCreateContextRequestEnvVars(map[string]string{"GREETING": "hello from workspace"}),
+    TTLSec:         apispec.NewOptInt32(120),
+    IdleTimeoutSec: apispec.NewOptInt32(60),
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Custom context ID: %s\\n", customCtx.ID)
+
+// Run using the custom context
+result, err = sandbox.Run(
     ctx,
     "python",
     \`import os, pathlib;
 print(pathlib.Path.cwd());
 print(os.getenv("GREETING"))\`,
-    sandbox0.WithCWD("/workspace"),
-    sandbox0.WithEnvVars(map[string]string{"GREETING": "hello"}),
-    sandbox0.WithContextTTL(120),
-    sandbox0.WithIdleTimeout(60),
-)`
+    sandbox0.WithContextID(customCtx.ID),
+)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Print(result.OutputRaw)`
     },
     {
       label: "Python",
       language: "python",
-      code: `result = sandbox.run(
+      code: `# Create a custom context with specific cwd, env vars, and TTL
+from sandbox0 import RunOptions
+from sandbox0.apispec.models.create_context_request import CreateContextRequest
+from sandbox0.apispec.models.create_context_request_env_vars import CreateContextRequestEnvVars
+from sandbox0.apispec.models.create_repl_context_request import CreateREPLContextRequest
+from sandbox0.apispec.models.process_type import ProcessType
+
+custom_ctx = sandbox.create_context(
+    request=CreateContextRequest(
+        type_=ProcessType.REPL,
+        repl=CreateREPLContextRequest(alias="python"),
+        cwd="/workspace",
+        env_vars=CreateContextRequestEnvVars.from_dict({"GREETING": "hello from workspace"}),
+        ttl_sec=120,
+        idle_timeout_sec=60,
+    )
+)
+print(f"Custom context ID: {custom_ctx.id}")
+
+# Run using the custom context
+result = sandbox.run(
     "python",
-    \`import os, pathlib;
+    """import os, pathlib;
 print(pathlib.Path.cwd());
-print(os.getenv("GREETING"))\`,
-    cwd="/workspace",
-    env_vars={"GREETING": "hello"},
-    ttl_sec=120,
-    idle_timeout_sec=60,
-)`
+print(os.getenv("GREETING"))""",
+    options=RunOptions(context_id=custom_ctx.id),
+)
+print(result.output_raw, end="")
+print()`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const result = await sandbox.run('python', \`import os, pathlib;
+      code: `// Create a custom context with specific cwd, env vars, and TTL
+const customCtx = await sandbox.createContext({
+    type: 'repl',
+    repl: { alias: 'python' },
+    cwd: '/workspace',
+    envVars: { GREETING: 'hello from workspace' },
+    ttlSec: 120,
+    idleTimeoutSec: 60,
+});
+console.log('Custom context ID:', customCtx.id);
+
+// Run using the custom context
+runResult = await sandbox.run('python', \`import os, pathlib;
 print(pathlib.Path.cwd());
 print(os.getenv("GREETING"))\`, {
-   cwd: '/workspace',
-   envVars: { GREETING: 'hello' },
-   ttlSec: 120,
-   idleTimeoutSec: 60,
-});`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 sandbox run sb_abc123 --language python \\
-  --cwd /workspace \\
-  --env GREETING=hello \\
-  --code 'print("hello")'`
+    contextId: customCtx.id,
+});
+process.stdout.write(runResult.outputRaw);`
     }
   ]}
 />
@@ -247,40 +185,43 @@ Execute a stateless command.
       label: "Go",
       language: "go",
       code: `// One-shot command - stateless
-result, err := sandbox.Cmd(ctx, \`/bin/sh -c "echo hello"\`)
+result2, err := sandbox.Cmd(ctx, \`/bin/sh -c "echo hi"\`)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Print(result.OutputRaw)  // Output: hello
+fmt.Print(result2.OutputRaw)
 
 // Variables NOT preserved between Cmd calls
 sandbox.Cmd(ctx, \`/bin/sh -c "x=3"\`)
-result, _ = sandbox.Cmd(ctx, \`/bin/sh -c "echo \\$x"\`)
-fmt.Print(result.OutputRaw)  // Output: (empty)`
+result2, err = sandbox.Cmd(ctx, \`/bin/sh -c "echo $x"\`)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Print(result2.OutputRaw)`
     },
     {
       label: "Python",
       language: "python",
       code: `# One-shot command - stateless
-result = sandbox.cmd('/bin/sh -c "echo hello"')
-print(result.output_raw)  # Output: hello
+result = sandbox.cmd('echo "hello from cmd"')
+print(result.output_raw, end="")
 
 # Variables NOT preserved between cmd calls
 sandbox.cmd('/bin/sh -c "x=3"')
 result = sandbox.cmd('/bin/sh -c "echo $x"')
-print(result.output_raw)  # Output: (empty)`
+print(result.output_raw, end="")`
     },
     {
       label: "TypeScript",
       language: "typescript",
       code: `// One-shot command - stateless
-let result = await sandbox.cmd('/bin/sh -c "echo hello"');
-console.log(result.outputRaw);  // Output: hello
+let cmdResult = await sandbox.cmd('echo "hello from cmd"');
+process.stdout.write(cmdResult.outputRaw);
 
 // Variables NOT preserved between cmd calls
 await sandbox.cmd('/bin/sh -c "x=3"');
-result = await sandbox.cmd('/bin/sh -c "echo $x"');
-console.log(result.outputRaw);  // Output: (empty)`
+cmdResult = await sandbox.cmd('/bin/sh -c "echo $x"');
+process.stdout.write(cmdResult.outputRaw);`
     },
     {
       label: "CLI",
@@ -298,38 +239,45 @@ console.log(result.outputRaw);  // Output: (empty)`
     {
       label: "Go",
       language: "go",
-      code: `result, err := sandbox.Cmd(
+      code: `result2, err = sandbox.Cmd(
     ctx,
     "bash -c 'echo $GREETING && pwd'",
     sandbox0.WithCmdCWD("/tmp"),
     sandbox0.WithCmdEnvVars(map[string]string{"GREETING": "hello"}),
     sandbox0.WithCmdTTL(120),
     sandbox0.WithCmdIdleTimeout(60),
-    sandbox0.WithCmdWait(false),  // Async execution
-)`
+)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Print(result2.OutputRaw)`
     },
     {
       label: "Python",
       language: "python",
-      code: `result = sandbox.cmd(
+      code: `from sandbox0 import CmdOptions
+
+result = sandbox.cmd(
     "bash -c 'echo $GREETING && pwd'",
-    cwd="/tmp",
-    env_vars={"GREETING": "hello"},
-    ttl_sec=120,
-    idle_timeout_sec=60,
-    wait=False,  # Async execution
-)`
+    options=CmdOptions(
+        cwd="/tmp",
+        env_vars={"GREETING": "hello from tmp"},
+        ttl_sec=120,
+        idle_timeout_sec=60,
+    ),
+)
+print(result.output_raw, end="")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const result = await sandbox.cmd("bash -c 'echo $GREETING && pwd'", {
-   cwd: '/tmp',
-   envVars: { GREETING: 'hello' },
-   ttlSec: 120,
-   idleTimeoutSec: 60,
-   wait: false,  // Async execution
-});`
+      code: `cmdResult = await sandbox.cmd("bash -c 'echo $GREETING && pwd'", {
+    cwd: '/tmp',
+    envVars: { GREETING: 'hello from tmp' },
+    ttlSec: 120,
+    idleTimeoutSec: 60,
+});
+process.stdout.write(cmdResult.outputRaw);`
     },
     {
       label: "CLI",
@@ -337,10 +285,161 @@ console.log(result.outputRaw);  // Output: (empty)`
       code: `s0 sandbox exec sb_abc123 \\
   --cwd /tmp \\
   --env GREETING=hello \\
-  -- bash -c 'echo $GREETING && pwd'`
+  -- bash -c 'echo \\$GREETING && pwd'`
     }
   ]}
 />
+
+---
+
+## Create Context
+
+Create a new context in a sandbox.
+
+<Endpoint method="POST">
+/api/v1/sandboxes/{'{id}'}/contexts
+</Endpoint>
+
+### Request Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | Context type: `repl` or `cmd` |
+| `repl` | object | REPL configuration (optional for `type=repl`; defaults to Python when omitted) |
+| `cmd` | object | Command configuration (`cmd.command` required if `type=cmd`) |
+| `cwd` | string | Working directory |
+| `env_vars` | object | Environment variables |
+| `pty_size` | object | Terminal size `{rows, cols}` |
+| `ttl_sec` | integer | Context time-to-live in seconds |
+| `idle_timeout_sec` | integer | Idle timeout in seconds |
+| `wait_until_done` | boolean | Wait for completion (default: false) |
+
+### REPL Configuration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `alias` | string | REPL alias/language (python, bash, node, etc.) |
+| `input` | string | Initial input to send |
+| `repl_config` | object | Custom REPL config (optional; advanced use) |
+
+
+### Cmd Configuration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | array | Command and arguments |
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `// Create REPL context
+ctxResp, err := sandbox.CreateContext(ctx, apispec.CreateContextRequest{
+    Type: apispec.NewOptProcessType(apispec.ProcessTypeRepl),
+    Repl: apispec.NewOptCreateREPLContextRequest(apispec.CreateREPLContextRequest{
+        Alias: apispec.NewOptString("python"),
+    }),
+    Cwd:     apispec.NewOptString("/workspace"),
+    EnvVars: apispec.NewOptCreateContextRequestEnvVars(map[string]string{"DEBUG": "true"}),
+    TTLSec:  apispec.NewOptInt32(120),
+})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("Context ID: %s\\n", ctxResp.ID)`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `# Create REPL context
+context = sandbox.create_context(
+    request=CreateContextRequest(
+        type_=ProcessType.REPL,
+        repl=CreateREPLContextRequest(alias="python"),
+        cwd="/workspace",
+        env_vars=CreateContextRequestEnvVars.from_dict({"DEBUG": "true"}),
+        ttl_sec=120,
+    )
+)
+print(f"Context ID: {context.id}")`
+    },
+    {
+      label: "TypeScript",
+      language: "typescript",
+      code: `// Create REPL context
+const context = await sandbox.createContext({
+    type: 'repl',
+    repl: { alias: 'python' },
+    cwd: '/workspace',
+    envVars: { DEBUG: 'true' },
+    ttlSec: 120,
+});
+console.log('Context ID:', context.id);`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 sandbox context create --type repl --alias python -s sb_abc123`
+    }
+  ]}
+/>
+
+### Custom REPL (`repl_config`)
+
+Use `repl_config` when you need to run a non-built-in REPL, customize startup arguments, or tune readiness detection.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | REPL identifier. If `alias` is also set, it must match `repl_config.name`. |
+| `display_name` | string | No | Human-readable name. |
+| `description` | string | No | Description for this REPL config. |
+| `candidates` | array | Yes | Ordered executable candidates. Each item: `{ name, args }`. |
+| `env` | array | No | Environment variables. Each item: `{ name, value }` or `{ name, value_from }`. |
+| `default_term` | string | No | Default `TERM` value when no terminal value is provided. |
+| `prompt.custom_prompt` | string | No | Custom prompt string used by REPLs that support prompt env injection. |
+| `ready.mode` | string | No | Readiness strategy: `prompt_token` or `startup_delay`. |
+| `ready.token` | string | Cond. | Required when `ready.mode=prompt_token`. |
+| `ready.startup_delay_ms` | integer | Cond. | Used when `ready.mode=startup_delay` (must be `>= 0`). |
+
+**Notes:**
+
+- `candidates` must contain at least one executable.
+- If `ready.mode` is omitted, runtime picks a default strategy based on whether `ready.token` is provided.
+- Common `env.value_from` values are `term` and `prompt`.
+
+Example request:
+
+```json
+{
+    "type": "repl",
+    "repl": {
+        "alias": "myrepl",
+        "repl_config": {
+            "name": "myrepl",
+            "display_name": "My REPL",
+            "candidates": [
+                {
+                    "name": "myrepl",
+                    "args": ["--interactive"]
+                },
+                {
+                    "name": "python3",
+                    "args": ["-q", "-i"]
+                }
+            ],
+            "env": [
+                { "name": "TERM", "value_from": "term" }
+            ],
+            "ready": {
+                "mode": "startup_delay",
+                "startup_delay_ms": 300
+            }
+        }
+    }
+}
+```
+
 
 ---
 
@@ -357,12 +456,12 @@ List all contexts in a sandbox.
     {
       label: "Go",
       language: "go",
-      code: `contexts, err := sandbox.ListContexts(ctx)
+      code: `contexts, err := sandbox.ListContext(ctx)
 if err != nil {
     log.Fatal(err)
 }
 for _, ctx := range contexts {
-    fmt.Printf("- %s (type: %s, status: %s)\\n", ctx.ID, ctx.Type, ctx.Status)
+    fmt.Printf("- %s (type: %s, running: %v)\\n", ctx.ID, ctx.Type, ctx.Running)
 }`
     },
     {
@@ -370,24 +469,20 @@ for _, ctx := range contexts {
       language: "python",
       code: `contexts = sandbox.list_contexts()
 for ctx in contexts:
-    print(f"- {ctx.id} (type: {ctx.type}, status: {ctx.status})")`
+    print(f"- {ctx.id} (type: {ctx.type_}, running: {ctx.running})")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const { contexts } = await sandbox.listContexts();
+      code: `const contexts = await sandbox.listContexts();
 for (const ctx of contexts) {
-    console.log(\`- \${ctx.id} (type: \${ctx.type}, status: \${ctx.status})\`);
+    console.log(\`- \${ctx.id} (type: \${ctx.type}, running: \${ctx.running})\`);
 }`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context list sb_abc123
-
-# Output:
-# ctx_xyz789  repl   running
-# ctx_abc456  cmd    completed`
+      code: `s0 sandbox context list -s sb_abc123`
     }
   ]}
 />
@@ -407,72 +502,31 @@ Get details of a specific context.
     {
       label: "Go",
       language: "go",
-      code: `ctx, err := sandbox.GetContext(ctx, "ctx_xyz789")
+      code: `ctxResp, err = sandbox.GetContext(ctx, ctxResp.ID)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Type: %s\\n", ctx.Type)
-fmt.Printf("Status: %s\\n", ctx.Status)`
+fmt.Printf("Type: %s\\n", ctxResp.Type)
+fmt.Printf("Running: %v\\n", ctxResp.Running)`
     },
     {
       label: "Python",
       language: "python",
-      code: `ctx = sandbox.get_context("ctx_xyz789")
-print(f"Type: {ctx.type}")
-print(f"Status: {ctx.status}")`
+      code: `ctx = sandbox.get_context(context.id)
+print(f"type: {ctx.type_}")
+print(f"running: {ctx.running}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const ctx = await sandbox.getContext('ctx_xyz789');
+      code: `let ctx = await sandbox.getContext(context.id);
 console.log('Type:', ctx.type);
-console.log('Status:', ctx.status);`
+console.log('Running:', ctx.running);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context get sb_abc123 ctx_xyz789`
-    }
-  ]}
-/>
-
----
-
-## Delete Context
-
-Delete a context.
-
-<Endpoint method="DELETE">
-/api/v1/sandboxes/{'{id}'}/contexts/{'{ctx_id}'}
-</Endpoint>
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `_, err := sandbox.DeleteContext(ctx, "ctx_xyz789")
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println("Context deleted")`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `sandbox.delete_context("ctx_xyz789")
-print("Context deleted")`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `await sandbox.deleteContext('ctx_xyz789');
-console.log('Context deleted');`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 context delete sb_abc123 ctx_xyz789`
+      code: `s0 sandbox context get ctx-xyz789 -s sb_abc123`
     }
   ]}
 />
@@ -494,22 +548,26 @@ Restart a context process.
     {
       label: "Go",
       language: "go",
-      code: `_, err := sandbox.RestartContext(ctx, "ctx_xyz789")`
+      code: `_, err = sandbox.RestartContext(ctx, ctxResp.ID)
+if err != nil {
+    log.Fatal(err)
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `sandbox.restart_context("ctx_xyz789")`
+      code: `result = sandbox.restart_context(context.id)
+print(f"Context restarted: {result.running}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await sandbox.restartContext('ctx_xyz789');`
+      code: `await sandbox.restartContext(context.id);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context restart sb_abc123 ctx_xyz789`
+      code: `s0 sandbox context restart ctx-xyz789 -s sb_abc123`
     }
   ]}
 />
@@ -527,22 +585,21 @@ Send input to a context's stdin.
     {
       label: "Go",
       language: "go",
-      code: `_, err := sandbox.SendInput(ctx, "ctx_xyz789", "print('hello')\\n")`
+      code: `_, err = sandbox.ContextInput(ctx, ctxResp.ID, "print('hello')")
+if err != nil {
+    log.Fatal(err)
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `sandbox.send_input("ctx_xyz789", "print('hello')\\n")`
+      code: `result = sandbox.context_input(context.id, "print('hello')")
+print(f"Context input: {result.success}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await sandbox.sendInput('ctx_xyz789', "print('hello')\\n");`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 context input sb_abc123 ctx_xyz789 --data "print('hello')"`
+      code: `await sandbox.contextInput(context.id, "print('hello')\\n");`
     }
   ]}
 />
@@ -560,22 +617,21 @@ Resize the terminal dimensions.
     {
       label: "Go",
       language: "go",
-      code: `_, err := sandbox.ResizeContext(ctx, "ctx_xyz789", 24, 80)`
+      code: `_, err = sandbox.ContextResize(ctx, ctxResp.ID, 24, 80)
+if err != nil {
+    log.Fatal(err)
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `sandbox.resize_context("ctx_xyz789", rows=24, cols=80)`
+      code: `result = sandbox.context_resize(context.id, 24, 80)
+print(f"Context resized: {result.success}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await sandbox.resizeContext('ctx_xyz789', 24, 80);`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 context resize sb_abc123 ctx_xyz789 --rows 24 --cols 80`
+      code: `await sandbox.contextResize(context.id, 24, 80);`
     }
   ]}
 />
@@ -593,34 +649,28 @@ Send a signal to the context process.
     {
       label: "Go",
       language: "go",
-      code: `// Send SIGINT (Ctrl+C)
-_, err := sandbox.SendSignal(ctx, "ctx_xyz789", "INT")
-
-// Send SIGTERM
-_, err = sandbox.SendSignal(ctx, "ctx_xyz789", "TERM")`
+      code: `// Send SIGTERM
+_, err = sandbox.ContextSignal(ctx, ctxResp.ID, "TERM")
+if err != nil {
+    log.Fatal(err)
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `# Send SIGINT (Ctrl+C)
-sandbox.send_signal("ctx_xyz789", "INT")
-
-# Send SIGTERM
-sandbox.send_signal("ctx_xyz789", "TERM")`
+      code: `result = sandbox.context_signal(context.id, "TERM")
+print(f"Context signaled: {result.success}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `// Send SIGINT (Ctrl+C)
-await sandbox.sendSignal('ctx_xyz789', 'INT');
-
-// Send SIGTERM
-await sandbox.sendSignal('ctx_xyz789', 'TERM');`
+      code: `// Send SIGTERM
+await sandbox.contextSignal(context.id, 'TERM');`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context signal sb_abc123 ctx_xyz789 --signal INT`
+      code: `s0 sandbox context signal ctx-xyz789 INT -s sb_abc123`
     }
   ]}
 />
@@ -638,39 +688,75 @@ Get resource usage statistics for a context.
     {
       label: "Go",
       language: "go",
-      code: `stats, err := sandbox.GetContextStats(ctx, "ctx_xyz789")
+      code: `stats, err := sandbox.ContextStats(ctx, ctxResp.ID)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Memory: %d bytes\\n", stats.MemoryRss)
-fmt.Printf("CPU: %.2f%%\\n", stats.CpuPercent)`
+fmt.Printf("Memory: %d bytes\\n", stats.Usage.Value.MemoryRss.Value)
+fmt.Printf("CPU: %.2f%%\\n", stats.Usage.Value.CPUPercent.Value)`
     },
     {
       label: "Python",
       language: "python",
-      code: `stats = sandbox.get_context_stats("ctx_xyz789")
-print(f"Memory: {stats.memory_rss} bytes")
-print(f"CPU: {stats.cpu_percent:.2f}%")`
+      code: `stats = sandbox.context_stats(context.id)
+print(f"Context stats: {stats.usage}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const stats = await sandbox.getContextStats('ctx_xyz789');
-console.log('Memory:', stats.memoryRss, 'bytes');
-console.log('CPU:', stats.cpuPercent, '%');`
+      code: `const stats = await sandbox.contextStats(context.id);
+console.log('Memory:', stats.usage?.memoryRss, 'bytes');
+console.log('CPU:', stats.usage?.cpuPercent, '%');`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context stats sb_abc123 ctx_xyz789
-
-# Output:
-# Memory RSS: 52428800 bytes
-# CPU: 2.5%
-# Threads: 4`
+      code: `s0 sandbox context stats ctx-xyz789 -s sb_abc123`
     }
   ]}
 />
+
+---
+
+## Delete Context
+
+Delete a context.
+
+<Endpoint method="DELETE">
+/api/v1/sandboxes/{'{id}'}/contexts/{'{ctx_id}'}
+</Endpoint>
+
+<Tabs
+  tabs={[
+    {
+      label: "Go",
+      language: "go",
+      code: `_, err = sandbox.DeleteContext(ctx, ctxResp.ID)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println("Context deleted")`
+    },
+    {
+      label: "Python",
+      language: "python",
+      code: `result = sandbox.delete_context(context.id)
+print(f"Context deleted: {result.success}")`
+    },
+    {
+      label: "TypeScript",
+      language: "typescript",
+      code: `await sandbox.deleteContext(context.id);
+console.log('Context deleted');`
+    },
+    {
+      label: "CLI",
+      language: "bash",
+      code: `s0 sandbox context delete ctx-xyz789 -s sb_abc123`
+    }
+  ]}
+/>
+
 
 ---
 
@@ -696,8 +782,7 @@ For real-time I/O, connect to a context via WebSocket.
 
 | Type | Description | Example |
 |------|-------------|---------|
-| `output` | stdout/stderr output | `{"type": "output", "source": "stdout", "data": "hello\n"}` |
-| `done` | Request completed | `{"type": "done", "request_id": "req-1"}` |
+| `output` | Process output (`stdout` / `stderr` / `pty`) | `{"source": "stdout", "data": "hello\n"}` |
 
 <Tabs
   tabs={[
@@ -705,17 +790,20 @@ For real-time I/O, connect to a context via WebSocket.
       label: "Go",
       language: "go",
       code: `// Create context first
-ctxResp, err := sandbox.CreateContext(ctx, apispec.CreateContextRequest{
+ctxResp, err = sandbox.CreateContext(ctx, apispec.CreateContextRequest{
     Type: apispec.NewOptProcessType(apispec.ProcessTypeRepl),
     Repl: apispec.NewOptCreateREPLContextRequest(apispec.CreateREPLContextRequest{
-        Language: apispec.NewOptString("python"),
+        Alias: apispec.NewOptString("python"),
     }),
 })
+if err != nil {
+    log.Fatal(err)
+}
 
 // Connect WebSocket
 conn, _, err := sandbox.ConnectWSContext(ctx, ctxResp.ID)
 if err != nil {
-    return err
+    log.Fatal(err)
 }
 defer conn.Close()
 
@@ -726,6 +814,7 @@ msg := map[string]any{
     "request_id": "req-1",
 }
 conn.WriteJSON(msg)
+conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 
 // Read output
 for {
@@ -734,64 +823,69 @@ for {
         break
     }
     var msg struct {
-        Type   string \`json:"type"\`
         Source string \`json:"source"\`
         Data   string \`json:"data"\`
     }
     json.Unmarshal(message, &msg)
-    if msg.Type == "output" {
-        fmt.Print(msg.Data)
-    }
+    fmt.Print(msg.Data)
 }`
     },
     {
       label: "Python",
       language: "python",
-      code: `import websocket
-import json
+      code: `# Create context first
+import threading
+from sandbox0.apispec.models.create_context_request import CreateContextRequest
+from sandbox0.apispec.models.create_repl_context_request import CreateREPLContextRequest
+from sandbox0.apispec.models.process_type import ProcessType
 
-# Connect to WebSocket
-ws = sandbox.connect_websocket("ctx_xyz789")
+ctx = sandbox.create_context(
+    request=CreateContextRequest(
+        type_=ProcessType.REPL,
+        repl=CreateREPLContextRequest(alias="python"),
+    )
+)
+# Connect WebSocket
+stream = sandbox.connect_ws_context(ctx.id)
+outputs = []
 
+def reader():
+    for output in stream.iter_outputs():
+        outputs.append(output.data)
+
+thread = threading.Thread(target=reader, daemon=True)
+thread.start()
 # Send input
-ws.send(json.dumps({
-    "type": "input",
-    "data": "print('hello')\\n",
-    "request_id": "req-1",
-}))
+stream.send_input("print('hello from ws')\\n")
+# Wait for outputs with timeout
+thread.join(timeout=3)
+stream.close()
 
-# Read output
-for message in ws:
-    msg = json.loads(message)
-    if msg.get("type") == "output":
-        print(msg["data"], end="")`
+for chunk in outputs:
+    print(chunk, end="")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `// Connect to WebSocket
-const ws = sandbox.connectWebSocket('ctx_xyz789');
-
+      code: `// Create context first
+ctx = await sandbox.createContext({
+    type: 'repl',
+    repl: { alias: 'python' },
+});
+// Connect WebSocket
+const stream = await sandbox.connectWsContext(ctx.id);
+// Consume outputs in background
+const outputPromise = (async () => {
+    for await (const output of stream.outputs()) {
+        process.stdout.write(output.data);
+    }
+})();
 // Send input
-ws.send(JSON.stringify({
-    type: 'input',
-    data: "print('hello')\\n",
-    request_id: 'req-1',
-}));
-
-// Read output
-ws.onmessage = (event) => {
-  const msg = JSON.parse(event.data);
-  if (msg.type === 'output') {
-    console.log(msg.data);
-  }
-};`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# CLI uses WebSocket internally for interactive sessions
-s0 sandbox attach sb_abc123 ctx_xyz789`
+stream.sendInput("print('hello from ws')\\n");
+// Wait briefly then close
+await new Promise((r) => setTimeout(r, 1000));
+stream.close();
+await outputPromise;`
     }
   ]}
 />
@@ -811,30 +905,28 @@ Execute input and wait for completion.
     {
       label: "Go",
       language: "go",
-      code: `result, err := sandbox.ExecContext(ctx, "ctx_xyz789", apispec.ContextInputRequest{
-    Data: "print(1 + 2)\\n",
-})
+      code: `execResult, err := sandbox.ContextExec(ctx, ctxResp.ID, "print(1 + 2)")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Print(result.OutputRaw)  // Output: 3`
+fmt.Print(execResult.OutputRaw)`
     },
     {
       label: "Python",
       language: "python",
-      code: `result = sandbox.exec_context("ctx_xyz789", "print(1 + 2)\\n")
-print(result.output_raw)  # Output: 3`
+      code: `result = sandbox.context_exec(ctx.id, "print(1 + 2)\\n")
+print(result.output_raw, end="")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const result = await sandbox.execContext('ctx_xyz789', "print(1 + 2)\\n");
-console.log(result.outputRaw);  // Output: 3`
+      code: `const execResult = await sandbox.contextExec(ctx.id, "print(1 + 2)\\n");
+process.stdout.write(execResult.outputRaw);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 context exec sb_abc123 ctx_xyz789 --input "print(1 + 2)"`
+      code: `s0 sandbox context exec ctx-xyz789 "print(1+2)" -s sb_abc123`
     }
   ]}
 />

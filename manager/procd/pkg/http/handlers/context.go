@@ -444,6 +444,17 @@ func drainOutput(ch <-chan process.ProcessOutput) {
 	}
 }
 
+func normalizeExecOutput(processType process.ProcessType, raw string) string {
+	if processType != process.ProcessTypeREPL {
+		return raw
+	}
+	normalized := strings.TrimSuffix(raw, repl.DefaultReadyToken)
+	if !strings.HasPrefix(normalized, repl.DefaultReadyToken) {
+		normalized = repl.DefaultReadyToken + normalized
+	}
+	return normalized
+}
+
 func (h *ContextHandler) execInputSync(ctx *ctxpkg.Context, input string, requestCtx context.Context) (string, *execError, bool) {
 	if ctx == nil || ctx.MainProcess == nil {
 		return "", &execError{
@@ -517,10 +528,10 @@ func (h *ContextHandler) execInputSync(ctx *ctxpkg.Context, input string, reques
 				message: "execution timed out",
 			}, false
 		case <-promptWait:
-			return output.String(), nil, false
+			return normalizeExecOutput(ctx.Type, output.String()), nil, false
 		case msg, ok := <-outputCh:
 			if !ok {
-				return output.String(), nil, false
+				return normalizeExecOutput(ctx.Type, output.String()), nil, false
 			}
 			if msg.Source == process.OutputSourcePrompt {
 				if promptTimer == nil {

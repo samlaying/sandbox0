@@ -43,7 +43,7 @@ content, err := sandbox.ReadFile(ctx, "/workspace/hello.txt")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Content: %s\\n", string(content))`
+fmt.Printf("Content: %s\n", string(content))`
     },
     {
       label: "Python",
@@ -57,12 +57,12 @@ print(f"Content: {content.decode()}")`
       language: "typescript",
       code: `// Read file content
 const content = await sandbox.readFile('/workspace/hello.txt');
-console.log('Content:', content.toString());`
+console.log('Content:', Buffer.from(content).toString('utf-8'));`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file read sb_abc123 /workspace/hello.txt
+      code: `s0 sandbox files cat /workspace/hello.txt -s sb_abc123
 
 # Output:
 # Hello, World!`
@@ -96,7 +96,7 @@ Binary file content (raw bytes).
       label: "Go",
       language: "go",
       code: `// Write file content
-content := []byte("Hello from Sandbox0!\\n")
+content := []byte("Hello from Sandbox0!\n")
 _, err := sandbox.WriteFile(ctx, "/workspace/hello.txt", content)
 if err != nil {
     log.Fatal(err)
@@ -120,7 +120,7 @@ console.log('File written successfully');`
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file write sb_abc123 /workspace/hello.txt --content "Hello from Sandbox0!"`
+      code: `s0 sandbox files write /workspace/hello.txt --data "Hello from Sandbox0!" -s sb_abc123`
     }
   ]}
 />
@@ -172,7 +172,7 @@ console.log('Directory created');`
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file mkdir sb_abc123 /workspace/project/src --recursive`
+      code: `s0 sandbox files mkdir /workspace/project/src --parents -s sb_abc123`
     }
   ]}
 />
@@ -226,7 +226,7 @@ console.log('File deleted');`
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file delete sb_abc123 /workspace/hello.txt`
+      code: `s0 sandbox files rm /workspace/hello.txt -s sb_abc123`
     }
   ]}
 />
@@ -277,7 +277,7 @@ console.log('File moved');`
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file move sb_abc123 /workspace/old.txt /workspace/new.txt`
+      code: `s0 sandbox files mv /workspace/old.txt /workspace/new.txt -s sb_abc123`
     }
   ]}
 />
@@ -308,10 +308,18 @@ info, err := sandbox.StatFile(ctx, "/workspace/hello.txt")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Name: %s\\n", info.Name)
-fmt.Printf("Size: %d bytes\\n", info.Size)
-fmt.Printf("Type: %s\\n", info.Type)
-fmt.Printf("Mode: %s\\n", info.Mode)`
+if name, ok := info.Name.Get(); ok {
+    fmt.Printf("Name: %s\n", name)
+}
+if size, ok := info.Size.Get(); ok {
+    fmt.Printf("Size: %d bytes\n", size)
+}
+if fileType, ok := info.Type.Get(); ok {
+    fmt.Printf("Type: %s\n", fileType)
+}
+if mode, ok := info.Mode.Get(); ok {
+    fmt.Printf("Mode: %s\n", mode)
+}`
     },
     {
       label: "Python",
@@ -320,7 +328,7 @@ fmt.Printf("Mode: %s\\n", info.Mode)`
 info = sandbox.stat_file("/workspace/hello.txt")
 print(f"Name: {info.name}")
 print(f"Size: {info.size} bytes")
-print(f"Type: {info.type}")
+print(f"Type: {info.type_}")
 print(f"Mode: {info.mode}")`
     },
     {
@@ -336,14 +344,7 @@ console.log('Mode:', info.mode);`
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file stat sb_abc123 /workspace/hello.txt
-
-# Output:
-# Name: hello.txt
-# Size: 24 bytes
-# Type: file
-# Mode: 0644
-# Modified: 2024-01-15T10:30:00Z`
+      code: `s0 sandbox files stat /workspace/hello.txt -s sb_abc123`
     }
   ]}
 />
@@ -375,9 +376,13 @@ if err != nil {
     log.Fatal(err)
 }
 for _, entry := range entries {
-    if path, ok := entry.Path.Get(); ok {
-        fmt.Printf("- %s (%s, %d bytes)\\n", path, entry.Type, entry.Size)
+    path, ok := entry.Path.Get()
+    if !ok {
+        continue
     }
+    fileType, _ := entry.Type.Get()
+    size, _ := entry.Size.Get()
+    fmt.Printf("- %s (%s, %d bytes)\n", path, fileType, size)
 }`
     },
     {
@@ -386,26 +391,21 @@ for _, entry := range entries {
       code: `# List directory contents
 entries = sandbox.list_files("/workspace")
 for entry in entries:
-    print(f"- {entry.path} ({entry.type}, {entry.size} bytes)")`
+    print(f"- {entry.path} ({entry.type_}, {entry.size} bytes)")`
     },
     {
       label: "TypeScript",
       language: "typescript",
       code: `// List directory contents
-const { entries } = await sandbox.listFiles('/workspace');
+const entries = await sandbox.listFiles('/workspace');
 for (const entry of entries) {
-    console.log(\`- \${entry.path} (\${entry.type}, \${entry.size} bytes)\`);
+    console.log(\`- \${entry.path ?? entry.name} (\${entry.type ?? 'unknown'}, \${entry.size ?? 0} bytes)\`);
 }`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 file list sb_abc123 /workspace
-
-# Output:
-# hello.txt    file   24 bytes
-# project/     dir    4096 bytes
-# data.json    file   1024 bytes`
+      code: `s0 sandbox files ls /workspace -s sb_abc123`
     }
   ]}
 />
@@ -461,7 +461,11 @@ events, errs, unsubscribe, err := sandbox.WatchFiles(watchCtx, "/workspace", tru
 if err != nil {
     log.Fatal(err)
 }
-defer unsubscribe()
+defer func() {
+    if err := unsubscribe(); err != nil {
+        log.Printf("cleanup unsubscribe watch: %v", err)
+    }
+}()
 
 // Process events
 for {
@@ -470,7 +474,7 @@ for {
         if !ok {
             return
         }
-        fmt.Printf("Event: %s on %s\\n", ev.Event, ev.Path)
+        fmt.Printf("Event: %s on %s\n", ev.Event, ev.Path)
     case err, ok := <-errs:
         if ok && err != nil {
             log.Printf("Watch error: %v", err)
@@ -485,53 +489,61 @@ for {
       label: "Python",
       language: "python",
       code: `# Watch files for changes
-import time
-
-events, errors, unsubscribe = sandbox.watch_files("/workspace", recursive=True)
+stream = sandbox.watch_files("/workspace", recursive=True)
 
 try:
-    for event in events:
+    for event in stream.iter_events():
         print(f"Event: {event.event} on {event.path}")
         if event.event == "write":
             print(f"File modified: {event.path}")
 except KeyboardInterrupt:
     pass
 finally:
-    unsubscribe()`
+    stream.unsubscribe()`
     },
     {
       label: "TypeScript",
       language: "typescript",
       code: `// Watch files for changes
-const { events, errors, unsubscribe } = await sandbox.watchFiles('/workspace', true);
+const watcher = await sandbox.watchFiles('/workspace', true);
 
-events.on('data', (event) => {
-    console.log(\`Event: \${event.event} on \${event.path}\`);
-    if (event.event === 'write') {
-        console.log(\`File modified: \${event.path}\`);
+const stopTimer = setTimeout(() => {
+    if (watcher.watchId) {
+        watcher.unsubscribe(watcher.watchId);
+    } else {
+        watcher.close();
     }
-});
+}, 30000);
 
-errors.on('data', (error) => {
-    console.error('Watch error:', error);
-});
-
-// Unsubscribe after 30 seconds
-setTimeout(() => {
-    unsubscribe();
-}, 30000);`
+try {
+    for await (const event of watcher.events()) {
+        if (event.type === 'error') {
+            console.error('Watch error:', event.error);
+            break;
+        }
+        if (event.type === 'event') {
+            console.log(\`Event: \${event.event} on \${event.path}\`);
+            if (event.event === 'write') {
+                console.log(\`File modified: \${event.path}\`);
+            }
+        }
+    }
+} finally {
+    clearTimeout(stopTimer);
+    watcher.close();
+}`
     },
     {
       label: "CLI",
       language: "bash",
       code: `# Watch files for changes
-s0 file watch sb_abc123 /workspace --recursive
+s0 sandbox files watch /workspace --recursive -s sb_abc123
 
 # Output (live):
-# [create] /workspace/newfile.txt
-# [write] /workspace/newfile.txt
-# [rename] /workspace/newfile.txt -> /workspace/renamed.txt
-# [remove] /workspace/renamed.txt`
+# create: /workspace/newfile.txt
+# write: /workspace/newfile.txt
+# rename: /workspace/newfile.txt
+# remove: /workspace/renamed.txt`
     }
   ]}
 />
@@ -554,24 +566,29 @@ if err != nil {
 }
 
 // Write a file
-_, err = sandbox.WriteFile(ctx, "/tmp/sdk-go/hello.txt", []byte("hello from file\\n"))
+_, err = sandbox.WriteFile(ctx, "/tmp/sdk-go/hello.txt", []byte("hello from file\n"))
 if err != nil {
     log.Fatal(err)
 }
 
 // Read the file
-content, err := sandbox.ReadFile(ctx, "/tmp/sdk-go/hello.txt")
+readResult, err := sandbox.ReadFile(ctx, "/tmp/sdk-go/hello.txt")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("File content: %s\\n", strings.TrimSpace(string(content)))
+fmt.Printf("File content: %s\n", strings.TrimSpace(string(readResult)))
 
 // List directory
 entries, err := sandbox.ListFiles(ctx, "/tmp/sdk-go")
 if err != nil {
     log.Fatal(err)
 }
-fmt.Printf("Directory entries: %d\\n", len(entries))
+fmt.Printf("Directory entries: %d\n", len(entries))
+for _, entry := range entries {
+    if path, ok := entry.Path.Get(); ok {
+        fmt.Printf("- %s\n", path)
+    }
+}
 
 // Move/rename file
 _, err = sandbox.MoveFile(ctx, "/tmp/sdk-go/hello.txt", "/tmp/sdk-go/hello-renamed.txt")
@@ -619,10 +636,10 @@ await sandbox.writeFile('/tmp/sdk-js/hello.txt', 'hello from file\\n');
 
 // Read the file
 const content = await sandbox.readFile('/tmp/sdk-js/hello.txt');
-console.log('File content:', content.toString().trim());
+console.log('File content:', Buffer.from(content).toString('utf-8').trim());
 
 // List directory
-const { entries } = await sandbox.listFiles('/tmp/sdk-js');
+const entries = await sandbox.listFiles('/tmp/sdk-js');
 console.log('Directory entries:', entries.length);
 
 // Move/rename file
@@ -635,22 +652,22 @@ await sandbox.deleteFile('/tmp/sdk-js/hello-renamed.txt');`
       label: "CLI",
       language: "bash",
       code: `# Create directory
-s0 file mkdir sb_abc123 /tmp/sdk-cli --recursive
+s0 sandbox files mkdir /tmp/sdk-cli --parents -s sb_abc123
 
 # Write a file
-s0 file write sb_abc123 /tmp/sdk-cli/hello.txt --content "hello from file"
+s0 sandbox files write /tmp/sdk-cli/hello.txt --data "hello from file" -s sb_abc123
 
 # Read the file
-s0 file read sb_abc123 /tmp/sdk-cli/hello.txt
+s0 sandbox files cat /tmp/sdk-cli/hello.txt -s sb_abc123
 
 # List directory
-s0 file list sb_abc123 /tmp/sdk-cli
+s0 sandbox files ls /tmp/sdk-cli -s sb_abc123
 
 # Move/rename file
-s0 file move sb_abc123 /tmp/sdk-cli/hello.txt /tmp/sdk-cli/hello-renamed.txt
+s0 sandbox files mv /tmp/sdk-cli/hello.txt /tmp/sdk-cli/hello-renamed.txt -s sb_abc123
 
 # Delete file
-s0 file delete sb_abc123 /tmp/sdk-cli/hello-renamed.txt`
+s0 sandbox files rm /tmp/sdk-cli/hello-renamed.txt -s sb_abc123`
     }
   ]}
 />
@@ -661,14 +678,6 @@ s0 file delete sb_abc123 /tmp/sdk-cli/hello-renamed.txt`
 
 <CardGrid>
   <LinkCard
-    title="Contexts"
-    href="/docs/sandbox/contexts"
-    cta="Learn More"
-  >
-    Run commands and manage processes
-  </LinkCard>
-
-  <LinkCard
     title="Network Policy"
     href="/docs/sandbox/network"
     cta="Learn More"
@@ -677,10 +686,18 @@ s0 file delete sb_abc123 /tmp/sdk-cli/hello-renamed.txt`
   </LinkCard>
 
   <LinkCard
-    title="Port Exposure"
+    title="Ports Exposure"
     href="/docs/sandbox/ports"
     cta="Learn More"
   >
     Expose sandbox ports publicly
+  </LinkCard>
+
+  <LinkCard
+    title="Sandbox Webhooks"
+    href="/docs/sandbox/webhooks"
+    cta="Learn More"
+  >
+    Receive sandbox lifecycle and event callbacks
   </LinkCard>
 </CardGrid>

@@ -344,21 +344,21 @@ Only the following fields can be updated at runtime:
     {
       label: "Go",
       language: "go",
-      code: `_, err := client.UpdateSandbox(ctx, "sb_abc123", apispec.SandboxUpdateRequest{
+      code: `_, err = client.UpdateSandbox(ctx, sandbox.ID, apispec.SandboxUpdateRequest{
     Config: apispec.NewOptSandboxUpdateConfig(apispec.SandboxUpdateConfig{
         TTL:        apispec.NewOptInt32(600),
         AutoResume: apispec.NewOptBool(false),
     }),
-})`
+})
+if err != nil {
+    log.Fatal(err)
+}`
     },
     {
       label: "Python",
       language: "python",
-      code: `from sandbox0.apispec.models.sandbox_update_config import SandboxUpdateConfig
-from sandbox0.apispec.models.sandbox_update_request import SandboxUpdateRequest
-
-client.update_sandbox(
-    "sb_abc123",
+      code: `client.update_sandbox(
+    sandbox.id,
     SandboxUpdateRequest(config=SandboxUpdateConfig.from_dict({
         "ttl": 600,
         "auto_resume": False,
@@ -368,7 +368,7 @@ client.update_sandbox(
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await client.sandboxes.update('sb_abc123', {
+      code: `await client.sandboxes.update(sandbox.id, {
     config: { ttl: 600, autoResume: false },
 });`
     },
@@ -400,7 +400,7 @@ Use `auto_resume` to automatically resume when accessed.
     {
       label: "Go",
       language: "go",
-      code: `_, err := client.PauseSandbox(ctx, "sb_abc123")
+      code: `_, err = client.PauseSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
@@ -409,13 +409,13 @@ fmt.Println("Sandbox paused")`
     {
       label: "Python",
       language: "python",
-      code: `client.pause_sandbox("sb_abc123")
+      code: `client.pause_sandbox(sandbox.id)
 print("Sandbox paused")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await client.pauseSandbox('sb_abc123');
+      code: `await client.sandboxes.pause(sandbox.id);
 console.log('Sandbox paused');`
     },
     {
@@ -441,7 +441,7 @@ Resume a paused sandbox.
     {
       label: "Go",
       language: "go",
-      code: `_, err := client.ResumeSandbox(ctx, "sb_abc123")
+      code: `_, err = client.ResumeSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
@@ -450,13 +450,13 @@ fmt.Println("Sandbox resumed")`
     {
       label: "Python",
       language: "python",
-      code: `client.resume_sandbox("sb_abc123")
+      code: `client.resume_sandbox(sandbox.id)
 print("Sandbox resumed")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await client.resumeSandbox('sb_abc123');
+      code: `await client.sandboxes.resume(sandbox.id);
 console.log('Sandbox resumed');`
     },
     {
@@ -471,14 +471,20 @@ console.log('Sandbox resumed');`
 
 ## Refresh Sandbox TTL
 
-Extend the sandbox time-to-live. This resets both `ttl` and `hard_ttl` (if configured) to their original durations from the current time.
+Extend the sandbox time-to-live. This resets both `ttl` and `hard_ttl` (if configured) from the current time.
 
 <Endpoint method="POST">
 /api/v1/sandboxes/{'{id}'}/refresh
 </Endpoint>
 
+### Request Body
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `duration` | integer | Duration to extend TTL in seconds (optional, defaults to original TTL) |
+
 <Callout variant="info">
-Refreshing extends both <code>ttl</code> and <code>hard_ttl</code>. Use this to keep a sandbox alive as long as the user is actively using it.
+If <code>duration</code> is not specified, both <code>ttl</code> and <code>hard_ttl</code> are reset to their original configured values. Use this to keep a sandbox alive as long as the user is actively using it.
 </Callout>
 
 <Tabs
@@ -486,7 +492,17 @@ Refreshing extends both <code>ttl</code> and <code>hard_ttl</code>. Use this to 
     {
       label: "Go",
       language: "go",
-      code: `resp, err := client.RefreshSandbox(ctx, "sb_abc123")
+      code: `// Refresh with default duration (original TTL)
+resp, err := client.RefreshSandbox(ctx, sandbox.ID, nil)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Printf("New expires at: %s\\n", resp.ExpiresAt)
+
+// Refresh with custom duration (e.g., 1 minutes)
+resp, err = client.RefreshSandbox(ctx, sandbox.ID, &apispec.SandboxRefreshRequest{
+    Duration: apispec.NewOptInt32(60),
+})
 if err != nil {
     log.Fatal(err)
 }
@@ -495,19 +511,35 @@ fmt.Printf("New expires at: %s\\n", resp.ExpiresAt)`
     {
       label: "Python",
       language: "python",
-      code: `resp = client.refresh_sandbox("sb_abc123")
+      code: `from sandbox0.apispec.models.sandbox_refresh_request import SandboxRefreshRequest
+
+# Refresh with default duration (original TTL)
+resp = client.refresh_sandbox(sandbox.id)
+print(f"New expires at: {resp.expires_at}")
+
+# Refresh with custom duration (e.g., 1 minutes)
+resp = client.refresh_sandbox(sandbox.id, SandboxRefreshRequest(duration=60))
 print(f"New expires at: {resp.expires_at}")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const resp = await client.refreshSandbox('sb_abc123');
-console.log('New expires at:', resp.expiresAt);`
+      code: `// Refresh with default duration (original TTL)
+const resp = await client.sandboxes.refresh(sandbox.id);
+console.log('New expires at:', resp.expiresAt);
+
+// Refresh with custom duration (e.g., 1 minutes)
+const resp2 = await client.sandboxes.refresh(sandbox.id, { duration: 60 });
+console.log('New expires at:', resp2.expiresAt);`
     },
     {
       label: "CLI",
       language: "bash",
-      code: `s0 sandbox refresh sb_abc123
+      code: `# Refresh with default duration
+s0 sandbox refresh sb_abc123
+
+# Refresh with custom duration (e.g., 10 minutes)
+s0 sandbox refresh sb_abc123 --duration 600
 
 # Output:
 # New expires at: 2024-01-15T11:00:00Z`
@@ -530,7 +562,7 @@ Terminate and delete a sandbox. This action is irreversible.
     {
       label: "Go",
       language: "go",
-      code: `_, err := client.DeleteSandbox(ctx, "sb_abc123")
+      code: `_, err = client.DeleteSandbox(ctx, sandbox.ID)
 if err != nil {
     log.Fatal(err)
 }
@@ -539,13 +571,13 @@ fmt.Println("Sandbox deleted")`
     {
       label: "Python",
       language: "python",
-      code: `client.delete_sandbox("sb_abc123")
+      code: `client.delete_sandbox(sandbox.id)
 print("Sandbox deleted")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `await client.deleteSandbox('sb_abc123');
+      code: `await client.sandboxes.delete(sandbox.id);
 console.log('Sandbox deleted');`
     },
     {

@@ -884,6 +884,12 @@ type SandboxConfig struct {
 	Webhook      *WebhookConfig           `json:"webhook,omitempty"`
 }
 
+// SandboxRefreshRequest defines model for SandboxRefreshRequest.
+type SandboxRefreshRequest struct {
+	// Duration Duration to extend TTL in seconds (optional, defaults to original TTL)
+	Duration *int32 `json:"duration,omitempty"`
+}
+
 // SandboxResourceUsage defines model for SandboxResourceUsage.
 type SandboxResourceUsage struct {
 	ContainerMemoryLimit      *int64                  `json:"container_memory_limit,omitempty"`
@@ -1728,7 +1734,7 @@ type PostApiV1SandboxesIdFilesMoveJSONRequestBody = MoveFileRequest
 type PutApiV1SandboxesIdNetworkJSONRequestBody = TplSandboxNetworkPolicy
 
 // PostApiV1SandboxesIdRefreshJSONRequestBody defines body for PostApiV1SandboxesIdRefresh for application/json ContentType.
-type PostApiV1SandboxesIdRefreshJSONRequestBody = RefreshRequest
+type PostApiV1SandboxesIdRefreshJSONRequestBody = SandboxRefreshRequest
 
 // PostApiV1SandboxesIdSandboxvolumesMountJSONRequestBody defines body for PostApiV1SandboxesIdSandboxvolumesMount for application/json ContentType.
 type PostApiV1SandboxesIdSandboxvolumesMountJSONRequestBody = MountRequest

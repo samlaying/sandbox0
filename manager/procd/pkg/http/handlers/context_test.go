@@ -86,8 +86,8 @@ func TestExecInputSync_PromptBeforeOutputReturnsEmpty(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("execInputSync() error = %v", execErr)
 	}
-	if output != "hello world" {
-		t.Errorf("output = %q, want %q when prompt arrives first", output, "hello world")
+	if output != "_S0_> hello world" {
+		t.Errorf("output = %q, want %q when prompt arrives first", output, "_S0_> hello world")
 	}
 }
 
@@ -111,8 +111,61 @@ func TestExecInputSync_OutputBeforePromptReturnsOutput(t *testing.T) {
 	if execErr != nil {
 		t.Fatalf("execInputSync() error = %v", execErr)
 	}
-	if output != "hello world" {
-		t.Errorf("output = %q, want %q", output, "hello world")
+	if output != "_S0_> hello world" {
+		t.Errorf("output = %q, want %q", output, "_S0_> hello world")
+	}
+}
+
+func TestExecInputSync_REPLPromptFormatting_FirstAndMultipleRuns(t *testing.T) {
+	outputCh := make(chan process.ProcessOutput, 8)
+	writeCount := 0
+	proc := &fakeProcess{
+		outputCh: outputCh,
+		onWrite: func([]byte) {
+			writeCount++
+			switch writeCount {
+			case 1:
+				outputCh <- process.ProcessOutput{
+					Source: process.OutputSourcePTY,
+					Data:   []byte("print('hello')\nhello\n_S0_> "),
+				}
+				outputCh <- process.ProcessOutput{Source: process.OutputSourcePrompt}
+			case 2:
+				outputCh <- process.ProcessOutput{
+					Source: process.OutputSourcePTY,
+					Data:   []byte("print('world')\nworld\n_S0_> "),
+				}
+				outputCh <- process.ProcessOutput{Source: process.OutputSourcePrompt}
+			default:
+				t.Fatalf("unexpected write count: %d", writeCount)
+			}
+		},
+	}
+
+	handler, ctx := newHandlerWithContext(proc, process.ProcessTypeREPL)
+
+	firstOutput, execErr, timedOut := handler.execInputSync(ctx, "print('hello')", context.Background())
+	if timedOut {
+		t.Fatal("first execInputSync() timed out")
+	}
+	if execErr != nil {
+		t.Fatalf("first execInputSync() error = %v", execErr)
+	}
+	wantFirst := "_S0_> print('hello')\nhello\n"
+	if firstOutput != wantFirst {
+		t.Fatalf("first output = %q, want %q", firstOutput, wantFirst)
+	}
+
+	secondOutput, execErr, timedOut := handler.execInputSync(ctx, "print('world')", context.Background())
+	if timedOut {
+		t.Fatal("second execInputSync() timed out")
+	}
+	if execErr != nil {
+		t.Fatalf("second execInputSync() error = %v", execErr)
+	}
+	wantSecond := "_S0_> print('world')\nworld\n"
+	if secondOutput != wantSecond {
+		t.Fatalf("second output = %q, want %q", secondOutput, wantSecond)
 	}
 }
 

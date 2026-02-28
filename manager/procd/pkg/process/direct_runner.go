@@ -255,6 +255,7 @@ func (b *limitedBuffer) Len() int {
 	defer b.mu.Unlock()
 	return len(b.data)
 }
+
 func truncatePreview(data []byte, limit int) string {
 	if limit <= 0 || len(data) == 0 {
 		return ""
