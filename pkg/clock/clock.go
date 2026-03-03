@@ -143,15 +143,20 @@ func New(ctx context.Context, db DB, opts ...Option) (*Clock, error) {
 		return nil, err
 	}
 
+	// Snapshot synced values before starting background updates.
+	c.mu.RLock()
+	initOffset := c.offset
+	initRTT := c.lastRTT
+	c.mu.RUnlock()
+	c.logger.Info("clock initialized",
+		"offset_ms", initOffset.Milliseconds(),
+		"rtt_ms", initRTT.Milliseconds(),
+	)
+
 	// Start background sync
 	bgCtx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	go c.backgroundSync(bgCtx, db)
-
-	c.logger.Info("clock initialized",
-		"offset_ms", c.offset.Milliseconds(),
-		"rtt_ms", c.lastRTT.Milliseconds(),
-	)
 
 	return c, nil
 }

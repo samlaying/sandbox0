@@ -130,6 +130,10 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "team_id is required for custom templates")
 		return
 	}
+	if err := validateTemplateSpec(req.Spec); err != nil {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
+		return
+	}
 	if err := validateTemplateSpecForClaims(req.Spec, claims); err != nil {
 		spec.JSONError(c, http.StatusForbidden, spec.CodeForbidden, err.Error())
 		return
@@ -207,6 +211,10 @@ func (h *Handler) UpdateTemplate(c *gin.Context) {
 	var req TemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if err := validateTemplateSpec(req.Spec); err != nil {
+		spec.JSONError(c, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
 		return
 	}
 	if err := validateTemplateSpecForClaims(req.Spec, claims); err != nil {

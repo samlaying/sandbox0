@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"go.uber.org/zap"
 
 	"github.com/sandbox0-ai/infra/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
@@ -61,7 +61,6 @@ func (s *testTemplateStore) DeleteTemplate(context.Context, string, string, stri
 
 func TestCreateTemplate_RejectsPrivilegedFieldsForRegularTeam(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	store := &testTemplateStore{}
 	h := &Handler{Store: store, Logger: zap.NewNop()}
@@ -96,7 +95,6 @@ func TestCreateTemplate_RejectsPrivilegedFieldsForRegularTeam(t *testing.T) {
 
 func TestCreateTemplate_AllowsNetworkForRegularTeam(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	store := &testTemplateStore{
 		getTemplateFn: func(context.Context, string, string, string) (*template.Template, error) {
@@ -135,7 +133,6 @@ func TestCreateTemplate_AllowsNetworkForRegularTeam(t *testing.T) {
 
 func TestCreateTemplate_AllowsPrivilegedFieldForSystemToken(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	store := &testTemplateStore{
 		getTemplateFn: func(context.Context, string, string, string) (*template.Template, error) {
@@ -176,9 +173,95 @@ func TestCreateTemplate_AllowsPrivilegedFieldForSystemToken(t *testing.T) {
 	}
 }
 
+func TestCreateTemplate_RejectsMissingMainContainerImage(t *testing.T) {
+	t.Parallel()
+
+	store := &testTemplateStore{
+		getTemplateFn: func(context.Context, string, string, string) (*template.Template, error) {
+			return nil, nil
+		},
+	}
+	h := &Handler{Store: store, Logger: zap.NewNop()}
+
+	router := gin.New()
+	router.Use(withClaims(&internalauth.Claims{
+		TeamID: "team-1",
+		UserID: "user-1",
+	}))
+	router.POST("/api/v1/templates", h.CreateTemplate)
+
+	body := []byte(`{
+		"template_id":"demo",
+		"spec":{
+			"mainContainer":{"resources":{"cpu":"1","memory":"1Gi"}},
+			"pool":{"minIdle":0,"maxIdle":1,"autoScale":false}
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/templates", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if store.createCalled {
+		t.Fatalf("expected create not called for invalid request")
+	}
+}
+
+func TestUpdateTemplate_RejectsInvalidPoolRange(t *testing.T) {
+	t.Parallel()
+
+	store := &testTemplateStore{
+		getTemplateFn: func(context.Context, string, string, string) (*template.Template, error) {
+			return &template.Template{
+				TemplateID: "demo",
+				Scope:      "team",
+				TeamID:     "team-1",
+				Spec: v1alpha1.SandboxTemplateSpec{
+					MainContainer: v1alpha1.ContainerSpec{
+						Image: "ubuntu:22.04",
+						Resources: v1alpha1.ResourceQuota{
+							CPU:    resource.MustParse("1"),
+							Memory: resource.MustParse("1Gi"),
+						},
+					},
+					Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 1, AutoScale: false},
+				},
+			}, nil
+		},
+	}
+	h := &Handler{Store: store, Logger: zap.NewNop()}
+
+	router := gin.New()
+	router.Use(withClaims(&internalauth.Claims{
+		TeamID: "team-1",
+		UserID: "user-1",
+	}))
+	router.PUT("/api/v1/templates/:id", h.UpdateTemplate)
+
+	body := []byte(`{
+		"spec":{
+			"mainContainer":{"image":"ubuntu:22.04","resources":{"cpu":"1","memory":"1Gi"}},
+			"pool":{"minIdle":2,"maxIdle":1,"autoScale":false}
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/templates/demo", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if store.updateCalled {
+		t.Fatalf("expected update not called for invalid request")
+	}
+}
+
 func TestUpdateTemplate_RejectsPrivilegedFieldsForRegularTeam(t *testing.T) {
 	t.Parallel()
-	gin.SetMode(gin.TestMode)
 
 	store := &testTemplateStore{
 		getTemplateFn: func(context.Context, string, string, string) (*template.Template, error) {
@@ -228,7 +311,7 @@ func TestUpdateTemplate_RejectsPrivilegedFieldsForRegularTeam(t *testing.T) {
 	}
 }
 
-func TestValidateTemplateSpecForClaims_WildcardPermission(t *testing.T) {
+func TestValidateTemplateSpecForClaims_WildcardPermissionRejected(t *testing.T) {
 	t.Parallel()
 
 	spec := v1alpha1.SandboxTemplateSpec{
@@ -249,8 +332,98 @@ func TestValidateTemplateSpecForClaims_WildcardPermission(t *testing.T) {
 	err := validateTemplateSpecForClaims(spec, &internalauth.Claims{
 		Permissions: []string{"*"},
 	})
-	if err != nil {
-		t.Fatalf("expected wildcard permission to pass, got error: %v", err)
+	if err == nil {
+		t.Fatalf("expected wildcard permission to be rejected")
+	}
+}
+
+func TestValidateTemplateSpec_StrictValidation(t *testing.T) {
+	t.Parallel()
+
+	newSpec := func() v1alpha1.SandboxTemplateSpec {
+		return v1alpha1.SandboxTemplateSpec{
+			MainContainer: v1alpha1.ContainerSpec{
+				Image: "ubuntu:22.04",
+				Resources: v1alpha1.ResourceQuota{
+					CPU:    resource.MustParse("1"),
+					Memory: resource.MustParse("1Gi"),
+				},
+			},
+			Pool: v1alpha1.PoolStrategy{MinIdle: 0, MaxIdle: 1, AutoScale: false},
+		}
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*v1alpha1.SandboxTemplateSpec)
+		wantErr string
+	}{
+		{
+			name: "reject missing cpu",
+			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
+				s.MainContainer.Resources.CPU = resource.MustParse("0")
+			},
+			wantErr: "spec.mainContainer.resources.cpu must be > 0",
+		},
+		{
+			name: "reject invalid ttl relation",
+			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
+				s.Lifecycle = &v1alpha1.LifecyclePolicy{DefaultTTL: 600, MaxTTL: 300}
+			},
+			wantErr: "spec.lifecycle.maxTTL must be >= spec.lifecycle.defaultTTL",
+		},
+		{
+			name: "reject invalid network mode",
+			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
+				s.Network = &v1alpha1.TplSandboxNetworkPolicy{
+					Mode: "deny-all",
+				}
+			},
+			wantErr: "spec.network.mode must be one of: allow-all, block-all",
+		},
+		{
+			name: "reject invalid cidr",
+			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
+				s.Network = &v1alpha1.TplSandboxNetworkPolicy{
+					Mode: v1alpha1.NetworkModeBlockAll,
+					Egress: &v1alpha1.NetworkEgressPolicy{
+						AllowedCIDRs: []string{"not-a-cidr"},
+					},
+				}
+			},
+			wantErr: "spec.network.egress.allowedCidrs[0] must be valid CIDR",
+		},
+		{
+			name: "reject invalid port range",
+			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
+				s.Network = &v1alpha1.TplSandboxNetworkPolicy{
+					Mode: v1alpha1.NetworkModeBlockAll,
+					Egress: &v1alpha1.NetworkEgressPolicy{
+						AllowedPorts: []v1alpha1.PortSpec{
+							{Port: 1000, EndPort: ptrInt32(999)},
+						},
+					},
+				}
+			},
+			wantErr: "spec.network.egress.allowedPorts[0].endPort must be between port and 65535",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			spec := newSpec()
+			tc.mutate(&spec)
+
+			err := validateTemplateSpec(spec)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if got := err.Error(); got != tc.wantErr && !bytes.Contains([]byte(got), []byte(tc.wantErr)) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErr, got)
+			}
+		})
 	}
 }
 
@@ -263,5 +436,9 @@ func withClaims(claims *internalauth.Claims) gin.HandlerFunc {
 }
 
 func ptrInt64(v int64) *int64 {
+	return &v
+}
+
+func ptrInt32(v int32) *int32 {
 	return &v
 }

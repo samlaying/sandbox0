@@ -59,17 +59,17 @@ spec:
       code: `tpl, err := client.CreateTemplate(ctx, apispec.TemplateCreateRequest{
     TemplateID: "my-python-env",
     Spec: apispec.SandboxTemplateSpec{
-        MainContainer: apispec.ContainerSpec{
+        MainContainer: apispec.NewOptContainerSpec(apispec.ContainerSpec{
             Image: "python:3.12-slim",
             Resources: apispec.ResourceQuota{
                 CPU:    apispec.NewOptString("1"),
                 Memory: apispec.NewOptString("2Gi"),
             },
-        },
-        Pool: apispec.PoolStrategy{
+        }),
+        Pool: apispec.NewOptPoolStrategy(apispec.PoolStrategy{
             MinIdle: 2,
             MaxIdle: 10,
-        },
+        }),
     },
 })
 if err != nil {
@@ -83,7 +83,7 @@ fmt.Printf("Template created: %s\\n", tpl.TemplateID)`
       code: `from sandbox0.apispec.models.template_create_request import TemplateCreateRequest
 from sandbox0.apispec.models.sandbox_template_spec import SandboxTemplateSpec
 
-tpl = client.templates.create(TemplateCreateRequest(
+tpl = client.create_template(TemplateCreateRequest(
     template_id="my-python-env",
     spec=SandboxTemplateSpec.from_dict({
         "mainContainer": {
@@ -98,7 +98,7 @@ print(f"Template created: {tpl.template_id}")`
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const tpl = await client.templates.create({
+      code: `var tpl = await client.templates.create({
     templateId: "my-python-env",
     spec: {
         mainContainer: {
@@ -134,7 +134,7 @@ Retrieve a specific template by ID. Your team can access both its own templates 
     {
       label: "Go",
       language: "go",
-      code: `tpl, err := client.GetTemplate(ctx, "my-python-env")
+      code: `tpl, err = client.GetTemplate(ctx, "my-python-env")
 if err != nil {
     log.Fatal(err)
 }
@@ -143,13 +143,13 @@ fmt.Printf("Template: %s (scope: %s)\\n", tpl.TemplateID, tpl.Scope)`
     {
       label: "Python",
       language: "python",
-      code: `tpl = client.templates.get("my-python-env")
+      code: `tpl = client.get_template("my-python-env")
 print(f"Template: {tpl.template_id} (scope: {tpl.scope})")`
     },
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const tpl = await client.templates.get("my-python-env");
+      code: `tpl = await client.templates.get("my-python-env");
 console.log("Template:", tpl.templateId, "scope:", tpl.scope);`
     },
     {
@@ -187,7 +187,7 @@ for _, tpl := range templates {
     {
       label: "Python",
       language: "python",
-      code: `templates = client.templates.list()
+      code: `templates = client.list_templates()
 for tpl in templates:
     print(f"- {tpl.template_id} ({tpl.scope})")`
     },
@@ -226,19 +226,19 @@ Updating a template does not affect already-running Sandboxes. New Sandboxes cla
     {
       label: "Go",
       language: "go",
-      code: `tpl, err := client.UpdateTemplate(ctx, "my-python-env", apispec.TemplateUpdateRequest{
+      code: `tpl, err = client.UpdateTemplate(ctx, "my-python-env", apispec.TemplateUpdateRequest{
     Spec: apispec.SandboxTemplateSpec{
-        MainContainer: apispec.ContainerSpec{
+        MainContainer: apispec.NewOptContainerSpec(apispec.ContainerSpec{
             Image: "python:3.12-slim",
             Resources: apispec.ResourceQuota{
                 CPU:    apispec.NewOptString("2"),
                 Memory: apispec.NewOptString("4Gi"),
             },
-        },
-        Pool: apispec.PoolStrategy{
+        }),
+        Pool: apispec.NewOptPoolStrategy(apispec.PoolStrategy{
             MinIdle: 3,
             MaxIdle: 10,
-        },
+        }),
     },
 })
 if err != nil {
@@ -249,7 +249,10 @@ fmt.Printf("Template updated: %s\\n", tpl.TemplateID)`
     {
       label: "Python",
       language: "python",
-      code: `tpl = client.templates.update(
+      code: `from sandbox0.apispec.models.template_update_request import TemplateUpdateRequest
+from sandbox0.apispec.models.sandbox_template_spec import SandboxTemplateSpec
+
+tpl = client.update_template(
     "my-python-env",
     TemplateUpdateRequest(
         spec=SandboxTemplateSpec.from_dict({
@@ -266,7 +269,7 @@ print(f"Template updated: {tpl.template_id}")`
     {
       label: "TypeScript",
       language: "typescript",
-      code: `const tpl = await client.templates.update("my-python-env", {
+      code: `tpl = await client.templates.update("my-python-env", {
     spec: {
         mainContainer: {
             image: "python:3.12-slim",
@@ -314,7 +317,7 @@ fmt.Println("Template deleted")`
     {
       label: "Python",
       language: "python",
-      code: `client.templates.delete("my-python-env")
+      code: `client.delete_template("my-python-env")
 print("Template deleted")`
     },
     {

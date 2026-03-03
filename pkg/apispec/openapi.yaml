@@ -3963,7 +3963,8 @@ components:
           format: int32
         autoScale:
           type: boolean
-      required: [minIdle, maxIdle, autoScale]
+          default: false
+      required: [minIdle, maxIdle]
     TplSandboxNetworkPolicy:
       type: object
       properties:

@@ -123,6 +123,7 @@ test-all:
 	@for service in $(SERVICES); do \
 		printf "$(CYAN)Testing $$service...$(RESET)\n"; \
 		$(MAKE) test $$service || exit 1; \
+		GOTOOLCHAIN=go1.25.0+auto go test -v -race -cover ./pkg/...; \
 	done
 
 # Integration tests
