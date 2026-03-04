@@ -19,6 +19,7 @@ import (
 	"github.com/sandbox0-ai/infra/pkg/gateway/public"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/license"
 	"github.com/sandbox0-ai/infra/pkg/observability"
 	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
@@ -90,6 +91,14 @@ func NewServer(
 	// Create scheduler proxy router (optional, for multi-cluster mode)
 	var schedulerRouter *proxy.Router
 	if cfg.SchedulerEnabled && cfg.SchedulerURL != "" {
+		licenseChecker, err := license.LoadFromFile(cfg.LicenseFile)
+		if err != nil {
+			return nil, fmt.Errorf("load enterprise license for multi-cluster: %w", err)
+		}
+		if !licenseChecker.HasFeature(license.FeatureMultiCluster) {
+			return nil, fmt.Errorf("enterprise license missing required feature: %s", license.FeatureMultiCluster)
+		}
+
 		schedulerRouter, err = proxy.NewRouter(
 			cfg.SchedulerURL,
 			logger,

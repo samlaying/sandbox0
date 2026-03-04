@@ -37,6 +37,7 @@ const (
 	CodeConflict     = "conflict"
 	CodeUnavailable  = "unavailable"
 	CodeInternal     = "internal_error"
+	CodeNotLicensed  = "feature_not_licensed"
 )
 
 // successresp builds a success envelope.

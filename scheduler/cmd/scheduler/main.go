@@ -133,7 +133,10 @@ func main() {
 	rec := reconciler.NewReconciler(templateStore, templateStore, repo, igClient, cfg.ReconcileInterval.Duration, clk, cfg.PodsPerNode, logger, schedulerMetrics)
 
 	// Create HTTP server
-	httpServer := httpserver.NewServer(cfg, repo, templateStore, templateStore, authValidator, internalAuthGen, rec, logger, obsProvider)
+	httpServer, err := httpserver.NewServer(cfg, repo, templateStore, templateStore, authValidator, internalAuthGen, rec, logger, obsProvider)
+	if err != nil {
+		logger.Fatal("Failed to create scheduler HTTP server", zap.Error(err))
+	}
 
 	// Start template idle listener
 	if cfg.DatabaseURL != "" {

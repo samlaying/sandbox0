@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
 	"github.com/sandbox0-ai/infra/pkg/internalauth"
+	"github.com/sandbox0-ai/infra/pkg/license"
 	"github.com/sandbox0-ai/infra/pkg/observability"
 	httpobs "github.com/sandbox0-ai/infra/pkg/observability/http"
 	"github.com/sandbox0-ai/infra/pkg/proxy"
@@ -33,6 +35,7 @@ type Server struct {
 	authValidator   *internalauth.Validator
 	internalAuthGen *internalauth.Generator
 	reconciler      Reconciler
+	licenseChecker  *license.Checker
 	logger          *zap.Logger
 	obsProvider     *observability.Provider
 
@@ -62,7 +65,15 @@ func NewServer(
 	reconciler Reconciler,
 	logger *zap.Logger,
 	obsProvider *observability.Provider,
-) *Server {
+) (*Server, error) {
+	licenseChecker, err := license.LoadFromFile(cfg.LicenseFile)
+	if err != nil {
+		return nil, fmt.Errorf("load enterprise license for scheduler: %w", err)
+	}
+	if !licenseChecker.HasFeature(license.FeatureMultiCluster) {
+		return nil, fmt.Errorf("enterprise license missing required feature: %s", license.FeatureMultiCluster)
+	}
+
 	// Set gin mode
 	gin.SetMode(gin.ReleaseMode)
 
@@ -83,6 +94,7 @@ func NewServer(
 		authValidator:          authValidator,
 		internalAuthGen:        internalAuthGen,
 		reconciler:             reconciler,
+		licenseChecker:         licenseChecker,
 		logger:                 logger,
 		obsProvider:            obsProvider,
 		internalGatewayProxies: make(map[string]*proxy.Router),
@@ -98,7 +110,7 @@ func NewServer(
 
 	server.setupRoutes()
 
-	return server
+	return server, nil
 }
 
 // setupRoutes configures all HTTP routes
@@ -113,6 +125,8 @@ func (s *Server) setupRoutes() {
 	// API v1 routes
 	v1 := s.router.Group("/api/v1")
 	{
+		v1.Use(s.requireMultiClusterFeature())
+
 		// Apply internal auth to all v1 routes (requests come from edge-gateway)
 		v1.Use(s.authMiddleware())
 
@@ -280,6 +294,22 @@ func requestLogger(logger *zap.Logger) gin.HandlerFunc {
 	}
 }
 
+func (s *Server) requireMultiClusterFeature() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s.licenseChecker != nil && s.licenseChecker.HasFeature(license.FeatureMultiCluster) {
+			c.Next()
+			return
+		}
+
+		spec.JSONError(
+			c,
+			http.StatusForbidden,
+			spec.CodeNotLicensed,
+			fmt.Sprintf("feature %q is not licensed", license.FeatureMultiCluster),
+		)
+	}
+}
+
 // authMiddleware validates internal authentication tokens
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -288,7 +318,7 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		if token == "" {
 			// Try Authorization header as fallback
 			authHeader := c.GetHeader("Authorization")
-			if authHeader != "" && len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			if authHeader != "" && len(authHeader) > 7 && strings.HasPrefix(authHeader, "Bearer ") {
 				token = authHeader[7:]
 			}
 		}

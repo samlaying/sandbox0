@@ -21,6 +21,8 @@ type SchedulerConfig struct {
 
 	// Database configuration
 	DatabaseURL string `yaml:"database_url" json:"-"`
+	// License file path used to unlock enterprise features.
+	LicenseFile string `yaml:"license_file" json:"-"`
 
 	// Reconciler configuration
 	// +optional

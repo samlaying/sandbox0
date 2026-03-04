@@ -41,6 +41,10 @@ type EdgeGatewayConfig struct {
 	SchedulerEnabled bool `yaml:"scheduler_enabled" json:"schedulerEnabled"`
 	// +optional
 	SchedulerURL string `yaml:"scheduler_url" json:"schedulerUrl"`
+	// License file path used to unlock enterprise features.
+	// Required when scheduler_enabled is true.
+	// +optional
+	LicenseFile string `yaml:"license_file" json:"-"`
 
 	// Internal Authentication
 	// +optional
