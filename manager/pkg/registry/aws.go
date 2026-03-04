@@ -97,10 +97,10 @@ func (p *awsProvider) GetPushCredentials(ctx context.Context, teamID string) (*C
 	}
 
 	return &Credential{
-		Provider:  "aws",
-		Registry:  registry,
-		Username:  parts[0],
-		Password:  parts[1],
-		ExpiresAt: expiresAt,
+		Provider:     "aws",
+		PushRegistry: registry,
+		Username:     parts[0],
+		Password:     parts[1],
+		ExpiresAt:    timePtr(expiresAt),
 	}, nil
 }

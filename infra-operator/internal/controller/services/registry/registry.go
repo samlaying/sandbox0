@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	infrav1alpha1 "github.com/sandbox0-ai/infra/infra-operator/api/v1alpha1"
 	"github.com/sandbox0-ai/infra/infra-operator/internal/controller/pkg/common"
@@ -56,7 +57,8 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 // ResolvedRegistryConfig defines resolved registry settings for services.
 type ResolvedRegistryConfig struct {
 	Provider         infrav1alpha1.RegistryProvider
-	Registry         string
+	PushRegistry     string
+	PullRegistry     string
 	SourceSecretName string
 	SourceSecretKey  string
 	TargetSecretName string
@@ -89,10 +91,12 @@ func ResolveRegistryConfig(infra *infrav1alpha1.Sandbox0Infra) *ResolvedRegistry
 		if !builtin.Enabled {
 			return nil
 		}
-		registryHost := builtinRegistryHost(infra, builtin.Port)
+		pushRegistry := builtinPushRegistry(infra, builtin)
+		pullRegistry := builtinPullRegistry(infra, builtin.Port)
 		return &ResolvedRegistryConfig{
 			Provider:         provider,
-			Registry:         registryHost,
+			PushRegistry:     pushRegistry,
+			PullRegistry:     pullRegistry,
 			SourceSecretName: fmt.Sprintf("%s-%s", infra.Name, registryPullSecretSuffix),
 			SourceSecretKey:  ".dockerconfigjson",
 			TargetSecretName: targetSecretName,
@@ -187,8 +191,11 @@ func (r *Reconciler) validateExternalRegistry(ctx context.Context, infra *infrav
 	if resolved == nil {
 		return nil
 	}
-	if resolved.Registry == "" {
-		return fmt.Errorf("registry endpoint is required")
+	if resolved.PushRegistry == "" {
+		return fmt.Errorf("registry push endpoint is required")
+	}
+	if resolved.PullRegistry == "" {
+		return fmt.Errorf("registry pull endpoint is required")
 	}
 	if resolved.SourceSecretName == "" {
 		return fmt.Errorf("registry pull secret name is required")
@@ -235,6 +242,12 @@ func (r *Reconciler) reconcileBuiltinRegistry(ctx context.Context, infra *infrav
 
 	if err := r.reconcileRegistryService(ctx, infra, builtin); err != nil {
 		return err
+	}
+
+	if builtin.Ingress != nil && builtin.Ingress.Enabled {
+		if err := r.Resources.ReconcileIngress(ctx, infra, fmt.Sprintf("%s-registry", infra.Name), common.ResolveServicePort(builtin.Service, builtin.Port), builtin.Ingress); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -346,8 +359,8 @@ func (r *Reconciler) reconcileRegistryAuthSecret(ctx context.Context, infra *inf
 
 func (r *Reconciler) reconcileRegistryPullSecret(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, builtin infrav1alpha1.BuiltinRegistryConfig, username, password string) error {
 	secretName := fmt.Sprintf("%s-%s", infra.Name, registryPullSecretSuffix)
-	registryHost := builtinRegistryHost(infra, builtin.Port)
-	dockerConfig, err := buildDockerConfigJSON(registryHost, username, password)
+	pullRegistry := builtinPullRegistry(infra, builtin.Port)
+	dockerConfig, err := buildDockerConfigJSON(pullRegistry, username, password)
 	if err != nil {
 		return err
 	}
@@ -521,6 +534,8 @@ func resolveBuiltinRegistryConfig(infra *infrav1alpha1.Sandbox0Infra) infrav1alp
 	cfg.Enabled = builtin.Enabled
 	cfg.Persistence = builtin.Persistence
 	cfg.Service = builtin.Service
+	cfg.PushEndpoint = builtin.PushEndpoint
+	cfg.Ingress = builtin.Ingress
 	cfg.CredentialsSecret = builtin.CredentialsSecret
 	if builtin.Image != "" {
 		cfg.Image = builtin.Image
@@ -588,7 +603,17 @@ func (r *Reconciler) resolveRegistryCredentials(ctx context.Context, infra *infr
 	return username, password, nil
 }
 
-func builtinRegistryHost(infra *infrav1alpha1.Sandbox0Infra, port int32) string {
+func builtinPushRegistry(infra *infrav1alpha1.Sandbox0Infra, builtin infrav1alpha1.BuiltinRegistryConfig) string {
+	if builtin.PushEndpoint != "" {
+		return normalizeRegistryHost(builtin.PushEndpoint)
+	}
+	if builtin.Ingress != nil && builtin.Ingress.Enabled && builtin.Ingress.Host != "" {
+		return normalizeRegistryHost(builtin.Ingress.Host)
+	}
+	return builtinPullRegistry(infra, builtin.Port)
+}
+
+func builtinPullRegistry(infra *infrav1alpha1.Sandbox0Infra, port int32) string {
 	return fmt.Sprintf("%s-registry.%s.svc:%d", infra.Name, infra.Namespace, port)
 }
 
@@ -647,11 +672,20 @@ func resolveExternalRegistry(provider infrav1alpha1.RegistryProvider, cfg interf
 	}
 	return &ResolvedRegistryConfig{
 		Provider:         provider,
-		Registry:         resolved.Registry,
+		PushRegistry:     resolved.Registry,
+		PullRegistry:     resolved.Registry,
 		SourceSecretName: resolved.PullSecret.Name,
 		SourceSecretKey:  secretKey,
 		TargetSecretName: targetSecretName,
 	}
+}
+
+func normalizeRegistryHost(raw string) string {
+	value := raw
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimPrefix(value, "http://")
+	return value
 }
 
 func buildHtpasswd(username, password string) (string, error) {

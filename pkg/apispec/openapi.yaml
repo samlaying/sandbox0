@@ -2118,7 +2118,7 @@ components:
       properties:
         provider:
           type: string
-        registry:
+        pushRegistry:
           type: string
         username:
           type: string
@@ -2127,7 +2127,7 @@ components:
         expiresAt:
           type: string
           format: date-time
-      required: [provider, registry, username, password]
+      required: [provider, pushRegistry, username, password]
     SuccessDeletedResponse:
       allOf:
         - $ref: "#/components/schemas/SuccessEnvelope"

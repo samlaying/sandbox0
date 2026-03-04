@@ -816,11 +816,11 @@ type RegisterRequest struct {
 
 // RegistryCredentials defines model for RegistryCredentials.
 type RegistryCredentials struct {
-	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
-	Password  string     `json:"password"`
-	Provider  string     `json:"provider"`
-	Registry  string     `json:"registry"`
-	Username  string     `json:"username"`
+	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
+	Password     string     `json:"password"`
+	Provider     string     `json:"provider"`
+	PushRegistry string     `json:"pushRegistry"`
+	Username     string     `json:"username"`
 }
 
 // ResizeContextRequest defines model for ResizeContextRequest.

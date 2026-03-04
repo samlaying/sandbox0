@@ -62,10 +62,10 @@ func (p *azureProvider) GetPushCredentials(ctx context.Context, teamID string) (
 	}
 
 	return &Credential{
-		Provider:  "azure",
-		Registry:  registry,
-		Username:  "00000000-0000-0000-0000-000000000000",
-		Password:  token.Token,
-		ExpiresAt: token.ExpiresOn,
+		Provider:     "azure",
+		PushRegistry: registry,
+		Username:     "00000000-0000-0000-0000-000000000000",
+		Password:     token.Token,
+		ExpiresAt:    timePtr(token.ExpiresOn),
 	}, nil
 }

@@ -53,6 +53,16 @@ spec:
     internalAuthPublicKeySecret:
       name: control-plane-public-key
       key: public.key
+  registry:
+    # Builtin registry defaults to NodePort for easy kind debugging.
+    provider: builtin
+    builtin:
+      enabled: true
+      service:
+        type: NodePort
+        port: 30500
+      # For local kind debug, s0 CLI can push via this endpoint.
+      pushEndpoint: 127.0.0.1:30500
   cluster:
     id: cluster-001
     name: Production US East 1

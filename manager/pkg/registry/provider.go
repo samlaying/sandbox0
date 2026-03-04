@@ -14,11 +14,11 @@ import (
 
 // Credential contains registry login credentials.
 type Credential struct {
-	Provider  string    `json:"provider"`
-	Registry  string    `json:"registry"`
-	Username  string    `json:"username"`
-	Password  string    `json:"password"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Provider     string     `json:"provider"`
+	PushRegistry string     `json:"pushRegistry"`
+	Username     string     `json:"username"`
+	Password     string     `json:"password"`
+	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
 }
 
 // Provider returns short-lived registry credentials.
@@ -73,7 +73,7 @@ func NewProvider(cfg config.RegistryConfig, secretLister corelisters.SecretListe
 		}
 		return &builtinProvider{
 			cfg:      *cfg.Builtin,
-			registry: normalizeRegistryHost(cfg.Registry),
+			registry: normalizeRegistryHost(cfg.PushRegistry),
 			secrets:  secretReader,
 		}, nil
 	default:
@@ -130,6 +130,13 @@ func normalizeRegistryHost(raw string) string {
 	return value
 }
 
+func timePtr(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 // builtinProvider provides credentials for the builtin registry.
 type builtinProvider struct {
 	cfg      config.RegistryBuiltinConfig
@@ -138,6 +145,9 @@ type builtinProvider struct {
 }
 
 func (p *builtinProvider) GetPushCredentials(ctx context.Context, teamID string) (*Credential, error) {
+	if strings.TrimSpace(p.registry) == "" {
+		return nil, fmt.Errorf("builtin push registry is required")
+	}
 	username, err := p.secrets.read(ctx, p.cfg.AuthSecretName, p.cfg.UsernameKey)
 	if err != nil {
 		return nil, fmt.Errorf("read username: %w", err)
@@ -146,12 +156,10 @@ func (p *builtinProvider) GetPushCredentials(ctx context.Context, teamID string)
 	if err != nil {
 		return nil, fmt.Errorf("read password: %w", err)
 	}
-	// Builtin registry credentials don't expire, set a far future expiration
 	return &Credential{
-		Provider:  "builtin",
-		Registry:  p.registry,
-		Username:  username,
-		Password:  password,
-		ExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+		Provider:     "builtin",
+		PushRegistry: p.registry,
+		Username:     username,
+		Password:     password,
 	}, nil
 }

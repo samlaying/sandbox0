@@ -458,6 +458,15 @@ type BuiltinRegistryConfig struct {
 	// +optional
 	Service *ServiceNetworkConfig `json:"service,omitempty"`
 
+	// PushEndpoint overrides the external registry endpoint used for image push credentials.
+	// Use host[:port] format, without scheme.
+	// +optional
+	PushEndpoint string `json:"pushEndpoint,omitempty"`
+
+	// Ingress configures ingress settings for external registry access.
+	// +optional
+	Ingress *IngressConfig `json:"ingress,omitempty"`
+
 	// CredentialsSecret references the secret containing registry credentials.
 	// If omitted, the operator will generate a secret named "<infra-name>-registry-credentials".
 	// +optional

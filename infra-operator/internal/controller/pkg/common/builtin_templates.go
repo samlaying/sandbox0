@@ -119,7 +119,6 @@ func EnsureBuiltinTemplates(ctx context.Context, infra *infrav1alpha1.Sandbox0In
 			Network: &templatev1alpha1.TplSandboxNetworkPolicy{
 				Mode: templatev1alpha1.NetworkModeAllowAll,
 			},
-			Public: true,
 		}
 
 		tpl := &template.Template{

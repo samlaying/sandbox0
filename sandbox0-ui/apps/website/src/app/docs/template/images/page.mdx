@@ -148,9 +148,6 @@ spec:
     pool:
         minIdle: 2
         maxIdle: 10
-    lifecycle:
-        defaultTTL: 600
-        maxTTL: 3600
 EOF
 
 s0 template create --id my-app --spec-file template.yaml
@@ -221,6 +218,6 @@ For self-hosted deployments, the `builtin` registry provider automatically provi
     href="/docs/template/configuration"
     cta="Learn More"
   >
-    Advanced template settings and lifecycle options
+    Advanced template settings
   </LinkCard>
 </CardGrid>

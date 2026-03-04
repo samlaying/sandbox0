@@ -276,11 +276,12 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	registryConfig := registry.ResolveRegistryConfig(infra)
 	if registryConfig != nil {
 		cfg.Registry.Provider = string(registryConfig.Provider)
-		cfg.Registry.Registry = registryConfig.Registry
+		cfg.Registry.PushRegistry = registryConfig.PushRegistry
+		cfg.Registry.PullRegistry = registryConfig.PullRegistry
 		cfg.Registry.PullSecretName = registryConfig.TargetSecretName
 		cfg.Registry.Namespace = infra.Namespace
 		if registryConfig.SourceSecretName != "" {
-			cfg.Registry.CredentialsFile = registryCredentialsPath
+			cfg.Registry.PullCredentialsFile = registryCredentialsPath
 		}
 		// For builtin provider, configure auth secret for push credentials
 		if registryConfig.Provider == infrav1alpha1.RegistryProviderBuiltin {

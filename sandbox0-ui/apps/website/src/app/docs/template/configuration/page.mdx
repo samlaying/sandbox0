@@ -2,7 +2,7 @@
 
 A complete reference for all fields in a template spec. Pass the spec as the `spec` field when creating or updating a template.
 
-## Full Spec Example
+## Spec Example
 
 ```yaml
 spec:
@@ -13,8 +13,7 @@ spec:
         - data-science
 
     mainContainer:
-        image: registry.sandbox0.io/my-ds-env:v2.0
-        imagePullPolicy: IfNotPresent
+        image: registry.sandbox0.ai/my-ds-env:v2.0
         resources:
             cpu: "2"
             memory: 4Gi
@@ -29,14 +28,6 @@ spec:
     pool:
         minIdle: 3
         maxIdle: 10
-
-    lifecycle:
-        defaultTTL: 600
-        maxTTL: 7200
-        idleTimeout: 300
-        preStop:
-            command: ["/bin/sh", "-c", "cleanup.sh"]
-            timeoutSeconds: 30
 
     network:
         mode: block-all
@@ -63,7 +54,7 @@ The main sandbox container. Required.
 | `env` | array | `[]` | Per-container environment variables. Each entry has `name` and `value`. |
 
 <Callout variant="info">
-`resources.cpu` and `resources.memory` are both limits and requests — the sandbox pod is guaranteed these resources on its node.
+`mainContainer.image`, `mainContainer.resources.cpu`, and `mainContainer.resources.memory` are strictly validated by the API when creating or updating templates.
 </Callout>
 
 ---
@@ -89,54 +80,30 @@ Warm pool configuration. See [Warm Pool](/docs/template/pool) for a detailed gui
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `minIdle` | integer | — | Minimum idle pods to pre-warm. Required. |
-| `maxIdle` | integer | — | Maximum idle pods allowed. Required. |
-
----
-
-## `lifecycle`
-
-Default lifecycle behavior for sandboxes created from this template. All values can be overridden at sandbox creation time.
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `defaultTTL` | integer (seconds) | — | Default soft TTL. When a sandbox's TTL expires, it is automatically paused. |
-| `maxTTL` | integer (seconds) | — | Maximum TTL allowed. Sandbox requests with `hard_ttl` above this value are rejected. |
-| `idleTimeout` | integer (seconds) | — | Automatically pause a sandbox after it has been idle for this duration. |
-| `preStop.command` | string[] | — | Shell command to run before a sandbox pod is terminated. Useful for flushing caches or saving state. |
-| `preStop.timeoutSeconds` | integer | — | Maximum time to wait for the preStop command to complete. |
-
-```yaml
-lifecycle:
-    defaultTTL: 600        # auto-pause after 10 min of inactivity
-    maxTTL: 7200           # hard limit: 2 hours maximum
-    idleTimeout: 180       # pause if no activity for 3 min
-    preStop:
-        command: ["/bin/sh", "-c", "/app/scripts/cleanup.sh"]
-        timeoutSeconds: 30
-```
+| `minIdle` | integer | — | Minimum idle pods to pre-warm. Required (`>= 0`). |
+| `maxIdle` | integer | — | Maximum idle pods allowed. Required (`>= minIdle`). |
 
 ---
 
 ## `network`
 
-Default network policy applied to sandboxes created from this template. Users can override it at sandbox creation time or update it at runtime.
+Template-level default network policy. If `network` is provided, `mode` is required and must be `allow-all` or `block-all`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `mode` | string | `allow-all` | `allow-all` permits all outbound traffic. `block-all` denies all outbound traffic except what is explicitly allowed in `egress`. |
+| `mode` | string | — | Required when `network` is set. Allowed values: `allow-all`, `block-all`. |
 | `egress.allowedDomains` | string[] | — | Wildcard-supported domain allowlist (e.g., `*.github.com`). Only used when `mode` is `block-all`. |
-| `egress.deniedDomains` | string[] | — | Domain blocklist. Takes precedence over `allowedDomains`. |
+| `egress.deniedDomains` | string[] | — | Domain blocklist. |
 | `egress.allowedCidrs` | string[] | — | CIDR allowlist (e.g., `10.0.0.0/8`). |
 | `egress.deniedCidrs` | string[] | — | CIDR blocklist. |
-| `egress.allowedPorts` | array | — | Port/protocol allowlist. Each entry: `{port: 443, protocol: TCP}`. |
+| `egress.allowedPorts` | array | — | Port/protocol allowlist. `port` must be `1..65535`. `protocol` is optional but must be `tcp` or `udp` if set. Supports optional `endPort` range. |
 | `egress.deniedPorts` | array | — | Port/protocol blocklist. |
 
 See [Network Policy](/docs/sandbox/network) for detailed egress rule semantics and runtime update instructions.
 
 ---
 
-## `displayName`, `description`, `tags`
+## `displayName` `description` `tags`
 
 Metadata fields for human-readable identification. Not used by the runtime.
 
@@ -163,11 +130,9 @@ The following fields require a system-level token. They are not available to reg
 | `mainContainer.imagePullPolicy` | Pull policy override for the main container image. Only system administrators/system tokens can set this field. |
 | `runtimeClassName` | Kubernetes runtime class (e.g., `gvisor` for gVisor isolation). |
 | `clusterId` | Pin the template to a specific cluster in a multi-cluster deployment. |
-| `public` | Set to `true` to make the template visible to all teams (builtin-style). |
-| `allowedTeams` | Explicit list of team IDs allowed to use this template. |
 
 <Callout variant="warning">
-Attempting to set privileged fields with a regular API key returns a `403 Forbidden` error. Contact your platform administrator if you need access to these fields.
+Attempting to set privileged fields without a system identity returns `403 Forbidden`. Contact your platform administrator if you need access to these fields.
 </Callout>
 
 ---
@@ -184,16 +149,16 @@ Attempting to set privileged fields with a regular API key returns a `403 Forbid
   </LinkCard>
 
   <LinkCard
-    title="Template Spec"
-    href="/docs/template/spec"
+    title="Template"
+    href="/docs/template"
     cta="Learn More"
   >
-    Deep dive into SandboxTemplateSpec configuration options
+    Template API workflows and end-to-end examples
   </LinkCard>
 
   <LinkCard
     title="Images & Registry"
-    href="/docs/template/image"
+    href="/docs/template/images"
     cta="Learn More"
   >
     Configure container images and registry credentials

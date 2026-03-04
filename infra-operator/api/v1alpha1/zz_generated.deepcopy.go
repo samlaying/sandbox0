@@ -170,6 +170,11 @@ func (in *BuiltinRegistryConfig) DeepCopyInto(out *BuiltinRegistryConfig) {
 		*out = new(ServiceNetworkConfig)
 		**out = **in
 	}
+	if in.Ingress != nil {
+		in, out := &in.Ingress, &out.Ingress
+		*out = new(IngressConfig)
+		**out = **in
+	}
 	if in.CredentialsSecret != nil {
 		in, out := &in.CredentialsSecret, &out.CredentialsSecret
 		*out = new(RegistryCredentialsSecret)

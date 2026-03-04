@@ -1,6 +1,6 @@
 # Template
 
-A Template is the blueprint for creating Sandboxes. It defines the container image, resource limits, warm pool size, default network policy, and lifecycle behavior. Every Sandbox is created from a Template.
+A Template is the blueprint for creating Sandboxes. It defines the container image, resource limits, warm pool size, and default network policy. Every Sandbox is created from a Template.
 
 ## Template Types
 
@@ -11,7 +11,7 @@ Sandbox0 has two categories of templates:
 | **Builtin** | System-provided templates managed by the platform operator | Public — visible to all teams |
 | **Custom** | Templates created and owned by your team | Private — visible to your team only (configurable) |
 
-Builtin templates use curated public images and are ready to use immediately. Custom templates let you bring your own image, fine-tune resources, and set lifecycle defaults tailored to your workload.
+Builtin templates use curated public images and are ready to use immediately. Custom templates let you bring your own image, and fine-tune resources.
 
 ---
 
@@ -46,9 +46,6 @@ spec:
     pool:
         minIdle: 2
         maxIdle: 10
-    lifecycle:
-        defaultTTL: 600
-        maxTTL: 3600
 ```
 
 <Tabs

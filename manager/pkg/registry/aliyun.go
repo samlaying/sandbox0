@@ -73,10 +73,10 @@ func (p *aliyunProvider) GetPushCredentials(ctx context.Context, teamID string) 
 	}
 
 	return &Credential{
-		Provider:  "aliyun",
-		Registry:  registry,
-		Username:  response.TempUsername,
-		Password:  response.AuthorizationToken,
-		ExpiresAt: expiresAt,
+		Provider:     "aliyun",
+		PushRegistry: registry,
+		Username:     response.TempUsername,
+		Password:     response.AuthorizationToken,
+		ExpiresAt:    timePtr(expiresAt),
 	}, nil
 }

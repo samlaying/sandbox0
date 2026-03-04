@@ -42,7 +42,6 @@ build: manifests proto apispec
 		if [ "$$s" = "procd" ]; then \
 			dir="manager"; bin="procd"; src="./manager/cmd/procd"; \
 		elif [ "$$s" = "infra-operator" ]; then \
-			$(MAKE) operator-manifests; \
 			dir="infra-operator"; bin="infra-operator"; src="./infra-operator/cmd/infra-operator"; \
 		elif [ "$$s" = "k8s-plugin" ]; then \
 			dir="k8s-plugin"; bin="k8s-plugin"; src="./k8s-plugin"; \
@@ -248,17 +247,16 @@ install-protoc: $(LOCALBIN)
 	fi
 
 manifests: controller-gen
+	@printf "$(CYAN)Generating manager deepcopy code...$(RESET)\n"
+	@$(CONTROLLER_GEN) object paths="./manager/pkg/apis/..."
 	@printf "$(CYAN)Generating manager CRDs...$(RESET)\n"
 	@$(CONTROLLER_GEN) crd paths="./manager/pkg/apis/..." output:crd:artifacts:config=infra-operator/chart/crds/
-
-.PHONY: operator-manifests
-operator-manifests: controller-gen
 	@printf "$(CYAN)Generating infra-operator manifests...$(RESET)\n"
 	@$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook object paths="./infra-operator/..." output:crd:artifacts:config=infra-operator/chart/crds output:rbac:artifacts:config=infra-operator/chart/crds output:webhook:artifacts:config=infra-operator/chart/crds
 	@mv infra-operator/chart/crds/role.yaml infra-operator/chart/files/clusterrole.yaml
 
 .PHONY: operator-install
-operator-install: operator-manifests
+operator-install: manifests
 	kubectl apply -f infra-operator/chart/crds/
 
 .PHONY: operator-run

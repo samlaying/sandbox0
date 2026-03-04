@@ -49,15 +49,8 @@ type SandboxTemplateSpec struct {
 	// Pool strategy
 	Pool PoolStrategy `json:"pool"`
 
-	// Lifecycle management
-	Lifecycle *LifecyclePolicy `json:"lifecycle,omitempty"`
-
 	// Environment variables (global, shared by all containers)
 	EnvVars map[string]string `json:"envVars,omitempty"`
-
-	// Access control
-	Public       bool     `json:"public,omitempty"`
-	AllowedTeams []string `json:"allowedTeams,omitempty"`
 
 	// Environment configuration
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
@@ -215,21 +208,6 @@ type NetworkEgressPolicy struct {
 	DeniedDomains  []string   `json:"deniedDomains,omitempty"`
 	AllowedPorts   []PortSpec `json:"allowedPorts,omitempty"`
 	DeniedPorts    []PortSpec `json:"deniedPorts,omitempty"`
-}
-
-// LifecyclePolicy defines lifecycle policy
-type LifecyclePolicy struct {
-	DefaultTTL  int32 `json:"defaultTTL,omitempty"`  // Default TTL in seconds
-	MaxTTL      int32 `json:"maxTTL,omitempty"`      // Maximum TTL in seconds
-	IdleTimeout int32 `json:"idleTimeout,omitempty"` // Idle timeout in seconds
-	// use pure k8s hooks
-	PreStop *PreStopHook `json:"preStop,omitempty"` // PreStop hook
-}
-
-// PreStopHook defines pre-stop hook
-type PreStopHook struct {
-	Command        []string `json:"command,omitempty"`
-	TimeoutSeconds int32    `json:"timeoutSeconds,omitempty"`
 }
 
 // SandboxTemplateStatus defines the observed state of SandboxTemplate

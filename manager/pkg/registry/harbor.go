@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/sandbox0-ai/infra/infra-operator/api/config"
 )
@@ -40,10 +39,9 @@ func (p *harborProvider) GetPushCredentials(ctx context.Context, teamID string) 
 	}
 	// Harbor credentials are static credentials sourced from Kubernetes secret.
 	return &Credential{
-		Provider:  "harbor",
-		Registry:  registry,
-		Username:  username,
-		Password:  password,
-		ExpiresAt: time.Now().Add(365 * 24 * time.Hour),
+		Provider:     "harbor",
+		PushRegistry: registry,
+		Username:     username,
+		Password:     password,
 	}, nil
 }

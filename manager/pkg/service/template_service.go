@@ -218,14 +218,14 @@ func (s *TemplateService) ensureNamespace(ctx context.Context, namespace string)
 }
 
 func (s *TemplateService) ensureRegistryPullSecret(ctx context.Context, namespace string) error {
-	if s.registry.CredentialsFile == "" || s.registry.PullSecretName == "" || s.registry.Registry == "" {
+	if s.registry.PullCredentialsFile == "" || s.registry.PullSecretName == "" || s.registry.PullRegistry == "" {
 		return nil
 	}
 	if s.k8sClient == nil {
 		return fmt.Errorf("k8s client is required to ensure registry pull secret")
 	}
 
-	creds, err := os.ReadFile(s.registry.CredentialsFile)
+	creds, err := os.ReadFile(s.registry.PullCredentialsFile)
 	if err != nil {
 		return fmt.Errorf("read registry credentials: %w", err)
 	}

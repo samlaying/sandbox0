@@ -479,13 +479,6 @@ func TestValidateTemplateSpec_StrictValidation(t *testing.T) {
 			wantErr: "spec.mainContainer.resources.cpu must be > 0",
 		},
 		{
-			name: "reject invalid ttl relation",
-			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
-				s.Lifecycle = &v1alpha1.LifecyclePolicy{DefaultTTL: 600, MaxTTL: 300}
-			},
-			wantErr: "spec.lifecycle.maxTTL must be >= spec.lifecycle.defaultTTL",
-		},
-		{
 			name: "reject invalid network mode",
 			mutate: func(s *v1alpha1.SandboxTemplateSpec) {
 				s.Network = &v1alpha1.TplSandboxNetworkPolicy{

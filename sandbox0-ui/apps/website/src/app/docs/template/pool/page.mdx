@@ -99,48 +99,6 @@ During the transition, the pool may temporarily drop below `minIdle`. Plan updat
 
 ---
 
-## Pool Status
-
-The template status exposes real-time pool metrics:
-
-| Field | Description |
-|-------|-------------|
-| `status.idleCount` | Current number of idle pods ready to be claimed |
-| `status.activeCount` | Number of sandboxes currently running from this template |
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `tpl, err := client.GetTemplate(ctx, "my-python-env")
-if err != nil {
-    log.Fatal(err)
-}
-status, ok := tpl.Status.Get()
-if !ok {
-    log.Fatal("template status unavailable")
-}
-idleCount, _ := status.IdleCount.Get()
-activeCount, _ := status.ActiveCount.Get()
-fmt.Printf("Idle: %d  Active: %d\\n", idleCount, activeCount)`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `s0 template get my-python-env
-
-# Example output:
-# template_id:   my-python-env
-# scope:         team
-# idle_count:    3
-# active_count:  7`
-    }
-  ]}
-/>
-
----
-
 ## Next Steps
 
 <CardGrid>
@@ -149,7 +107,7 @@ fmt.Printf("Idle: %d  Active: %d\\n", idleCount, activeCount)`
     href="/docs/template/configuration"
     cta="Learn More"
   >
-    Advanced template settings and lifecycle options
+    Advanced template settings
   </LinkCard>
 
   <LinkCard

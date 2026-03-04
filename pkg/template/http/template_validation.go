@@ -32,13 +32,6 @@ func validateTemplateSpecForClaims(spec v1alpha1.SandboxTemplateSpec, claims *in
 	if spec.ClusterId != nil {
 		return fmt.Errorf("spec.clusterId requires system identity")
 	}
-	if spec.Public {
-		return fmt.Errorf("spec.public=true requires system identity")
-	}
-	if len(spec.AllowedTeams) > 0 {
-		return fmt.Errorf("spec.allowedTeams requires system identity")
-	}
-
 	return nil
 }
 
@@ -61,21 +54,6 @@ func validateTemplateSpec(spec v1alpha1.SandboxTemplateSpec) error {
 	}
 	if spec.Pool.MaxIdle < spec.Pool.MinIdle {
 		return fmt.Errorf("spec.pool.maxIdle must be >= spec.pool.minIdle")
-	}
-
-	if spec.Lifecycle != nil {
-		if spec.Lifecycle.DefaultTTL < 0 {
-			return fmt.Errorf("spec.lifecycle.defaultTTL must be >= 0")
-		}
-		if spec.Lifecycle.MaxTTL < 0 {
-			return fmt.Errorf("spec.lifecycle.maxTTL must be >= 0")
-		}
-		if spec.Lifecycle.IdleTimeout < 0 {
-			return fmt.Errorf("spec.lifecycle.idleTimeout must be >= 0")
-		}
-		if spec.Lifecycle.DefaultTTL > 0 && spec.Lifecycle.MaxTTL > 0 && spec.Lifecycle.MaxTTL < spec.Lifecycle.DefaultTTL {
-			return fmt.Errorf("spec.lifecycle.maxTTL must be >= spec.lifecycle.defaultTTL")
-		}
 	}
 
 	if spec.Network != nil {

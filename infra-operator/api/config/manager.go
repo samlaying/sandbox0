@@ -202,17 +202,21 @@ type RegistryConfig struct {
 	// +optional
 	Provider string `yaml:"provider" json:"-"`
 
-	// Registry is the registry hostname (host:port).
+	// PushRegistry is the registry hostname (host:port) for external image push.
 	// +optional
-	Registry string `yaml:"registry" json:"-"`
+	PushRegistry string `yaml:"push_registry" json:"-"`
+
+	// PullRegistry is the registry hostname (host:port) for in-cluster image pull.
+	// +optional
+	PullRegistry string `yaml:"pull_registry" json:"-"`
 
 	// PullSecretName is the secret name to create in template namespaces.
 	// +optional
 	PullSecretName string `yaml:"pull_secret_name" json:"-"`
 
-	// CredentialsFile is the path to dockerconfigjson file.
+	// PullCredentialsFile is the path to dockerconfigjson file for pull secrets.
 	// +optional
-	CredentialsFile string `yaml:"credentials_file" json:"-"`
+	PullCredentialsFile string `yaml:"pull_credentials_file" json:"-"`
 
 	// Namespace is the namespace for registry secrets.
 	// +optional

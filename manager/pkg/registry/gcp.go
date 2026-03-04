@@ -40,10 +40,10 @@ func (p *gcpProvider) GetPushCredentials(ctx context.Context, teamID string) (*C
 	}
 
 	return &Credential{
-		Provider:  "gcp",
-		Registry:  registry,
-		Username:  "oauth2accesstoken",
-		Password:  token.AccessToken,
-		ExpiresAt: token.Expiry,
+		Provider:     "gcp",
+		PushRegistry: registry,
+		Username:     "oauth2accesstoken",
+		Password:     token.AccessToken,
+		ExpiresAt:    timePtr(token.Expiry),
 	}, nil
 }

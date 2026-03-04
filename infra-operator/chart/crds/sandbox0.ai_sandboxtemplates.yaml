@@ -39,10 +39,6 @@ spec:
           spec:
             description: SandboxTemplateSpec defines the desired state of SandboxTemplate
             properties:
-              allowedTeams:
-                items:
-                  type: string
-                type: array
               clusterId:
                 type: string
               description:
@@ -54,30 +50,6 @@ spec:
                 additionalProperties:
                   type: string
                 description: Environment variables (global, shared by all containers)
-                type: object
-              lifecycle:
-                description: Lifecycle management
-                properties:
-                  defaultTTL:
-                    format: int32
-                    type: integer
-                  idleTimeout:
-                    format: int32
-                    type: integer
-                  maxTTL:
-                    format: int32
-                    type: integer
-                  preStop:
-                    description: use pure k8s hooks
-                    properties:
-                      command:
-                        items:
-                          type: string
-                        type: array
-                      timeoutSeconds:
-                        format: int32
-                        type: integer
-                    type: object
                 type: object
               mainContainer:
                 description: MainContainer configuration (required)
@@ -450,9 +422,6 @@ spec:
                 - maxIdle
                 - minIdle
                 type: object
-              public:
-                description: Access control
-                type: boolean
               runtimeClassName:
                 description: Environment configuration
                 type: string

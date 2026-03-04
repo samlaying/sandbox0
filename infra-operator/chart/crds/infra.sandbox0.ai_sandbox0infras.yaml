@@ -586,6 +586,24 @@ spec:
                         default: registry:2.8.3
                         description: Image specifies the registry image.
                         type: string
+                      ingress:
+                        description: Ingress configures ingress settings for external
+                          registry access.
+                        properties:
+                          className:
+                            description: ClassName specifies the ingress class name
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables ingress
+                            type: boolean
+                          host:
+                            description: Host specifies the ingress host
+                            type: string
+                          tlsSecret:
+                            description: TLSSecret specifies the TLS secret name
+                            type: string
+                        type: object
                       persistence:
                         description: Persistence configures registry persistence.
                         properties:
@@ -611,6 +629,11 @@ spec:
                         description: Port specifies the registry port.
                         format: int32
                         type: integer
+                      pushEndpoint:
+                        description: |-
+                          PushEndpoint overrides the external registry endpoint used for image push credentials.
+                          Use host[:port] format, without scheme.
+                        type: string
                       service:
                         description: Service configures the registry service exposure.
                         properties:
