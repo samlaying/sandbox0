@@ -224,6 +224,8 @@ paths:
           schema:
             type: string
       responses:
+        "302":
+          description: Redirect to local CLI return_url with token query parameters when return_url is localhost
         "200":
           description: Tokens issued
           content:

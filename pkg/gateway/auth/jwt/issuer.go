@@ -2,7 +2,9 @@ package jwt
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -182,4 +184,10 @@ func GenerateRefreshTokenHash() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+// HashRefreshToken returns a deterministic hash for refresh token persistence/lookup.
+func HashRefreshToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

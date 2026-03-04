@@ -1,486 +1,115 @@
 # Core Concepts
 
-Understanding the core concepts of Sandbox0 will help you build effective AI Agent applications. This page covers the fundamental building blocks.
+This page explains Sandbox0 from an AI agent developer perspective: how to think about runtime state, isolation, and long-running workflows.
 
-## Sandbox
+## The Mental Model
 
-A **Sandbox** is an isolated execution environment where you can run code, manage files, and control network access. Each sandbox is created from a [Template](#template) and provides a secure, ephemeral workspace.
+Think in four building blocks:
 
-### Lifecycle States
+| Concept | What It Is | Why Agent Developers Care |
+|-------|-------------|---------------------------|
+| `Template` | The runtime blueprint (image, resources, defaults). | Defines your agent's execution environment and startup behavior. |
+| `Sandbox` | An isolated runtime instance created from a template. | The agent's working machine for running tools, commands, and sessions. |
+| `Context` | A process/session inside the sandbox (for example REPL-like or one-shot execution). | Controls whether state is preserved across turns or reset each run. |
+| `Volume` | Persistent storage decoupled from sandbox lifecycle. | Keeps knowledge, artifacts, and checkpoints across sandbox recreation. |
 
-Sandboxes progress through defined lifecycle states:
+The key idea is separation of concerns:
+- Use `Template` for environment consistency.
+- Use `Sandbox` for isolated execution.
+- Use `Context` for process-level interaction patterns.
+- Use `Volume` for durable memory.
 
-| Status | Description | Transitions |
-|--------|-------------|-------------|
-| `starting` | Sandbox is being initialized | → `running` or `failed` |
-| `running` | Sandbox is active and ready to use | → `paused`, `completed`, or `failed` |
-| `paused` | Sandbox is paused (resources preserved) | → `running` or `completed` |
-| `failed` | Sandbox encountered an error | → `completed` |
-| `completed` | Sandbox has finished execution | Terminal state |
+## Agent Runtime vs Agent Memory
 
-### Key Properties
+A common confusion is mixing compute state and durable state.
 
-| Property | Description |
-|----------|-------------|
-| `id` | Unique identifier (e.g., `sb_abc123`) |
-| `template_id` | Template used to create this sandbox |
-| `status` | Current lifecycle state |
-| `ttl` | Time-to-live in seconds |
-| `hard_ttl` | Maximum TTL (cannot be extended beyond this) |
-| `expires_at` | When the sandbox will be automatically terminated |
-
-### TTL Management
-
-- **TTL (Time-to-Live)**: Default lifetime of the sandbox
-- **Hard TTL**: Maximum lifetime that cannot be exceeded
-- **Refresh**: Extend the TTL up to the hard TTL limit
-- **Auto-resume**: Automatically resume a paused sandbox when accessed
+- Runtime state lives in a sandbox process and can disappear when sandbox is paused/deleted.
+- Durable state should be written to volumes or external systems.
+- If your agent must recover after failures or redeploys, treat sandbox runtime as ephemeral and volumes as the source of truth.
 
 <Callout variant="info">
-Sandboxes are designed for ephemeral workloads. For persistent data storage, use [Volumes](#volume).
+Design for restartability: assume any sandbox can be replaced, and your agent should still continue from persisted checkpoints.
 </Callout>
 
----
-
-## Context (Process Runtime)
-
-A **Context** represents a process running inside a sandbox. Sandbox0 supports two context types for different execution patterns.
-
-### Context Types
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| **REPL** | Read-Eval-Print Loop (interactive) | Python interpreter, Node.js REPL, language shells |
-| **Cmd** | One-shot command execution | Shell scripts, single commands, batch processing |
-
-### REPL Contexts
-
-REPL contexts maintain state across multiple inputs:
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `// Create a Python REPL context
-processType := sandbox0.REPL
-ctxResp, err := client.CreateContext(ctx, sandbox.ID, &sandbox0.CreateContextRequest{
-    Type: &processType,
-    REPL: &sandbox0.CreateREPLContextRequest{
-        Command: []string{"python3", "-i"},
-    },
-})
-
-// Send input and receive output
-input := "x = 1 + 2\\nprint(x)"
-output, err := client.ExecContext(ctx, sandbox.ID, ctxResp.ID, input)
-fmt.Println(output.Stdout) // Output: 3
-
-// State persists - x is still defined
-input = "print(x * 2)"
-output, err = client.ExecContext(ctx, sandbox.ID, ctxResp.ID, input)
-fmt.Println(output.Stdout) // Output: 6`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `# Create a Python REPL context
-context = client.create_context(
-    sandbox.id,
-    context_type="repl",
-    command=["python3", "-i"],
-)
-
-# Send input and receive output
-output = client.exec_context(sandbox.id, context.id, "x = 1 + 2\\nprint(x)")
-print(output.stdout)  # Output: 3
-
-# State persists
-output = client.exec_context(sandbox.id, context.id, "print(x * 2)")
-print(output.stdout)  # Output: 6`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `// Create a Python REPL context
-const context = await client.createContext(sandbox.id, {
-    type: 'repl',
-    command: ['python3', '-i'],
-});
-
-// Send input and receive output
-let output = await client.execContext(sandbox.id, context.id, 'x = 1 + 2\\nprint(x)');
-console.log(output.stdout); // Output: 3
-
-// State persists
-output = await client.execContext(sandbox.id, context.id, 'print(x * 2)');
-console.log(output.stdout); // Output: 6`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Create and interact with a REPL context
-s0 context create sb_abc123 --type repl --command "python3 -i"
-# Context ID: ctx_xyz789
-
-# Send input
-s0 context exec sb_abc123 ctx_xyz789 --input "x = 1 + 2; print(x)"
-# Output: 3
-
-# State persists
-s0 context exec sb_abc123 ctx_xyz789 --input "print(x * 2)"
-# Output: 6`
-    }
-  ]}
-/>
-
-### Cmd Contexts
-
-Cmd contexts execute a single command and complete:
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `// Create a command context
-processType := sandbox0.Cmd
-ctxResp, err := client.CreateContext(ctx, sandbox.ID, &sandbox0.CreateContextRequest{
-    Type: &processType,
-    Cmd: &sandbox0.CreateCMDContextRequest{
-        Command: []string{"/bin/sh", "-c", "echo 'Hello' && sleep 1 && echo 'World'"},
-    },
-})
-
-// Wait for completion
-status, err := client.GetContext(ctx, sandbox.ID, ctxResp.ID)
-fmt.Printf("Exit code: %d\\n", status.ExitCode)`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `# Create a command context
-context = client.create_context(
-    sandbox.id,
-    context_type="cmd",
-    command=["/bin/sh", "-c", "echo 'Hello' && sleep 1 && echo 'World'"],
-)
-
-# Wait for completion
-status = client.get_context(sandbox.id, context.id)
-print(f"Exit code: {status.exit_code}")`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `// Create a command context
-const context = await client.createContext(sandbox.id, {
-    type: 'cmd',
-    command: ['/bin/sh', '-c', "echo 'Hello' && sleep 1 && echo 'World'"],
-});
-
-// Wait for completion
-const status = await client.getContext(sandbox.id, context.id);
-console.log('Exit code:', status.exitCode);`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Execute a command
-s0 context create sb_abc123 --type cmd --command "/bin/sh -c 'echo Hello && sleep 1 && echo World'"`
-    }
-  ]}
-/>
-
-### WebSocket Streaming
-
-For real-time interaction, connect to a context via WebSocket:
-
-```
-wss://api.sandbox0.ai/api/v1/sandboxes/{sandbox_id}/contexts/{context_id}/ws
-```
-
-WebSocket message types:
-- **Input**: `{"type": "input", "data": "command\n"}`
-- **Output**: `{"type": "output", "source": "stdout", "data": "result\n"}`
-- **Resize**: `{"type": "resize", "rows": 24, "cols": 80}`
-- **Signal**: `{"type": "signal", "signal": "INT"}`
-
----
-
-## Template
-
-A **Template** defines the blueprint for creating sandboxes. It specifies the container image, resource requirements, pool configuration, and other settings.
-
-### Template Components
-
-| Component | Description |
-|-----------|-------------|
-| `mainContainer` | Primary container specification (image, resources, env) |
-| `sidecars` | Additional containers running alongside the main container |
-| `pool` | Pre-warmed sandbox pool configuration |
-| `lifecycle` | Startup probes and lifecycle hooks |
-| `network` | Default network policy |
-
-### Pool Configuration
-
-Templates support pool-based provisioning for fast cold starts:
-
-| Field | Description |
-|-------|-------------|
-| `minIdle` | Minimum number of pre-warmed sandboxes |
-| `maxIdle` | Maximum number of idle sandboxes |
-
-<Callout variant="success">
-Pre-warmed pools enable sub-200ms cold starts. When you claim a sandbox, it's immediately available from the pool.
-</Callout>
-
-### Template Visibility
-
-| Scope | Description |
-|-------|-------------|
-| `public` | Visible to all users in the organization |
-| `private` | Only visible to the owning team |
-| `team-restricted` | Visible only to specified teams |
-
----
-
-## Volume
-
-A **Volume** provides persistent storage that can be mounted to sandboxes. Unlike sandbox-local storage, volumes survive sandbox termination.
-
-### Volume Lifecycle
-
-| Status | Description |
-|--------|-------------|
-| `available` | Volume is ready to be mounted |
-| `mounted` | Volume is currently mounted to a sandbox |
-| `error` | Volume encountered an error |
-
-### Access Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **RWO** | ReadWriteOnce | Single sandbox read/write |
-| **ROX** | ReadOnlyMany | Multiple sandboxes read-only |
-| **RWX** | ReadWriteMany | Multiple sandboxes read/write |
-
-### Mount Points
-
-Mount a volume to a sandbox at a specified path:
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `// Create a volume
-volume, err := client.CreateVolume(ctx, &sandbox0.CreateVolumeRequest{
-    Name: "my-persistent-data",
-})
-
-// Mount to a sandbox
-err = client.MountVolume(ctx, sandbox.ID, &sandbox0.MountVolumeRequest{
-    VolumeId:   volume.ID,
-    MountPath:  "/data",
-    ReadOnly:   false,
-})`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `# Create a volume
-volume = client.create_volume(name="my-persistent-data")
-
-# Mount to a sandbox
-client.mount_volume(
-    sandbox.id,
-    volume_id=volume.id,
-    mount_path="/data",
-    read_only=False,
-)`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `// Create a volume
-const volume = await client.createVolume({ name: 'my-persistent-data' });
-
-// Mount to a sandbox
-await client.mountVolume(sandbox.id, {
-    volumeId: volume.id,
-    mountPath: '/data',
-    readOnly: false,
-});`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Create a volume
-s0 volume create --name my-persistent-data
-
-# Mount to a sandbox
-s0 volume mount sb_abc123 --volume-id vol_xyz --path /data`
-    }
-  ]}
-/>
-
-### Snapshots
-
-Create point-in-time snapshots of volumes for backup or cloning:
-
-| Operation | Description |
-|-----------|-------------|
-| Create snapshot | Capture current volume state |
-| List snapshots | View all snapshots for a volume |
-| Restore snapshot | Restore volume to a previous state |
-| Delete snapshot | Remove a snapshot |
-
----
-
-## Network Policy
-
-**Network Policy** controls the network access of a sandbox. You can restrict outbound traffic to specific domains or block all external access.
-
-### Policy Modes
-
-| Mode | Description |
-|------|-------------|
-| `BlockAll` | Block all external network access |
-| `AllowAll` | Allow all external network access |
-| `Custom` | Fine-grained rules for allowed/blocked domains |
-
-### Custom Rules
-
-<Tabs
-  tabs={[
-    {
-      label: "Go",
-      language: "go",
-      code: `// Set custom network policy
-_, err := client.UpdateNetworkPolicy(ctx, sandbox.ID, &sandbox0.NetworkPolicyRequest{
-    Mode: sandbox0.NetworkPolicyCustom,
-    Egress: &sandbox0.EgressRules{
-        AllowedDomains: []string{
-            "api.openai.com",
-            "api.anthropic.com",
-        },
-        BlockedDomains: []string{
-            "malicious-site.com",
-        },
-    },
-})`
-    },
-    {
-      label: "Python",
-      language: "python",
-      code: `# Set custom network policy
-client.update_network_policy(
-    sandbox.id,
-    mode="custom",
-    egress={
-        "allowed_domains": [
-            "api.openai.com",
-            "api.anthropic.com",
-        ],
-        "blocked_domains": [
-            "malicious-site.com",
-        ],
-    },
-)`
-    },
-    {
-      label: "TypeScript",
-      language: "typescript",
-      code: `// Set custom network policy
-await client.updateNetworkPolicy(sandbox.id, {
-    mode: 'custom',
-    egress: {
-        allowedDomains: [
-            'api.openai.com',
-            'api.anthropic.com',
-        ],
-        blockedDomains: [
-            'malicious-site.com',
-        ],
-    },
-});`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Set custom network policy
-s0 network update sb_abc123 --mode custom \\
-    --allow api.openai.com,api.anthropic.com \\
-    --block malicious-site.com`
-    }
-  ]}
-/>
-
----
-
-## Relationships Summary
-
-```
-┌─────────────┐     creates     ┌─────────────┐
-│  Template   │ ──────────────► │   Sandbox   │
-└─────────────┘                 └──────┬──────┘
-                                       │
-                     ┌─────────────────┼─────────────────┐
-                     │                 │                 │
-                     ▼                 ▼                 ▼
-              ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-              │   Context   │   │    Files    │   │   Network   │
-              │  (Process)  │   │  (Storage)  │   │   Policy    │
-              └─────────────┘   └──────┬──────┘   └─────────────┘
-                                       │
-                                       │ mounts
-                                       ▼
-                                ┌─────────────┐
-                                │   Volume    │◄─────────┐
-                                └──────┬──────┘          │
-                                       │                 │
-                                       │ snapshots       │
-                                       ▼                 │
-                                ┌─────────────┐          │
-                                │  Snapshot   │──────────┘
-                                └─────────────┘  restore
-```
-
----
-
-## Next Steps
+## Lifecycle and Time Limits
+
+Sandbox0 uses lifecycle controls to balance responsiveness and cost:
+
+- `ttl`: soft timeout, typically leading to auto-pause.
+- `hard_ttl`: hard deadline, leading to deletion.
+
+For agents, this means:
+- Keep short `ttl` for bursty workloads.
+- Extend lifecycle only when needed.
+- Persist progress frequently so expiration is not a data-loss event.
+
+## Isolation and Security Boundary
+
+Each sandbox is isolated by default. This is critical for agent workloads that execute untrusted code or process user-provided inputs.
+
+From an agent architecture perspective:
+- Isolation limits blast radius between tasks and tenants.
+- Network policy controls where the agent can call out.
+- Auth tokens define what the agent can operate on in the control plane.
+
+Use least privilege by default: only grant the permissions and network egress your workflow requires.
+
+## Choosing the Right Interaction Pattern
+
+Choose execution style based on task shape:
+
+| Pattern | Best For | Tradeoff |
+|--------|----------|----------|
+| Stateful session | Multi-step reasoning with intermediate variables/process state. | Higher complexity in lifecycle and cleanup. |
+| One-shot execution | Deterministic, idempotent, task-based jobs. | No in-process continuity between runs. |
+
+In practice, many agents combine both:
+- Stateful loop during active reasoning.
+- One-shot jobs for isolated tools or side effects.
+
+## Multi-Agent and Parallelism
+
+Sandbox0 works well for fan-out workloads:
+
+- Run separate sandboxes per task for strong isolation.
+- Share durable outputs through volumes or external storage.
+- Keep coordination outside the sandbox boundary (scheduler/orchestrator layer).
+
+This keeps each agent worker simple while allowing safe parallel execution.
+
+## Common Pitfalls
+
+- Treating sandbox filesystem as permanent storage.
+- Using a single long-lived sandbox for unrelated tasks.
+- Skipping checkpoint persistence until task end.
+- Over-permissive auth/network settings in early prototypes that leak into production.
+
+## What to Learn Next
+
+If this mental model is clear, move to implementation details:
 
 <CardGrid>
   <LinkCard
-    title="Sandbox Management"
+    title="Sandbox"
     href="/docs/sandbox"
     cta="View Docs"
   >
-    Learn the complete sandbox lifecycle and operations
+    Lifecycle, contexts, files, network, ports, and runtime operations
   </LinkCard>
 
   <LinkCard
-    title="Contexts"
-    href="/docs/sandbox/contexts"
+    title="Template"
+    href="/docs/template"
     cta="Learn More"
   >
-    Deep dive into process execution and REPL usage
+    Define stable execution environments and warm pools
   </LinkCard>
 
   <LinkCard
-    title="Volumes"
+    title="Volume"
     href="/docs/volume"
-    cta="Explore"
+    cta="Learn More"
   >
-    Persistent storage, snapshots, and mount operations
-  </LinkCard>
-
-  <LinkCard
-    title="Templates"
-    href="/docs/template"
-    cta="Configure"
-  >
-    Create and manage sandbox templates
+    Persist agent data across sandbox lifecycles
   </LinkCard>
 </CardGrid>

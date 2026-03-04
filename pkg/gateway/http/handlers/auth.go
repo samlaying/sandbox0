@@ -3,7 +3,10 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sandbox0-ai/infra/pkg/gateway/auth/builtin"
@@ -17,11 +20,19 @@ import (
 
 // AuthHandler handles authentication endpoints
 type AuthHandler struct {
-	repo            *db.Repository
+	repo            authRepository
 	builtinProvider *builtin.Provider
 	oidcManager     *oidc.Manager
 	jwtIssuer       *jwt.Issuer
 	logger          *zap.Logger
+}
+
+type authRepository interface {
+	CreateRefreshToken(ctx context.Context, token *db.RefreshToken) error
+	ValidateRefreshToken(ctx context.Context, tokenHash string) (*db.RefreshToken, error)
+	RevokeAllUserRefreshTokens(ctx context.Context, userID string) error
+	GetUserByID(ctx context.Context, id string) (*db.User, error)
+	GetTeamMember(ctx context.Context, teamID, userID string) (*db.TeamMember, error)
 }
 
 // NewAuthHandler creates a new auth handler
@@ -95,15 +106,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Issue tokens
-	tokens, err := h.jwtIssuer.IssueTokenPair(
-		user.ID,
-		teamID,
-		teamRole,
-		user.Email,
-		user.Name,
-		user.IsAdmin,
-	)
+	tokens, err := h.issueAndPersistTokenPair(c.Request.Context(), user, teamID, teamRole)
 	if err != nil {
 		h.logger.Error("Failed to issue tokens", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to issue tokens")
@@ -165,15 +168,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Issue tokens
-	tokens, err := h.jwtIssuer.IssueTokenPair(
-		user.ID,
-		teamID,
-		teamRole,
-		user.Email,
-		user.Name,
-		user.IsAdmin,
-	)
+	tokens, err := h.issueAndPersistTokenPair(c.Request.Context(), user, teamID, teamRole)
 	if err != nil {
 		h.logger.Error("Failed to issue tokens", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to issue tokens")
@@ -208,6 +203,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
+	tokenHash := jwt.HashRefreshToken(req.RefreshToken)
+	storedToken, err := h.repo.ValidateRefreshToken(c.Request.Context(), tokenHash)
+	if err != nil || storedToken.UserID != claims.UserID {
+		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "invalid refresh token")
+		return
+	}
+
 	// Get user
 	user, err := h.repo.GetUserByID(c.Request.Context(), claims.UserID)
 	if err != nil {
@@ -228,14 +230,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	// Issue new tokens
-	tokens, err := h.jwtIssuer.IssueTokenPair(
-		user.ID,
-		teamID,
-		teamRole,
-		user.Email,
-		user.Name,
-		user.IsAdmin,
-	)
+	tokens, err := h.issueAndPersistTokenPair(c.Request.Context(), user, teamID, teamRole)
 	if err != nil {
 		h.logger.Error("Failed to issue tokens", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to issue tokens")
@@ -355,7 +350,7 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 
-	user, err := h.oidcManager.HandleCallback(c.Request.Context(), providerID, code, state)
+	user, returnURL, err := h.oidcManager.HandleCallback(c.Request.Context(), providerID, code, state)
 	if err != nil {
 		h.logger.Warn("OIDC callback failed",
 			zap.String("provider", providerID),
@@ -377,18 +372,21 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 		return
 	}
 
-	// Issue tokens
-	tokens, err := h.jwtIssuer.IssueTokenPair(
-		user.ID,
-		teamID,
-		teamRole,
-		user.Email,
-		user.Name,
-		user.IsAdmin,
-	)
+	tokens, err := h.issueAndPersistTokenPair(c.Request.Context(), user, teamID, teamRole)
 	if err != nil {
 		h.logger.Error("Failed to issue tokens", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to issue tokens")
+		return
+	}
+
+	if isLocalReturnURL(returnURL) {
+		redirectURL, err := buildCLIReturnURL(returnURL, tokens)
+		if err != nil {
+			h.logger.Warn("Failed to build OIDC CLI redirect URL", zap.Error(err))
+			spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "failed to complete oidc login")
+			return
+		}
+		c.Redirect(http.StatusFound, redirectURL)
 		return
 	}
 
@@ -405,15 +403,6 @@ func (h *AuthHandler) OIDCCallback(c *gin.Context) {
 func (h *AuthHandler) GetAuthProviders(c *gin.Context) {
 	providers := make([]gin.H, 0)
 
-	// Add built-in provider if enabled
-	if h.builtinProvider.IsEnabled() {
-		providers = append(providers, gin.H{
-			"id":   "builtin",
-			"name": "Email & Password",
-			"type": "builtin",
-		})
-	}
-
 	// Add OIDC providers
 	for _, info := range h.oidcManager.ListProviderInfo() {
 		providers = append(providers, gin.H{
@@ -423,5 +412,69 @@ func (h *AuthHandler) GetAuthProviders(c *gin.Context) {
 		})
 	}
 
+	// Add built-in provider if enabled.
+	// Keep it after OIDC providers so server-side OIDC config can be the default login path for CLI.
+	if h.builtinProvider.IsEnabled() {
+		providers = append(providers, gin.H{
+			"id":   "builtin",
+			"name": "Email & Password",
+			"type": "builtin",
+		})
+	}
+
 	spec.JSONSuccess(c, http.StatusOK, gin.H{"providers": providers})
+}
+
+func (h *AuthHandler) issueAndPersistTokenPair(ctx context.Context, user *db.User, teamID, teamRole string) (*jwt.TokenPair, error) {
+	tokens, err := h.jwtIssuer.IssueTokenPair(
+		user.ID,
+		teamID,
+		teamRole,
+		user.Email,
+		user.Name,
+		user.IsAdmin,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.persistRefreshToken(ctx, user.ID, tokens); err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+func (h *AuthHandler) persistRefreshToken(ctx context.Context, userID string, tokens *jwt.TokenPair) error {
+	return h.repo.CreateRefreshToken(ctx, &db.RefreshToken{
+		UserID:    userID,
+		TokenHash: jwt.HashRefreshToken(tokens.RefreshToken),
+		ExpiresAt: tokens.RefreshExpiresAt,
+	})
+}
+
+func isLocalReturnURL(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+func buildCLIReturnURL(raw string, tokens *jwt.TokenPair) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("access_token", tokens.AccessToken)
+	q.Set("refresh_token", tokens.RefreshToken)
+	q.Set("expires_unix", fmt.Sprintf("%d", tokens.ExpiresAt.Unix()))
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }

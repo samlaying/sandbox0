@@ -6,7 +6,6 @@ export const docsNavigation: PixelSidebarItem[] = [
     href: "/docs/get-started",
     items: [
       { label: "Overview", href: "/docs/get-started" },
-      { label: "Authentication", href: "/docs/get-started/authentication" },
       { label: "Concepts", href: "/docs/get-started/concepts" },
     ],
   },

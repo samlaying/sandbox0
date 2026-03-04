@@ -1,0 +1,233 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/sandbox0-ai/infra/pkg/auth"
+	gatewayjwt "github.com/sandbox0-ai/infra/pkg/gateway/auth/jwt"
+	"github.com/sandbox0-ai/infra/pkg/gateway/db"
+	"github.com/sandbox0-ai/infra/pkg/gateway/spec"
+	"go.uber.org/zap"
+)
+
+type mockAuthRepository struct {
+	users         map[string]*db.User
+	refreshTokens map[string]*db.RefreshToken
+	createCalls   int
+}
+
+func newMockAuthRepository() *mockAuthRepository {
+	return &mockAuthRepository{
+		users:         map[string]*db.User{},
+		refreshTokens: map[string]*db.RefreshToken{},
+	}
+}
+
+func (m *mockAuthRepository) CreateRefreshToken(_ context.Context, token *db.RefreshToken) error {
+	copyToken := *token
+	m.refreshTokens[token.TokenHash] = &copyToken
+	m.createCalls++
+	return nil
+}
+
+func (m *mockAuthRepository) ValidateRefreshToken(_ context.Context, tokenHash string) (*db.RefreshToken, error) {
+	token, ok := m.refreshTokens[tokenHash]
+	if !ok {
+		return nil, db.ErrTokenNotFound
+	}
+	if token.Revoked {
+		return nil, db.ErrTokenRevoked
+	}
+	if time.Now().After(token.ExpiresAt) {
+		return nil, db.ErrTokenExpired
+	}
+	return token, nil
+}
+
+func (m *mockAuthRepository) RevokeAllUserRefreshTokens(_ context.Context, userID string) error {
+	for _, token := range m.refreshTokens {
+		if token.UserID == userID {
+			token.Revoked = true
+		}
+	}
+	return nil
+}
+
+func (m *mockAuthRepository) GetUserByID(_ context.Context, id string) (*db.User, error) {
+	user, ok := m.users[id]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	return user, nil
+}
+
+func (m *mockAuthRepository) GetTeamMember(_ context.Context, _, _ string) (*db.TeamMember, error) {
+	return nil, errors.New("team member not found")
+}
+
+func TestAuthHandler_RefreshToken_SucceedsWithPersistedToken(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	gin.SetMode(gin.ReleaseMode)
+
+	repo := newMockAuthRepository()
+	user := &db.User{
+		ID:      "user-1",
+		Email:   "user@example.com",
+		Name:    "User",
+		IsAdmin: false,
+	}
+	repo.users[user.ID] = user
+
+	issuer := gatewayjwt.NewIssuer("edge-gateway", "test-secret", time.Minute, time.Hour)
+	initialTokens, err := issuer.IssueTokenPair(user.ID, "", "", user.Email, user.Name, user.IsAdmin)
+	if err != nil {
+		t.Fatalf("issue initial token pair: %v", err)
+	}
+	if err := repo.CreateRefreshToken(context.Background(), &db.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: gatewayjwt.HashRefreshToken(initialTokens.RefreshToken),
+		ExpiresAt: initialTokens.RefreshExpiresAt,
+	}); err != nil {
+		t.Fatalf("persist initial refresh token: %v", err)
+	}
+
+	handler := &AuthHandler{
+		repo:      repo,
+		jwtIssuer: issuer,
+		logger:    zap.NewNop(),
+	}
+
+	router := gin.New()
+	router.POST("/auth/refresh", handler.RefreshToken)
+
+	rec := httptest.NewRecorder()
+	reqBody := map[string]string{"refresh_token": initialTokens.RefreshToken}
+	bodyBytes, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	data, apiErr, err := spec.DecodeResponse[LoginResponse](rec.Body)
+	if err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if apiErr != nil {
+		t.Fatalf("unexpected api error: %+v", *apiErr)
+	}
+	if data.AccessToken == "" || data.RefreshToken == "" {
+		t.Fatalf("expected new tokens in response")
+	}
+	if repo.createCalls != 2 {
+		t.Fatalf("expected 2 create calls (seed + refresh), got %d", repo.createCalls)
+	}
+}
+
+func TestAuthHandler_LogoutRevocation_BlocksRefresh(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	gin.SetMode(gin.ReleaseMode)
+
+	repo := newMockAuthRepository()
+	user := &db.User{
+		ID:      "user-1",
+		Email:   "user@example.com",
+		Name:    "User",
+		IsAdmin: false,
+	}
+	repo.users[user.ID] = user
+
+	issuer := gatewayjwt.NewIssuer("edge-gateway", "test-secret", time.Minute, time.Hour)
+	initialTokens, err := issuer.IssueTokenPair(user.ID, "", "", user.Email, user.Name, user.IsAdmin)
+	if err != nil {
+		t.Fatalf("issue initial token pair: %v", err)
+	}
+	if err := repo.CreateRefreshToken(context.Background(), &db.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: gatewayjwt.HashRefreshToken(initialTokens.RefreshToken),
+		ExpiresAt: initialTokens.RefreshExpiresAt,
+	}); err != nil {
+		t.Fatalf("persist initial refresh token: %v", err)
+	}
+
+	handler := &AuthHandler{
+		repo:      repo,
+		jwtIssuer: issuer,
+		logger:    zap.NewNop(),
+	}
+
+	router := gin.New()
+	router.POST("/auth/logout", func(c *gin.Context) {
+		c.Set("auth_context", &auth.AuthContext{UserID: user.ID})
+		handler.Logout(c)
+	})
+	router.POST("/auth/refresh", handler.RefreshToken)
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	logoutRec := httptest.NewRecorder()
+	router.ServeHTTP(logoutRec, logoutReq)
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("expected logout 200, got %d body=%s", logoutRec.Code, logoutRec.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	reqBody := map[string]string{"refresh_token": initialTokens.RefreshToken}
+	bodyBytes, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 after logout revocation, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthHandler_RefreshToken_FailsWhenTokenNeverPersisted(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	gin.SetMode(gin.ReleaseMode)
+
+	repo := newMockAuthRepository()
+	user := &db.User{
+		ID:      "user-1",
+		Email:   "user@example.com",
+		Name:    "User",
+		IsAdmin: false,
+	}
+	repo.users[user.ID] = user
+
+	issuer := gatewayjwt.NewIssuer("edge-gateway", "test-secret", time.Minute, time.Hour)
+	initialTokens, err := issuer.IssueTokenPair(user.ID, "", "", user.Email, user.Name, user.IsAdmin)
+	if err != nil {
+		t.Fatalf("issue initial token pair: %v", err)
+	}
+
+	handler := &AuthHandler{
+		repo:      repo,
+		jwtIssuer: issuer,
+		logger:    zap.NewNop(),
+	}
+
+	router := gin.New()
+	router.POST("/auth/refresh", handler.RefreshToken)
+
+	rec := httptest.NewRecorder()
+	reqBody := map[string]string{"refresh_token": initialTokens.RefreshToken}
+	bodyBytes, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-persisted refresh token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

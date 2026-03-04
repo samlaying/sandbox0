@@ -25,6 +25,7 @@ type StateData struct {
 // Manager manages multiple OIDC providers
 type Manager struct {
 	providers       map[string]*Provider
+	providerOrder   []string
 	repo            *db.Repository
 	baseURL         string
 	defaultTeamName string
@@ -41,6 +42,7 @@ type Manager struct {
 func NewManager(ctx context.Context, cfg *config.GatewayConfig, repo *db.Repository, logger *zap.Logger) (*Manager, error) {
 	m := &Manager{
 		providers:       make(map[string]*Provider),
+		providerOrder:   make([]string, 0),
 		repo:            repo,
 		baseURL:         cfg.BaseURL,
 		defaultTeamName: cfg.DefaultTeamName,
@@ -66,6 +68,7 @@ func NewManager(ctx context.Context, cfg *config.GatewayConfig, repo *db.Reposit
 		}
 
 		m.providers[providerCfg.ID] = provider
+		m.providerOrder = append(m.providerOrder, providerCfg.ID)
 		logger.Info("Initialized OIDC provider",
 			zap.String("provider", providerCfg.ID),
 			zap.String("name", providerCfg.Name),
@@ -145,46 +148,50 @@ func (m *Manager) ValidateState(state string) (*StateData, error) {
 }
 
 // HandleCallback processes an OIDC callback
-func (m *Manager) HandleCallback(ctx context.Context, providerID, code, state string) (*db.User, error) {
+func (m *Manager) HandleCallback(ctx context.Context, providerID, code, state string) (*db.User, string, error) {
 	// Validate state
 	stateData, err := m.ValidateState(state)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if stateData.Provider != providerID {
-		return nil, ErrInvalidState
+		return nil, "", ErrInvalidState
 	}
 
 	// Get provider
 	provider, err := m.GetProvider(providerID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Exchange code for token
 	token, err := provider.Exchange(ctx, code)
 	if err != nil {
-		return nil, fmt.Errorf("exchange code: %w", err)
+		return nil, "", fmt.Errorf("exchange code: %w", err)
 	}
 
 	// Verify token and get user info
 	userInfo, err := provider.VerifyToken(ctx, token)
 	if err != nil {
-		return nil, fmt.Errorf("verify token: %w", err)
+		return nil, "", fmt.Errorf("verify token: %w", err)
 	}
 
 	if userInfo.Email == "" {
-		return nil, ErrMissingEmail
+		return nil, "", ErrMissingEmail
 	}
 
 	// Validate email domain if configured
 	if err := provider.ValidateEmailDomain(userInfo.Email); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Find or create user
-	return m.findOrCreateUser(ctx, provider, userInfo)
+	user, err := m.findOrCreateUser(ctx, provider, userInfo)
+	if err != nil {
+		return nil, "", err
+	}
+	return user, stateData.ReturnURL, nil
 }
 
 // findOrCreateUser finds an existing user or creates a new one
@@ -295,7 +302,11 @@ type ProviderInfo struct {
 // ListProviderInfo returns public info about all enabled providers
 func (m *Manager) ListProviderInfo() []ProviderInfo {
 	var info []ProviderInfo
-	for _, p := range m.providers {
+	for _, id := range m.providerOrder {
+		p, ok := m.providers[id]
+		if !ok {
+			continue
+		}
 		info = append(info, ProviderInfo{
 			ID:   p.ID(),
 			Name: p.Name(),

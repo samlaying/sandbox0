@@ -31,7 +31,17 @@ Get your first sandbox running in minutes.
 ### Prerequisites
 
 - A self-hosted deployment
-- An access token 
+- `s0` CLI installed
+
+### Install s0 CLI (Required)
+
+Install from <DocLink href="https://github.com/sandbox0-ai/s0/releases" newTab>GitHub Releases</DocLink>.
+
+Or with Go (requires Go 1.21+):
+
+```bash
+go install github.com/sandbox0-ai/s0/cmd/s0@latest
+```
 
 ### Install SDK
 
@@ -51,15 +61,6 @@ Get your first sandbox running in minutes.
       label: "TypeScript",
       language: "bash",
       code: `npm install sandbox0`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Install from GitHub Releases:
-# https://github.com/sandbox0-ai/s0
-
-# Or with Go (requires Go 1.21+):
-go install github.com/sandbox0-ai/s0/cmd/s0@latest`
     }
   ]}
 />
@@ -67,6 +68,17 @@ go install github.com/sandbox0-ai/s0/cmd/s0@latest`
 ### Authenticate
 
 Set up your credentials. Configure the base URL for your [self-hosted deployment](/docs/self-hosted):
+
+First, create an API key to use as `SANDBOX0_TOKEN`:
+
+```bash
+# Login with your account (stores session in ~/.s0/config.yaml)
+s0 auth login
+
+# Create a 30-day admin API key and export it
+export SANDBOX0_TOKEN="$(s0 apikey create --name test-apikey --role admin --expires-in 30d --raw)"
+export SANDBOX0_BASE_URL="http://localhost:30080"
+```
 
 <Tabs
   tabs={[
@@ -100,22 +112,6 @@ const client = new Client({
     token: process.env.SANDBOX0_TOKEN!,
     baseUrl: process.env.SANDBOX0_BASE_URL || 'http://localhost:30080',
 });`
-    },
-    {
-      label: "CLI",
-      language: "bash",
-      code: `# Set environment variables
-export SANDBOX0_TOKEN="your-token-here"
-export SANDBOX0_BASE_URL="http://localhost:30080"
-
-# Or use flags
-s0 --token your-token-here --api-url http://localhost:30080 sandbox list
-
-# Or create config file at ~/.s0/config.yaml:
-# profiles:
-#   default:
-#     api-url: http://localhost:30080
-#     token: your-token-here`
     }
   ]}
 />
@@ -340,10 +336,10 @@ console.log('File content:', Buffer.from(content).toString());`
       label: "CLI",
       language: "bash",
       code: `# Write a file
-s0 file write sb_abc123 /tmp/hello.txt "Hello from Sandbox0!"
+s0 sandbox files write /tmp/hello.txt --data "Hello from Sandbox0!" -s sb_abc123
 
 # Read a file
-s0 file read sb_abc123 /tmp/hello.txt
+s0 sandbox files cat /tmp/hello.txt -s sb_abc123
 
 # Output:
 # Hello from Sandbox0!`
@@ -356,14 +352,6 @@ s0 file read sb_abc123 /tmp/hello.txt
 ## Next Steps
 
 <CardGrid>
-  <LinkCard
-    title="Authentication"
-    href="/docs/get-started/authentication"
-    cta="Learn More"
-  >
-    Understand authentication methods, API keys, and token management
-  </LinkCard>
-
   <LinkCard
     title="Core Concepts"
     href="/docs/get-started/concepts"
