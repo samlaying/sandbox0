@@ -117,12 +117,38 @@ jobs:
           helm package infra-operator/chart --destination .cr-release-packages
           helm push ".cr-release-packages/infra-operator-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LOWER}/charts"
 
+      - name: Ensure gh-pages branch exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "${tmp_dir}"' EXIT
+
+          pushd "${tmp_dir}"
+          git init -b gh-pages
+          touch .nojekyll
+          cat > index.yaml <<'EOF'
+          apiVersion: v1
+          entries: {}
+          EOF
+          git add .nojekyll index.yaml
+          git \
+            -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m 'Initialize gh-pages branch'
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin gh-pages
+          popd
+
       - name: Publish chart to Helm repo
         uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: infra-operator
           pages_branch: gh-pages
-          charts_repo_url: https://sandbox0-ai.github.io/sandbox0
           skip_existing: true
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
