@@ -110,11 +110,16 @@ jobs:
             --username "${{ github.actor }}" \
             --password-stdin
 
+      - name: Package Helm chart
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          helm package infra-operator/chart --destination .cr-release-packages
+          test -f ".cr-release-packages/infra-operator-${VERSION}.tgz"
+
       - name: Publish chart to GitHub Packages (GHCR OCI)
         run: |
           VERSION="${{ needs.prepare-release.outputs.version }}"
           OWNER_LOWER="${GITHUB_REPOSITORY_OWNER,,}"
-          helm package infra-operator/chart --destination .cr-release-packages
           helm push ".cr-release-packages/infra-operator-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LOWER}/charts"
 
       - name: Ensure gh-pages branch exists
@@ -145,13 +150,43 @@ jobs:
           popd
 
       - name: Publish chart to Helm repo
-        uses: helm/chart-releaser-action@v1.7.0
-        with:
-          charts_dir: infra-operator
-          pages_branch: gh-pages
-          skip_existing: true
         env:
-          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          CHART_PACKAGE=".cr-release-packages/infra-operator-${VERSION}.tgz"
+          PAGES_URL="https://sandbox0-ai.github.io/sandbox0"
+          tmp_dir="$(mktemp -d)"
+          trap 'rm -rf "${tmp_dir}"' EXIT
+
+          git clone --branch gh-pages --single-branch \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "${tmp_dir}/gh-pages"
+
+          cp "${CHART_PACKAGE}" "${tmp_dir}/gh-pages/"
+          touch "${tmp_dir}/gh-pages/.nojekyll"
+
+          if [[ -f "${tmp_dir}/gh-pages/index.yaml" ]]; then
+            helm repo index "${tmp_dir}/gh-pages" \
+              --url "${PAGES_URL}" \
+              --merge "${tmp_dir}/gh-pages/index.yaml"
+          else
+            helm repo index "${tmp_dir}/gh-pages" --url "${PAGES_URL}"
+          fi
+
+          pushd "${tmp_dir}/gh-pages"
+          if git diff --quiet --exit-code -- .; then
+            echo "Helm repo already up to date"
+            exit 0
+          fi
+
+          git add .nojekyll index.yaml "infra-operator-${VERSION}.tgz"
+          git \
+            -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Publish infra-operator chart ${VERSION}"
+          git push origin gh-pages
+          popd
 
       - name: Create or update GitHub Release
         env:
