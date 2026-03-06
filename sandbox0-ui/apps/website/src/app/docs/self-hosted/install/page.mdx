@@ -38,14 +38,12 @@ Pick one official sample from source based on your target mode:
 - <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/multi-cluster/control-plane.yaml" newTab>multi-cluster/control-plane.yaml</DocLink>
 - <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/multi-cluster/data-plane.yaml" newTab>multi-cluster/data-plane.yaml</DocLink>
 
-<Callout variant="warning">
-`netd` and `storage-proxy` require Linux worker nodes. For local macOS/Windows testing, start with `minimal` mode.
-</Callout>
-
 Apply the one you selected:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/minimal.yaml
+# Default recommended mode: `fullmode` (Linux nodes only).
+# For local macOS/Windows testing, use `single-cluster/minimal.yaml` instead.
+kubectl apply -f https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/fullmode.yaml
 ```
 
 Watch status:

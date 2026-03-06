@@ -1,61 +1,70 @@
 # Configuration
 
-This page focuses on the 20% of config that solves 80% of real deployments.
+This page explains how to think about `Sandbox0Infra` configuration and includes a generated field reference sourced from the operator CRD.
 
-For full schema, use source of truth:
-- `infra-operator/api/v1alpha1/sandbox0infra_types.go`
-- `infra-operator/chart/crds/infra.sandbox0.ai_sandbox0infras.yaml`
+The goal is to keep the page readable for operators while still exposing the full supported config surface.
 
-## Most Important Fields
+## How to Read `Sandbox0Infra`
 
-| Field | Why it matters |
-|---|---|
-| `spec.database` | Main metadata DB for platform services |
-| `spec.storage` | JuiceFS object backend (`builtin`/`s3`/`oss`) |
-| `spec.registry` | Image pull/push credential model |
-| `spec.services.*.enabled` | Selects deployed topology |
-| `spec.controlPlane` | Required for data-plane clusters in multi-cluster mode |
-| `spec.cluster.id` | Cluster identity used by scheduler registration |
-| `spec.publicExposure` | Public routing domain and region ID |
-| `spec.builtinTemplates` | Seeds default templates and pool sizes |
+A `Sandbox0Infra` spec is easier to reason about when you split it into five layers:
 
-## Minimal Single-Cluster (Recommended Start)
+| Layer | Main fields | What it controls |
+|---|---|---|
+| Platform release | `spec.version` | Which sandbox0 component version to deploy |
+| Core dependencies | `spec.database`, `spec.juicefsDatabase`, `spec.storage`, `spec.registry` | PostgreSQL, JuiceFS metadata, object storage, registry integration |
+| Topology | `spec.services.*`, `spec.controlPlane`, `spec.cluster`, `spec.region` | Single-cluster vs multi-cluster shape and service placement |
+| Public routing | `spec.publicExposure`, `spec.internalAuth` | Public sandbox URLs and inter-service trust |
+| Runtime bootstrap | `spec.builtinTemplates`, `spec.initUser` | Default templates, warm pools, initial admin bootstrap |
+
+## Recommended Reading Order
+
+1. Pick your topology with `spec.services.*`.
+2. Decide whether database/storage/registry stay `builtin` or move external.
+3. Configure public exposure and cluster identity.
+4. Seed templates and initial admin user.
+5. Only then tune per-service `config` blocks.
+
+## Deployment Profiles
+
+| Profile | Typical fields | Use when |
+|---|---|---|
+| Minimal single-cluster | `services.internalGateway`, `services.manager` | Local eval, API validation, fast first install |
+| Full single-cluster | Add `storage`, `registry`, `services.storageProxy`, `services.netd` | You need persistent volumes, snapshots, or network controls |
+| Multi-cluster control plane | `services.edgeGateway`, `services.scheduler` | You coordinate multiple data-plane clusters in one region |
+| Multi-cluster data plane | `controlPlane`, `cluster`, `services.internalGateway`, `services.manager`, optional `storageProxy`/`netd` | You attach a cluster to an external control plane |
+
+Official sample manifests:
+
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/minimal.yaml" newTab>single-cluster/minimal.yaml</DocLink>
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/fullmode.yaml" newTab>single-cluster/fullmode.yaml</DocLink>
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/volumes.yaml" newTab>single-cluster/volumes.yaml</DocLink>
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/single-cluster/network-policy.yaml" newTab>single-cluster/network-policy.yaml</DocLink>
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/multi-cluster/control-plane.yaml" newTab>multi-cluster/control-plane.yaml</DocLink>
+- <DocLink href="https://raw.githubusercontent.com/sandbox0-ai/sandbox0/main/infra-operator/chart/samples/multi-cluster/data-plane.yaml" newTab>multi-cluster/data-plane.yaml</DocLink>
+
+## What Usually Changes First
+
+### External PostgreSQL
+
+Move `spec.database.type` from `builtin` to `external` when you want managed PostgreSQL durability, backup policy, and operational separation.
 
 ```yaml
-apiVersion: infra.sandbox0.ai/v1alpha1
-kind: Sandbox0Infra
-metadata:
-    name: minimal
-    namespace: sandbox0-system
 spec:
-    version: latest
     database:
-        type: builtin
-        builtin:
-            enabled: true
-    publicExposure:
-        enabled: true
-        rootDomain: sandbox0.app
-        regionId: aws-us-east-1
-    services:
-        internalGateway:
-            enabled: true
-            service:
-                type: NodePort
-                port: 30080
-            config:
-                authMode: public
-        manager:
-            enabled: true
-    builtinTemplates:
-        - templateId: default
-          image: sandbox0ai/otemplates:default-v0.1.0
-          pool:
-            minIdle: 1
-            maxIdle: 5
+        type: external
+        external:
+            host: your-db.rds.amazonaws.com
+            port: 5432
+            database: sandbox0
+            username: sandbox0
+            passwordSecret:
+                name: db-credentials
+                key: password
 ```
 
-## Add Persistent Volume + Network Policy
+### S3 or OSS Backing Storage
+
+If you need persistent volume features in production, configure `spec.storage` and enable `services.storageProxy`.
 
 ```yaml
 spec:
@@ -72,11 +81,23 @@ spec:
     services:
         storageProxy:
             enabled: true
-        netd:
-            enabled: true
 ```
 
-## Multi-Cluster Data Plane Essentials
+### Public Routing and Region Identity
+
+`spec.publicExposure` decides the public host pattern used for sandbox URLs. Keep it consistent with your region and DNS plan.
+
+```yaml
+spec:
+    publicExposure:
+        enabled: true
+        rootDomain: sandbox0.example.com
+        regionId: aws-us-east-1
+```
+
+### Multi-Cluster Data Plane Registration
+
+Data-plane clusters need control-plane connection details and a stable cluster identity.
 
 ```yaml
 spec:
@@ -95,24 +116,37 @@ spec:
                 authMode: internal
         manager:
             enabled: true
-        storageProxy:
-            enabled: true
 ```
 
-## Service Matrix
+## Service-Level Config
 
-| Service | Plane | Required |
-|---|---|---|
-| `internalGateway` | data plane | Yes |
-| `manager` | data plane | Yes |
-| `storageProxy` | data plane | Only when volume/snapshot features are needed |
-| `netd` | data plane | Only when network policy features are needed |
-| `edgeGateway` | control plane | Multi-cluster only |
-| `scheduler` | control plane | Multi-cluster only |
+`spec.services.<service>.config` is where you tune component-specific behavior after the topology is already correct.
+
+Examples:
+
+- `services.internalGateway.config.authMode` switches between `public`, `internal`, and `both`
+- `services.manager.config.autoscaler.*` tunes pool scale behavior
+- `services.storageProxy.config.juicefs*` tunes JuiceFS behavior and cache sizing
+- `services.netd.config.*` controls proxy ports, policy enforcement, and node-level networking behavior
+
+<Callout variant="info">
+Use the generated reference below for exact field names, defaults, enums, and required flags. Use the sample manifests for operator-friendly starting points.
+</Callout>
+
+<Callout variant="warning">
+Not every operational rule is expressible in CRD schema. Some defaults are applied at runtime inside services, and some validations are conditional. Examples include service runtime defaults in `netd` and conditional checks such as storage-proxy encryption requiring a key path.
+</Callout>
+
+## Full Reference
+
+The reference below is generated from the `Sandbox0Infra` CRD schema produced by `controller-gen`, not manually maintained MDX.
+
+<Sandbox0InfraReference />
 
 ## Practical Rules
 
-- Use `builtin` database/storage only for eval or small internal environments.
 - Pin `spec.version` in production instead of leaving `latest`.
-- Keep control plane and data planes in the same regional storage context.
-- Enable only the services required by your feature set.
+- Prefer external PostgreSQL and external object storage for serious deployments.
+- Enable `storageProxy` only when you need volume and snapshot features.
+- Enable `netd` only on Linux nodes and only when you need network policy enforcement.
+- Keep control-plane and data-plane components in the same storage and latency domain for a given region.

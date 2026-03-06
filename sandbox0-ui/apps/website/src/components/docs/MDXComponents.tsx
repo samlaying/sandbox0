@@ -15,6 +15,7 @@ import {
   ResourceList,
   ResourceItem,
 } from "./DocsLanding";
+import { Sandbox0InfraReference } from "./Sandbox0InfraReference";
 import type { MDXComponents } from "mdx/types";
 
 function cx(...classes: Array<string | undefined | null | false>) {
@@ -480,4 +481,5 @@ export const mdxComponents: MDXComponents = {
   LinkCard,
   ResourceList,
   ResourceItem,
+  Sandbox0InfraReference,
 };

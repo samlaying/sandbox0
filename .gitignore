@@ -12,6 +12,7 @@ test
 
 # document codes
 sandbox0-ui/apps/website/src/app/docs/docs-codes
+sandbox0-ui/apps/website/src/generated/
 
 # Output of the go coverage tool
 *.out
