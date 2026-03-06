@@ -70,10 +70,6 @@ const (
 
 // Sandbox0InfraSpec defines the desired state of Sandbox0Infra
 type Sandbox0InfraSpec struct {
-	// Version specifies the version of sandbox0 components to deploy
-	// +kubebuilder:default="latest"
-	Version string `json:"version,omitempty"`
-
 	// Database configures the main database for sandbox0
 	// +optional
 	Database *DatabaseConfig `json:"database,omitempty"`
@@ -1181,7 +1177,6 @@ const (
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 //+kubebuilder:printcolumn:name="Progress",type=string,JSONPath=`.status.progress`
 //+kubebuilder:printcolumn:name="Message",type=string,JSONPath=`.status.lastMessage`
-//+kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`
 //+kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Sandbox0Infra is the Schema for the sandbox0infras API

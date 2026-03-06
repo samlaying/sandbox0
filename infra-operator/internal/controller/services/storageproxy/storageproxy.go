@@ -57,7 +57,7 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 }
 
 // Reconcile reconciles the storage-proxy deployment.
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
 	logger := log.FromContext(ctx)
 
 	// Skip if not enabled
@@ -204,7 +204,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				ContainerPort: metricsPort,
 			},
 		},
-		Image: fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version),
+		Image: fmt.Sprintf("%s:%s", imageRepo, imageTag),
 		EnvVars: []corev1.EnvVar{
 			{
 				Name:  "SERVICE",

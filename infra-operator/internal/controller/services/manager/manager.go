@@ -45,7 +45,7 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 }
 
 // Reconcile reconciles the manager deployment.
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
 	logger := log.FromContext(ctx)
 
 	// Skip if not enabled
@@ -64,7 +64,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	labels := common.GetServiceLabels(infra.Name, "manager")
 	keySecretName, privateKeyKey, publicKeyKey := internalauth.GetDataPlaneKeyRefs(infra)
 
-	config, err := r.buildConfig(ctx, infra, imageRepo)
+	config, err := r.buildConfig(ctx, infra, imageRepo, imageTag)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				ContainerPort: webhookPort,
 			},
 		},
-		Image: fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version),
+		Image: fmt.Sprintf("%s:%s", imageRepo, imageTag),
 		EnvVars: []corev1.EnvVar{
 			{
 				Name:  "SERVICE",
@@ -255,7 +255,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	return nil
 }
 
-func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) (*apiconfig.ManagerConfig, error) {
+func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) (*apiconfig.ManagerConfig, error) {
 	cfg := &apiconfig.ManagerConfig{}
 	if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil && infra.Spec.Services.Manager.Config != nil {
 		cfg = infra.Spec.Services.Manager.Config
@@ -271,7 +271,7 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 		cfg.DefaultClusterId = infra.Spec.Cluster.ID
 	}
 
-	cfg.ManagerImage = fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version)
+	cfg.ManagerImage = fmt.Sprintf("%s:%s", imageRepo, imageTag)
 
 	registryConfig := registry.ResolveRegistryConfig(infra)
 	if registryConfig != nil {

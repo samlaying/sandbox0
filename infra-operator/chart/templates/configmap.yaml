@@ -7,6 +7,7 @@ metadata:
 data:
   config.yaml: |
     imageRepo: {{ .Values.config.imageRepo | default "sandbox0ai/infra" }}
+    imageTag: {{ .Values.config.imageTag | default (.Values.image.tag | default .Chart.AppVersion) }}
     {{ if .Values.config.imagePullPolicy }}
     imagePullPolicy: {{ .Values.config.imagePullPolicy }}
     {{ end }}

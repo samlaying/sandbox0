@@ -26,16 +26,19 @@ import (
 const (
 	DefaultConfigPath = "/etc/infra-operator/config.yaml"
 	DefaultImageRepo  = "sandbox0ai/infra"
+	DefaultImageTag   = "latest"
 )
 
 type OperatorConfig struct {
 	ImageRepo       string `json:"imageRepo" yaml:"imageRepo"`
+	ImageTag        string `json:"imageTag" yaml:"imageTag"`
 	ImagePullPolicy string `json:"imagePullPolicy" yaml:"imagePullPolicy"`
 }
 
 func LoadOperatorConfig(configPath string) (OperatorConfig, error) {
 	config := OperatorConfig{
 		ImageRepo: DefaultImageRepo,
+		ImageTag:  DefaultImageTag,
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -53,6 +56,9 @@ func LoadOperatorConfig(configPath string) (OperatorConfig, error) {
 
 	if config.ImageRepo == "" {
 		config.ImageRepo = DefaultImageRepo
+	}
+	if config.ImageTag == "" {
+		config.ImageTag = DefaultImageTag
 	}
 
 	return config, nil

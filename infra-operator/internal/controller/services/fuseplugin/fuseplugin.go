@@ -24,7 +24,7 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 	return &Reconciler{Resources: resources}
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
 	logger := log.FromContext(ctx)
 	if !infrav1alpha1.HasDataPlaneServices(infra) {
 		logger.Info("Data-plane services are disabled, skipping fuse device plugin")
@@ -33,7 +33,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 
 	name := fmt.Sprintf("%s-k8s-plugin", infra.Name)
 	labels := common.GetServiceLabels(infra.Name, "k8s-plugin")
-	image := fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version)
+	image := fmt.Sprintf("%s:%s", imageRepo, imageTag)
 	pullPolicy := corev1.PullIfNotPresent
 	if r.Resources.ImagePullPolicy != nil {
 		pullPolicy = *r.Resources.ImagePullPolicy

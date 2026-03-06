@@ -38,7 +38,6 @@ type sectionSpec struct {
 }
 
 var sectionSpecs = []sectionSpec{
-	{Key: "spec.version", Title: "Version"},
 	{Key: "spec.database", Title: "Database"},
 	{Key: "spec.juicefsDatabase", Title: "JuiceFS Metadata Database"},
 	{Key: "spec.storage", Title: "Storage"},

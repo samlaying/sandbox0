@@ -10,7 +10,6 @@ metadata:
   name: s0dp
   namespace: sandbox0-system
 spec:
-  version: "latest"
   database:
     # Must match the control plane database.
     type: external

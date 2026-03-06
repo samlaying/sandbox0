@@ -2,20 +2,6 @@
   "generatedFrom": "/Users/huangzhihao/sandbox0/workspace/infra/infra-operator/chart/crds/infra.sandbox0.ai_sandbox0infras.yaml",
   "sections": [
     {
-      "key": "spec.version",
-      "title": "Version",
-      "description": "Version specifies the version of sandbox0 components to deploy",
-      "entries": [
-        {
-          "path": "spec.version",
-          "type": "string",
-          "required": false,
-          "default": "latest",
-          "description": "Version specifies the version of sandbox0 components to deploy"
-        }
-      ]
-    },
-    {
       "key": "spec.database",
       "title": "Database",
       "description": "Database configures the main database for sandbox0",

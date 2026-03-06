@@ -10,7 +10,6 @@ metadata:
   name: s0cp
   namespace: sandbox0-system
 spec:
-  version: "latest"
   database:
     # Control plane and data plane should share the same PG instance.
     type: external

@@ -10,7 +10,6 @@ metadata:
   name: volumes
   namespace: sandbox0-system
 spec:
-  version: "latest"
   database:
     # Use builtin for quick start; switch to external for managed PG.
     type: builtin

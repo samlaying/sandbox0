@@ -140,9 +140,6 @@ func (r *Sandbox0InfraReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // setDefaults sets default values for the spec
 func (r *Sandbox0InfraReconciler) setDefaults(infra *infrav1alpha1.Sandbox0Infra) {
-	if infra.Spec.Version == "" {
-		infra.Spec.Version = "latest"
-	}
 	if infra.Spec.Database != nil && infra.Spec.Database.Type == "" {
 		infra.Spec.Database.Type = infrav1alpha1.DatabaseTypeBuiltin
 	}
@@ -161,7 +158,7 @@ func (r *Sandbox0InfraReconciler) initializeStatus(ctx context.Context, infra *i
 
 	now := metav1.Now()
 	infra.Status.Phase = infrav1alpha1.PhaseInstalling
-	infra.Status.ObservedVersion = infra.Spec.Version
+	infra.Status.ObservedVersion = r.getImageTag(ctx)
 	infra.Status.LastOperation = &infrav1alpha1.LastOperation{
 		Type:      "Install",
 		StartedAt: &now,
@@ -270,6 +267,7 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 
 	resources := common.NewResourceManager(r.Client, r.Scheme, r.getImagePullPolicy(ctx), r.getLocalDevConfig(ctx))
 	imageRepo := r.getImageRepo(ctx)
+	imageTag := r.getImageTag(ctx)
 	authReconciler := internalauth.NewReconciler(resources)
 	dbReconciler := database.NewReconciler(resources)
 	storageReconciler := storage.NewReconciler(resources)
@@ -364,8 +362,10 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 	}
 	if plan.EnableEdgeGateway {
 		steps = append(steps, reconcileStep{
-			Name:           "edge-gateway",
-			Run:            func(ctx context.Context) error { return edgeGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
+			Name: "edge-gateway",
+			Run: func(ctx context.Context) error {
+				return edgeGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+			},
 			ConditionType:  infrav1alpha1.ConditionTypeEdgeGatewayReady,
 			SuccessReason:  "EdgeGatewayReady",
 			SuccessMessage: "Edge gateway is ready",
@@ -383,7 +383,7 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 			},
 			reconcileStep{
 				Name:           "scheduler",
-				Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo) },
+				Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
 				ConditionType:  infrav1alpha1.ConditionTypeSchedulerReady,
 				SuccessReason:  "SchedulerReady",
 				SuccessMessage: "Scheduler is ready",
@@ -393,8 +393,10 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 	}
 	if plan.EnableInternalGateway {
 		steps = append(steps, reconcileStep{
-			Name:           "internal-gateway",
-			Run:            func(ctx context.Context) error { return internalGatewayReconciler.Reconcile(ctx, infra, imageRepo) },
+			Name: "internal-gateway",
+			Run: func(ctx context.Context) error {
+				return internalGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+			},
 			ConditionType:  infrav1alpha1.ConditionTypeInternalGatewayReady,
 			SuccessReason:  "InternalGatewayReady",
 			SuccessMessage: "Internal gateway is ready",
@@ -411,7 +413,7 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 		})
 		steps = append(steps, reconcileStep{
 			Name:           "netd",
-			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo) },
+			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
 			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
 			SuccessReason:  "NetdReady",
 			SuccessMessage: "netd is ready",
@@ -420,8 +422,10 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 	}
 	if plan.EnableFusePlugin {
 		steps = append(steps, reconcileStep{
-			Name:           "fuse-device-plugin",
-			Run:            func(ctx context.Context) error { return fusePluginReconciler.Reconcile(ctx, infra, imageRepo) },
+			Name: "fuse-device-plugin",
+			Run: func(ctx context.Context) error {
+				return fusePluginReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+			},
 			ConditionType:  infrav1alpha1.ConditionTypeFusePluginReady,
 			SuccessReason:  "FusePluginReady",
 			SuccessMessage: "FUSE device plugin is ready",
@@ -439,7 +443,7 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 			},
 			reconcileStep{
 				Name:           "manager",
-				Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo) },
+				Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
 				ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
 				SuccessReason:  "ManagerReady",
 				SuccessMessage: "Manager is ready",
@@ -464,8 +468,10 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 				SkipSuccessCondition: true,
 			},
 			reconcileStep{
-				Name:           "storage-proxy",
-				Run:            func(ctx context.Context) error { return storageProxyReconciler.Reconcile(ctx, infra, imageRepo) },
+				Name: "storage-proxy",
+				Run: func(ctx context.Context) error {
+					return storageProxyReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+				},
 				ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
 				SuccessReason:  "StorageProxyReady",
 				SuccessMessage: "Storage proxy is ready",

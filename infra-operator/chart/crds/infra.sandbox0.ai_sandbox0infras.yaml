@@ -26,9 +26,6 @@ spec:
     - jsonPath: .status.lastMessage
       name: Message
       type: string
-    - jsonPath: .spec.version
-      name: Version
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -2369,11 +2366,6 @@ spec:
                     - oss
                     type: string
                 type: object
-              version:
-                default: latest
-                description: Version specifies the version of sandbox0 components
-                  to deploy
-                type: string
             type: object
           status:
             description: Sandbox0InfraStatus defines the observed state of Sandbox0Infra

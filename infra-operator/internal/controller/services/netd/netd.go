@@ -29,7 +29,7 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 	return &Reconciler{Resources: resources}
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
 	logger := log.FromContext(ctx)
 	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil && !infra.Spec.Services.Netd.Enabled {
 		logger.Info("netd is disabled, skipping")
@@ -42,7 +42,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 
 	name := fmt.Sprintf("%s-netd", infra.Name)
 	labels := common.GetServiceLabels(infra.Name, "netd")
-	image := fmt.Sprintf("%s:%s", imageRepo, infra.Spec.Version)
+	image := fmt.Sprintf("%s:%s", imageRepo, imageTag)
 	pullPolicy := corev1.PullIfNotPresent
 	if r.Resources.ImagePullPolicy != nil {
 		pullPolicy = *r.Resources.ImagePullPolicy
