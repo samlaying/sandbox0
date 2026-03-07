@@ -32,22 +32,13 @@ runs:
       run: |
         bash "${{ github.action_path }}/free_disk_space.sh"
 
-    - uses: actions/setup-go@v5
+    - name: Restore shared infra build cache
+      id: infra-build-cache
+      uses: ./.github/actions/restore-infra-build-cache
       with:
         go-version: ${{ inputs.go-version }}
-        cache: true
-
-    - name: Restore Go build, module, and local outputs
-      id: go-build-cache
-      uses: actions/cache/restore@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-          ${{ inputs.infra-dir }}/bin
-        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}
-        restore-keys: |
-          infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}
+        infra-dir: ${{ inputs.infra-dir }}
+        cache-key-suffix: ${{ inputs.cache-key-suffix }}
 
     - uses: helm/kind-action@v1
       with:
@@ -151,15 +142,12 @@ runs:
         kind load image-archive "${image_cache_dir}/infra-image-registry-2.8.3.tar" --name ${{ inputs.kind-cluster-name }}
         kind load image-archive "${image_cache_dir}/infra-image-template-default-v0.1.0.tar" --name ${{ inputs.kind-cluster-name }}
 
-    - name: Save Go build, module, and local outputs
-      if: steps.go-build-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+    - name: Save shared infra build cache
+      uses: ./.github/actions/save-infra-build-cache
       with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-          ${{ inputs.infra-dir }}/bin
-        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}
+        infra-dir: ${{ inputs.infra-dir }}
+        cache-key-suffix: ${{ inputs.cache-key-suffix }}
+        cache-hit: ${{ steps.infra-build-cache.outputs.cache-hit }}
 
     - name: Save postgres image cache
       if: steps.infra-postgres-cache.outputs.cache-hit != 'true'

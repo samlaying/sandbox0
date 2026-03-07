@@ -1,0 +1,27 @@
+name: Save infra build cache
+description: Save shared infra incremental build cache after builds complete.
+inputs:
+  infra-dir:
+    description: Infra directory relative to repo root.
+    required: false
+    default: "."
+  cache-key-suffix:
+    description: Suffix for cache keys (e.g. arch).
+    required: false
+    default: "default"
+  cache-hit:
+    description: Whether the shared infra build cache was restored exactly.
+    required: false
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: Save Go build, module, and local outputs
+      if: inputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ${{ inputs.infra-dir }}/bin
+        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}

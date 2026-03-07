@@ -1,0 +1,38 @@
+name: Restore infra build cache
+description: Setup Go and restore shared infra incremental build cache.
+inputs:
+  go-version:
+    description: Go version to install.
+    required: false
+    default: "1.25"
+  infra-dir:
+    description: Infra directory relative to repo root.
+    required: false
+    default: "."
+  cache-key-suffix:
+    description: Suffix for cache keys (e.g. arch).
+    required: false
+    default: "default"
+outputs:
+  cache-hit:
+    description: Whether the shared infra build cache was restored exactly.
+    value: ${{ steps.go-build-cache.outputs.cache-hit }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+
+    - name: Restore Go build, module, and local outputs
+      id: go-build-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ${{ inputs.infra-dir }}/bin
+        key: infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}
+        restore-keys: |
+          infra-build-${{ runner.os }}-${{ inputs.cache-key-suffix }}
