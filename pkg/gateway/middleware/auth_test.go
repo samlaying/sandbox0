@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sandbox0-ai/sandbox0/pkg/auth"
 	gatewayjwt "github.com/sandbox0-ai/sandbox0/pkg/gateway/auth/jwt"
 	"go.uber.org/zap"
 )
@@ -53,5 +56,80 @@ func TestAuthMiddleware_JWTRefreshTokenRejected(t *testing.T) {
 	middleware := NewAuthMiddleware(nil, "test-secret", issuer, zap.NewNop())
 	if _, err := middleware.AuthenticateRequest(ctx); err == nil {
 		t.Fatalf("expected refresh token to be rejected")
+	}
+}
+
+func TestAuthMiddleware_RequireJWTAuth(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+
+	tests := []struct {
+		name       string
+		authCtx    *auth.AuthContext
+		wantStatus int
+	}{
+		{
+			name: "jwt user allowed",
+			authCtx: &auth.AuthContext{
+				AuthMethod: auth.AuthMethodJWT,
+				UserID:     "user-1",
+				TeamID:     "team-1",
+			},
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name: "api key rejected",
+			authCtx: &auth.AuthContext{
+				AuthMethod: auth.AuthMethodAPIKey,
+				TeamID:     "team-1",
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "jwt without user rejected",
+			authCtx: &auth.AuthContext{
+				AuthMethod: auth.AuthMethodJWT,
+				TeamID:     "team-1",
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "missing auth context rejected",
+			authCtx:    nil,
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewAuthMiddleware(nil, "test-secret", nil, zap.NewNop())
+			engine := gin.New()
+			engine.Use(func(c *gin.Context) {
+				if tt.authCtx != nil {
+					c.Set("auth_context", tt.authCtx)
+				}
+				c.Next()
+			})
+			engine.Use(m.RequireJWTAuth())
+			engine.GET("/teams", func(c *gin.Context) {
+				c.Status(http.StatusNoContent)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/teams", nil)
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("unexpected status: got %d want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.wantStatus == http.StatusUnauthorized {
+				var body map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatalf("decode response: %v", err)
+				}
+				if body["error"] != "this API requires a user access token (human login); API keys are not supported" {
+					t.Fatalf("unexpected error message: %q", body["error"])
+				}
+			}
+		})
 	}
 }

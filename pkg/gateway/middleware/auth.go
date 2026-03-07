@@ -193,6 +193,21 @@ func (m *AuthMiddleware) RequirePermission(permission string) gin.HandlerFunc {
 	}
 }
 
+// RequireJWTAuth returns middleware that restricts access to JWT-authenticated users.
+func (m *AuthMiddleware) RequireJWTAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authCtx := GetAuthContext(c)
+		if authCtx == nil || authCtx.AuthMethod != auth.AuthMethodJWT || authCtx.UserID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "this API requires a user access token (human login); API keys are not supported",
+			})
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // GetAuthContext extracts auth context from gin context
 func GetAuthContext(c *gin.Context) *auth.AuthContext {
 	if v, exists := c.Get("auth_context"); exists {

@@ -62,6 +62,7 @@ func RegisterRoutes(router *gin.Engine, deps Deps) {
 	// ===== Protected Auth Routes =====
 	authProtected := router.Group("/auth")
 	authProtected.Use(deps.AuthMiddleware.Authenticate())
+	authProtected.Use(deps.AuthMiddleware.RequireJWTAuth())
 	{
 		authProtected.POST("/logout", authHandler.Logout)
 		authProtected.POST("/change-password", authHandler.ChangePassword)
@@ -70,6 +71,7 @@ func RegisterRoutes(router *gin.Engine, deps Deps) {
 	// ===== User Management Routes =====
 	users := router.Group("/users")
 	users.Use(deps.AuthMiddleware.Authenticate())
+	users.Use(deps.AuthMiddleware.RequireJWTAuth())
 	{
 		users.GET("/me", userHandler.GetCurrentUser)
 		users.PUT("/me", userHandler.UpdateCurrentUser)
@@ -80,6 +82,7 @@ func RegisterRoutes(router *gin.Engine, deps Deps) {
 	// ===== Team Management Routes =====
 	teams := router.Group("/teams")
 	teams.Use(deps.AuthMiddleware.Authenticate())
+	teams.Use(deps.AuthMiddleware.RequireJWTAuth())
 	{
 		teams.GET("", teamHandler.ListTeams)
 		teams.POST("", teamHandler.CreateTeam)
@@ -97,6 +100,7 @@ func RegisterRoutes(router *gin.Engine, deps Deps) {
 	// ===== API Key Management Routes =====
 	apiKeys := router.Group("/api-keys")
 	apiKeys.Use(deps.AuthMiddleware.Authenticate())
+	apiKeys.Use(deps.AuthMiddleware.RequireJWTAuth())
 	{
 		apiKeys.GET("", apiKeyHandler.ListAPIKeys)
 		apiKeys.POST("", apiKeyHandler.CreateAPIKey)
