@@ -60,7 +60,11 @@ function HeadingWithAnchor(level: HeadingLevel, props: HeadingProps) {
       as={level}
       tone="docs"
       id={headingId}
-      className={cx("group scroll-mt-24", className)}
+      className={cx(
+        "group scroll-mt-24",
+        "[&_code]:!text-[1em] [&_code]:!leading-[1] [&_code]:align-baseline [&_code]:!font-pixel [&_code]:!text-inherit",
+        className
+      )}
       {...rest}
     >
       <span>{children}</span>
@@ -378,14 +382,11 @@ export const mdxComponents: MDXComponents = {
       return (
         <code
           className={cx(
-            // GitHub-like inline code memory: subtle background + padding + border
+            // Inline code: subtle background + padding without framed borders
             "inline-block align-baseline px-1.5 py-0.5",
             "font-mono text-[0.92em] leading-tight",
             "bg-foreground/4 text-foreground",
-            "border border-foreground/15",
-            // Pixel flavor: sharp corners + tiny pixel-ish shadow
-            "rounded-none",
-            "shadow-[1px_1px_0_0_rgba(0,0,0,0.18)] dark:shadow-[1px_1px_0_0_rgba(255,255,255,0.10)]"
+            "rounded-none"
           )}
           {...props}
         >
