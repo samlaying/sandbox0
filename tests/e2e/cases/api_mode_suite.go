@@ -271,7 +271,7 @@ func assertFilesystemAndProcessCapabilities(env *framework.ScenarioEnv, session 
 	Expect(*listResp.Data.Entries).NotTo(BeEmpty())
 
 	processType := apispec.Cmd
-	command := []string{"/bin/sh", "-c", "sleep 30"}
+	command := []string{"/bin/sh", "-c", "sleep 3"}
 	ctxReq := apispec.CreateContextRequest{
 		Type: &processType,
 		Cmd: &apispec.CreateCMDContextRequest{
