@@ -85,7 +85,20 @@ jobs:
       - name: Publish dashboard-core package to npm
         if: steps.dashboard_core_npm.outputs.published != 'true'
         working-directory: sandbox0-ui
-        run: npm publish -w @sandbox0/dashboard-core
+        run: |
+          VERSION="${{ needs.prepare-release.outputs.version }}"
+          NPM_TAG="latest"
+
+          if [[ "${{ needs.prepare-release.outputs.is_prerelease }}" == "true" ]]; then
+            case "${VERSION}" in
+              *-alpha* ) NPM_TAG="alpha" ;;
+              *-beta* ) NPM_TAG="beta" ;;
+              *-rc* ) NPM_TAG="rc" ;;
+              * ) NPM_TAG="next" ;;
+            esac
+          fi
+
+          npm publish -w @sandbox0/dashboard-core --tag "${NPM_TAG}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
