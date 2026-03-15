@@ -28,6 +28,10 @@ on:
         required: false
         type: boolean
         default: false
+    outputs:
+      artifact_run_id:
+        description: Run ID that contains uploaded release artifacts.
+        value: ${{ jobs.metadata.outputs.artifact_run_id }}
 
 permissions:
   contents: read
@@ -44,6 +48,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
       upload_artifacts: ${{ steps.meta.outputs.upload_artifacts }}
+      artifact_run_id: ${{ steps.meta.outputs.artifact_run_id }}
     steps:
       - name: Derive release metadata
         id: meta
@@ -52,10 +57,8 @@ jobs:
           requested_version="${{ inputs.version }}"
           upload_artifacts="false"
 
-          if [[ "${{ github.event_name }}" == "workflow_call" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ inputs.upload_artifacts }}" == "true" ]]; then
-              upload_artifacts="true"
-            fi
+          if [[ "${{ inputs.upload_artifacts }}" == "true" ]]; then
+            upload_artifacts="true"
           fi
 
           if [[ -n "${requested_version}" ]]; then
@@ -69,6 +72,7 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "upload_artifacts=${upload_artifacts}" >> "$GITHUB_OUTPUT"
+          echo "artifact_run_id=${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
   dashboard-core:
     name: release-package / dashboard-core

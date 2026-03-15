@@ -12,6 +12,7 @@ env:
   DOCS_BUNDLE_PREFIX: sandbox0-docs
 
 permissions:
+  actions: read
   contents: write
   packages: write
   id-token: write
@@ -67,6 +68,9 @@ jobs:
         with:
           name: dashboard-core-package-${{ needs.prepare-release.outputs.version }}
           path: .release-npm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.package.outputs.artifact_run_id }}
 
       - name: Resolve dashboard-core package path
         run: |
@@ -216,6 +220,9 @@ jobs:
         with:
           name: infra-operator-chart-${{ needs.prepare-release.outputs.version }}
           path: .cr-release-packages
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.package.outputs.artifact_run_id }}
 
       - name: Login to GHCR
         run: |
@@ -312,6 +319,9 @@ jobs:
         with:
           name: docs-bundle-v${{ needs.prepare-release.outputs.version }}
           path: .release-docs
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.package.outputs.artifact_run_id }}
 
       - name: Resolve docs bundle path
         run: |
