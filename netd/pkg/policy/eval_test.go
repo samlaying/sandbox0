@@ -45,8 +45,38 @@ func TestAllowEgressL4BlockAllNoAllowList(t *testing.T) {
 	p := &CompiledPolicy{
 		Mode: v1alpha1.NetworkModeBlockAll,
 	}
-	if AllowEgressL4(p, net.ParseIP("8.8.8.8"), 443, "tcp") != true {
-		t.Fatalf("expected allow without L4 allow list")
+	if AllowEgressL4(p, net.ParseIP("8.8.8.8"), 443, "tcp") != false {
+		t.Fatalf("expected deny without L4 allow list")
+	}
+}
+
+func TestAllowEgressDestinationBlockAllDomainOnly(t *testing.T) {
+	p := &CompiledPolicy{
+		Mode: v1alpha1.NetworkModeBlockAll,
+		Egress: CompiledRuleSet{
+			AllowedDomains: []DomainRule{{Pattern: "example.com", Type: DomainMatchExact}},
+		},
+	}
+	if !AllowEgressDestination(p, net.ParseIP("8.8.8.8"), 443, "tcp", "example.com") {
+		t.Fatalf("expected classified domain traffic to pass L4 phase")
+	}
+	if AllowEgressDestination(p, net.ParseIP("8.8.8.8"), 443, "tcp", "") {
+		t.Fatalf("expected hostless traffic to fail closed without L4 allow list")
+	}
+}
+
+func TestAllowEgressDestinationBlockAllPlatformDomainOnly(t *testing.T) {
+	p := &CompiledPolicy{
+		Mode: v1alpha1.NetworkModeBlockAll,
+		Platform: &PlatformPolicy{
+			AllowedDomains: []DomainRule{{Pattern: "platform.example.com", Type: DomainMatchExact}},
+		},
+	}
+	if !AllowEgressDestination(p, net.ParseIP("8.8.8.8"), 443, "tcp", "platform.example.com") {
+		t.Fatalf("expected platform-classified domain traffic to pass L4 phase")
+	}
+	if AllowEgressDestination(p, net.ParseIP("8.8.8.8"), 443, "tcp", "") {
+		t.Fatalf("expected hostless traffic to fail closed without explicit domain host")
 	}
 }
 
@@ -153,6 +183,63 @@ func TestHasDomainRules(t *testing.T) {
 	}
 	if !HasDomainRules(p) {
 		t.Fatalf("expected true for policy with domains")
+	}
+}
+
+func TestHasDomainRulesIncludesPlatformDomains(t *testing.T) {
+	p := &CompiledPolicy{
+		Platform: &PlatformPolicy{
+			DeniedDomains: []DomainRule{{Pattern: "blocked.example.com", Type: DomainMatchExact}},
+		},
+	}
+	if !HasDomainRules(p) {
+		t.Fatalf("expected platform domain rules to trigger classification")
+	}
+}
+
+func TestUnknownFallbackAction(t *testing.T) {
+	if UnknownFallbackAction(nil) != UnknownTrafficPassThrough {
+		t.Fatalf("expected nil policy to pass through unknown traffic")
+	}
+
+	allowAll := &CompiledPolicy{Mode: v1alpha1.NetworkModeAllowAll}
+	if UnknownFallbackAction(allowAll) != UnknownTrafficPassThrough {
+		t.Fatalf("expected allow-all to pass through unknown traffic")
+	}
+
+	blockAll := &CompiledPolicy{Mode: v1alpha1.NetworkModeBlockAll}
+	if UnknownFallbackAction(blockAll) != UnknownTrafficDeny {
+		t.Fatalf("expected block-all to deny unknown traffic")
+	}
+}
+
+func TestAllowUnknownEgressFallbackAllowsPlatformDestinationUnderBlockAll(t *testing.T) {
+	p := &CompiledPolicy{
+		Mode: v1alpha1.NetworkModeBlockAll,
+		Platform: &PlatformPolicy{
+			AllowedCIDRs: []*net.IPNet{mustCIDR("10.96.0.10/32")},
+		},
+	}
+	if !AllowUnknownEgressFallback(p, net.ParseIP("10.96.0.10"), "") {
+		t.Fatalf("expected platform destination to pass through unknown fallback")
+	}
+	if AllowUnknownEgressFallback(p, net.ParseIP("8.8.8.8"), "") {
+		t.Fatalf("expected non-platform destination to remain denied under block-all")
+	}
+}
+
+func TestAllowUnknownEgressFallbackHonorsPlatformDomainDeny(t *testing.T) {
+	p := &CompiledPolicy{
+		Mode: v1alpha1.NetworkModeAllowAll,
+		Platform: &PlatformPolicy{
+			DeniedDomains: []DomainRule{{Pattern: "blocked.platform.local", Type: DomainMatchExact}},
+		},
+	}
+	if AllowUnknownEgressFallback(p, nil, "blocked.platform.local") {
+		t.Fatalf("expected platform deny to override allow-all unknown fallback")
+	}
+	if !AllowUnknownEgressFallback(p, nil, "other.example.com") {
+		t.Fatalf("expected allow-all to keep passing non-platform unknown traffic")
 	}
 }
 

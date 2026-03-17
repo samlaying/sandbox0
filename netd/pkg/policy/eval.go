@@ -7,7 +7,24 @@ import (
 	"github.com/sandbox0-ai/sandbox0/manager/pkg/apis/sandbox0/v1alpha1"
 )
 
+type UnknownTrafficAction string
+
+const (
+	UnknownTrafficPassThrough UnknownTrafficAction = "pass-through"
+	UnknownTrafficDeny        UnknownTrafficAction = "deny"
+)
+
 func AllowEgressL4(policy *CompiledPolicy, destIP net.IP, destPort int, protocol string) bool {
+	return allowEgressDestination(policy, destIP, destPort, protocol, "")
+}
+
+// AllowEgressDestination evaluates the L4 phase of an egress decision with
+// optional host classification context.
+func AllowEgressDestination(policy *CompiledPolicy, destIP net.IP, destPort int, protocol string, host string) bool {
+	return allowEgressDestination(policy, destIP, destPort, protocol, host)
+}
+
+func allowEgressDestination(policy *CompiledPolicy, destIP net.IP, destPort int, protocol string, host string) bool {
 	if policy == nil {
 		return true
 	}
@@ -28,6 +45,7 @@ func AllowEgressL4(policy *CompiledPolicy, destIP net.IP, destPort int, protocol
 	}
 	switch policy.Mode {
 	case v1alpha1.NetworkModeAllowAll:
+		// allow-all defaults to permit and applies denied* fields as subtractive rules.
 		if matchCIDR(destIP, policy.Egress.DeniedCIDRs) {
 			return false
 		}
@@ -36,6 +54,11 @@ func AllowEgressL4(policy *CompiledPolicy, destIP net.IP, destPort int, protocol
 		}
 		return true
 	case v1alpha1.NetworkModeBlockAll:
+		// block-all defaults to deny and applies allowed* fields as additive rules.
+		// denied* fields do not participate in block-all evaluation.
+		if !hasExplicitL4AllowList(policy) {
+			return host != "" && hasExplicitDomainAllowList(policy)
+		}
 		if len(policy.Egress.AllowedCIDRs) > 0 && !matchCIDR(destIP, policy.Egress.AllowedCIDRs) {
 			return false
 		}
@@ -46,6 +69,47 @@ func AllowEgressL4(policy *CompiledPolicy, destIP net.IP, destPort int, protocol
 	default:
 		return false
 	}
+}
+
+func UnknownFallbackAction(policy *CompiledPolicy) UnknownTrafficAction {
+	if policy == nil {
+		return UnknownTrafficPassThrough
+	}
+	switch policy.Mode {
+	case v1alpha1.NetworkModeBlockAll:
+		return UnknownTrafficDeny
+	default:
+		return UnknownTrafficPassThrough
+	}
+}
+
+// AllowUnknownEgressFallback evaluates whether unknown traffic should be
+// passed through after L4 evaluation. Platform-managed destinations retain
+// pass-through behavior even under block-all so sandbox bootstrap traffic
+// to core services remains functional.
+func AllowUnknownEgressFallback(policy *CompiledPolicy, destIP net.IP, host string) bool {
+	if policy == nil {
+		return true
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if policy.Platform != nil {
+		if isOtherSandboxPod(policy.Platform, destIP) {
+			return false
+		}
+		if matchCIDR(destIP, policy.Platform.DeniedCIDRs) {
+			return false
+		}
+		if host != "" && matchDomain(host, policy.Platform.DeniedDomains) {
+			return false
+		}
+		if matchCIDR(destIP, policy.Platform.AllowedCIDRs) {
+			return true
+		}
+		if host != "" && matchDomain(host, policy.Platform.AllowedDomains) {
+			return true
+		}
+	}
+	return UnknownFallbackAction(policy) == UnknownTrafficPassThrough
 }
 
 func AllowEgressDomain(policy *CompiledPolicy, host string) bool {
@@ -66,11 +130,14 @@ func AllowEgressDomain(policy *CompiledPolicy, host string) bool {
 	}
 	switch policy.Mode {
 	case v1alpha1.NetworkModeAllowAll:
+		// allow-all defaults to permit and applies denied* fields as subtractive rules.
 		if matchDomain(host, policy.Egress.DeniedDomains) {
 			return false
 		}
 		return true
 	case v1alpha1.NetworkModeBlockAll:
+		// block-all defaults to deny and applies allowed* fields as additive rules.
+		// denied* fields do not participate in block-all evaluation.
 		if len(policy.Egress.AllowedDomains) == 0 {
 			return false
 		}
@@ -84,7 +151,29 @@ func HasDomainRules(policy *CompiledPolicy) bool {
 	if policy == nil {
 		return false
 	}
+	if policy.Platform != nil {
+		if len(policy.Platform.AllowedDomains) > 0 || len(policy.Platform.DeniedDomains) > 0 {
+			return true
+		}
+	}
 	return len(policy.Egress.AllowedDomains) > 0 || len(policy.Egress.DeniedDomains) > 0
+}
+
+func hasExplicitL4AllowList(policy *CompiledPolicy) bool {
+	if policy == nil {
+		return false
+	}
+	return len(policy.Egress.AllowedCIDRs) > 0 || len(policy.Egress.AllowedPorts) > 0
+}
+
+func hasExplicitDomainAllowList(policy *CompiledPolicy) bool {
+	if policy == nil {
+		return false
+	}
+	if policy.Platform != nil && len(policy.Platform.AllowedDomains) > 0 {
+		return true
+	}
+	return len(policy.Egress.AllowedDomains) > 0
 }
 
 func isOtherSandboxPod(platform *PlatformPolicy, destIP net.IP) bool {
