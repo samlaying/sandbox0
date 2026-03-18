@@ -26,7 +26,8 @@ type NetdConfig struct {
 	ClusterID string `yaml:"cluster_id" json:"-"`
 
 	// +optional
-	EgressBrokerURL string `yaml:"egress_broker_url" json:"egressBrokerUrl"`
+	// EgressAuthResolverURL is the base URL for the runtime egress auth resolver.
+	EgressAuthResolverURL string `yaml:"egress_auth_resolver_url" json:"egressAuthResolverUrl"`
 
 	// +optional
 	// +kubebuilder:default=false
@@ -34,7 +35,8 @@ type NetdConfig struct {
 
 	// +optional
 	// +kubebuilder:default="2s"
-	EgressBrokerTimeout metav1.Duration `yaml:"egress_broker_timeout" json:"egressBrokerTimeout"`
+	// EgressAuthResolverTimeout is the timeout for runtime egress auth resolve calls.
+	EgressAuthResolverTimeout metav1.Duration `yaml:"egress_auth_resolver_timeout" json:"egressAuthResolverTimeout"`
 
 	// +optional
 	// +kubebuilder:default="fail-closed"
@@ -223,8 +225,8 @@ func applyNetdDefaults(cfg *NetdConfig) {
 	if cfg.ResyncPeriod.Duration == 0 {
 		cfg.ResyncPeriod = metav1.Duration{Duration: 30 * time.Second}
 	}
-	if cfg.EgressBrokerTimeout.Duration == 0 {
-		cfg.EgressBrokerTimeout = metav1.Duration{Duration: 2 * time.Second}
+	if cfg.EgressAuthResolverTimeout.Duration == 0 {
+		cfg.EgressAuthResolverTimeout = metav1.Duration{Duration: 2 * time.Second}
 	}
 	if cfg.EgressAuthFailurePolicy == "" {
 		cfg.EgressAuthFailurePolicy = "fail-closed"

@@ -736,11 +736,6 @@ type ServicesConfig struct {
 	// +kubebuilder:default={}
 	StorageProxy *StorageProxyServiceConfig `json:"storageProxy,omitempty"`
 
-	// EgressBroker configures the egress-broker service (data plane)
-	// +optional
-	// +kubebuilder:default={}
-	EgressBroker *EgressBrokerServiceConfig `json:"egressBroker,omitempty"`
-
 	// Netd configures the netd service (data plane)
 	// +optional
 	// +kubebuilder:default={}
@@ -824,15 +819,6 @@ type StorageProxyServiceConfig struct {
 	Config *config.StorageProxyConfig `json:"config,omitempty"`
 }
 
-// EgressBrokerServiceConfig defines configuration for egress-broker service.
-type EgressBrokerServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
-	// Config contains egress-broker specific configuration.
-	// +optional
-	// +kubebuilder:default={}
-	Config *config.EgressBrokerConfig `json:"config,omitempty"`
-}
-
 // NetdServiceConfig defines configuration for netd service
 type NetdServiceConfig struct {
 	BaseServiceConfig `json:",inline"`
@@ -906,14 +892,6 @@ func IsStorageProxyEnabled(infra *Sandbox0Infra) bool {
 		return false
 	}
 	return infra.Spec.Services.StorageProxy.Enabled
-}
-
-// IsEgressBrokerEnabled returns true when egress-broker is enabled.
-func IsEgressBrokerEnabled(infra *Sandbox0Infra) bool {
-	if infra == nil || infra.Spec.Services == nil || infra.Spec.Services.EgressBroker == nil {
-		return false
-	}
-	return infra.Spec.Services.EgressBroker.Enabled
 }
 
 // IsNetdEnabled returns true when netd is enabled.
@@ -1248,7 +1226,6 @@ const (
 	ConditionTypeInternalGatewayReady = "InternalGatewayReady"
 	ConditionTypeManagerReady         = "ManagerReady"
 	ConditionTypeStorageProxyReady    = "StorageProxyReady"
-	ConditionTypeEgressBrokerReady    = "EgressBrokerReady"
 	ConditionTypeFusePluginReady      = "FusePluginReady"
 	ConditionTypeNetdReady            = "NetdReady"
 	ConditionTypeSchedulerReady       = "SchedulerReady"
