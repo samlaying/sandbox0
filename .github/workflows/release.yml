@@ -404,7 +404,7 @@ jobs:
               break
             fi
 
-            sleep 10
+            sleep 60
           done
 
           if [[ -z "${run_id}" ]]; then
@@ -412,4 +412,4 @@ jobs:
             exit 1
           fi
 
-          gh run watch "${run_id}" --repo sandbox0-ai/sandbox0-cloud --interval 10 --exit-status
+          gh run watch "${run_id}" --repo sandbox0-ai/sandbox0-cloud --interval 60 --exit-status
