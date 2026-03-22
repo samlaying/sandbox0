@@ -1,19 +1,7 @@
 import type { Metadata } from "next";
+import { DashboardRootLayout, createDashboardMetadata } from "@sandbox0/dashboard-app";
 import "@sandbox0/ui/globals.css";
 
-export const metadata: Metadata = {
-  title: "Sandbox0 Dashboard",
-  description: "Topology-aware control plane for Sandbox0 deployments",
-};
+export const metadata: Metadata = createDashboardMetadata();
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <html lang="en" className="dark">
-      <body>{children}</body>
-    </html>
-  );
-}
+export default DashboardRootLayout;

@@ -9,7 +9,7 @@
     "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
-    "@sandbox0/dashboard-core": "*",
+    "@sandbox0/dashboard-app": "*",
     "@sandbox0/ui": "*",
     "next": "^15.1.3",
     "react": "^19.0.0",

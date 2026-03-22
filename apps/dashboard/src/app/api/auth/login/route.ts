@@ -1,6 +1,6 @@
 import {
   createDashboardBuiltinLoginRoute,
   resolveDashboardRuntimeConfig,
-} from "@sandbox0/dashboard-core";
+} from "@sandbox0/dashboard-app";
 
 export const POST = createDashboardBuiltinLoginRoute(resolveDashboardRuntimeConfig);

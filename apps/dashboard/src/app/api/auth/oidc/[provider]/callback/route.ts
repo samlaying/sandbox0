@@ -1,7 +1,7 @@
 import {
   createDashboardOIDCCallbackRoute,
   resolveDashboardRuntimeConfig,
-} from "@sandbox0/dashboard-core";
+} from "@sandbox0/dashboard-app";
 
 // This callback assumes the control plane OIDC base URL is configured to point
 // at the public dashboard auth surface, for example /api/auth/...
