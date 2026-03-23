@@ -83,6 +83,64 @@ func TestNormalizeOIDCIssuerURL(t *testing.T) {
 	}
 }
 
+func TestResolveTokenEndpointAuthStyle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    oauth2.AuthStyle
+		wantErr string
+	}{
+		{
+			name:  "defaults to auto detect",
+			input: "",
+			want:  oauth2.AuthStyleAutoDetect,
+		},
+		{
+			name:  "accepts auto",
+			input: "auto",
+			want:  oauth2.AuthStyleAutoDetect,
+		},
+		{
+			name:  "maps client secret basic",
+			input: "client_secret_basic",
+			want:  oauth2.AuthStyleInHeader,
+		},
+		{
+			name:  "maps client secret post",
+			input: "client_secret_post",
+			want:  oauth2.AuthStyleInParams,
+		},
+		{
+			name:    "rejects unsupported values",
+			input:   "private_key_jwt",
+			wantErr: `unsupported token endpoint auth method "private_key_jwt"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := resolveTokenEndpointAuthStyle(tt.input)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("resolveTokenEndpointAuthStyle(%q) error = %v, want %q", tt.input, err, tt.wantErr)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("resolveTokenEndpointAuthStyle(%q): %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Fatalf("resolveTokenEndpointAuthStyle(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderExchangeSendsPKCEVerifier(t *testing.T) {
 	var (
 		gotAuthorization string

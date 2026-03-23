@@ -135,6 +135,12 @@ type OIDCProviderConfig struct {
 	// +optional
 	DiscoveryURL string `yaml:"discovery_url" json:"discoveryUrl"`
 
+	// TokenEndpointAuthMethod controls how the client authenticates to the token endpoint.
+	// Supported values are "client_secret_basic" and "client_secret_post".
+	// When omitted, the oauth2 library auto-detects the method.
+	// +optional
+	TokenEndpointAuthMethod string `yaml:"token_endpoint_auth_method" json:"tokenEndpointAuthMethod"`
+
 	// Scopes are the OAuth scopes to request
 	// +optional
 	// +kubebuilder:default={"openid","email","profile"}

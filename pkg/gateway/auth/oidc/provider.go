@@ -53,13 +53,22 @@ func NewProvider(ctx context.Context, cfg *config.OIDCProviderConfig, baseURL st
 		return nil, fmt.Errorf("create OIDC provider: %w", err)
 	}
 
+	authStyle, err := resolveTokenEndpointAuthStyle(cfg.TokenEndpointAuthMethod)
+	if err != nil {
+		return nil, err
+	}
+
 	// Configure OAuth2
 	oauth2Config := &oauth2.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
 		RedirectURL:  fmt.Sprintf("%s/auth/oidc/%s/callback", baseURL, cfg.ID),
-		Endpoint:     oidcProvider.Endpoint(),
-		Scopes:       cfg.Scopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:   oidcProvider.Endpoint().AuthURL,
+			TokenURL:  oidcProvider.Endpoint().TokenURL,
+			AuthStyle: authStyle,
+		},
+		Scopes: cfg.Scopes,
 	}
 
 	// Create token verifier
@@ -80,6 +89,19 @@ func NewProvider(ctx context.Context, cfg *config.OIDCProviderConfig, baseURL st
 func normalizeOIDCIssuerURL(value string) string {
 	trimmed := strings.TrimSpace(value)
 	return strings.TrimSuffix(trimmed, wellKnownOIDCConfigPath)
+}
+
+func resolveTokenEndpointAuthStyle(method string) (oauth2.AuthStyle, error) {
+	switch strings.TrimSpace(method) {
+	case "", "auto":
+		return oauth2.AuthStyleAutoDetect, nil
+	case "client_secret_basic":
+		return oauth2.AuthStyleInHeader, nil
+	case "client_secret_post":
+		return oauth2.AuthStyleInParams, nil
+	default:
+		return oauth2.AuthStyleAutoDetect, fmt.Errorf("unsupported token endpoint auth method %q", method)
+	}
 }
 
 // ID returns the provider ID
