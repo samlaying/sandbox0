@@ -248,18 +248,19 @@ jobs:
           git push origin gh-pages
           popd
 
-  publish-release-record:
-    name: Create or update GitHub Release
+  create-draft-release:
+    name: Create or update draft GitHub Release
     runs-on: ubuntu-latest
     needs:
       - prepare-release
       - package
     steps:
-      - name: Create or update GitHub Release
+      - name: Create or update draft GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           OWNER_LOWER="${GITHUB_REPOSITORY_OWNER,,}"
           NOTES=$(cat <<EOF
@@ -274,15 +275,21 @@ jobs:
           )
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
+            IS_DRAFT=$(gh release view "${TAG}" --json isDraft --jq '.isDraft')
             IS_IMMUTABLE=$(gh release view "${TAG}" --json isImmutable --jq '.isImmutable')
             if [[ "${IS_IMMUTABLE}" == "true" ]]; then
               echo "Release ${TAG} already exists and is immutable. Delete the release before rerunning this workflow for the same tag."
               exit 1
             fi
 
+            if [[ "${IS_DRAFT}" != "true" ]]; then
+              echo "Release ${TAG} already exists and is published. This workflow requires a draft release so sandbox0-cloud can upload docs before publication."
+              exit 1
+            fi
+
             gh release edit "${TAG}" --title "${TAG}" --notes "${NOTES}"
           else
-            args=(--title "${TAG}" --notes "${NOTES}")
+            args=(--draft --title "${TAG}" --notes "${NOTES}")
             if [[ "${{ needs.prepare-release.outputs.is_prerelease }}" == "true" ]]; then
               args+=(--prerelease)
             fi
@@ -295,7 +302,7 @@ jobs:
     needs:
       - prepare-release
       - package
-      - publish-release-record
+      - create-draft-release
     steps:
       - name: Dispatch website deploy to sandbox0-cloud
         id: dispatch
@@ -353,3 +360,40 @@ jobs:
           fi
 
           gh run watch "${run_id}" --repo sandbox0-ai/sandbox0-cloud --interval 60 --exit-status
+
+  publish-release-record:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-release
+      - package
+      - publish-image-manifest
+      - publish-helm
+      - trigger-cloud-website-release
+    steps:
+      - name: Publish draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} does not exist."
+            exit 1
+          fi
+
+          IS_DRAFT=$(gh release view "${TAG}" --json isDraft --jq '.isDraft')
+          IS_IMMUTABLE=$(gh release view "${TAG}" --json isImmutable --jq '.isImmutable')
+
+          if [[ "${IS_DRAFT}" != "true" ]]; then
+            if [[ "${IS_IMMUTABLE}" == "true" ]]; then
+              echo "Release ${TAG} is already published and immutable."
+            else
+              echo "Release ${TAG} is already published."
+            fi
+            exit 1
+          fi
+
+          gh release edit "${TAG}" --draft=false
