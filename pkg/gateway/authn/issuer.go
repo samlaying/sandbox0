@@ -37,6 +37,8 @@ type Issuer struct {
 	accessTokenTTL  time.Duration
 	refreshTokenTTL time.Duration
 	issuer          string
+	now             func() time.Time
+	newSessionID    func() (string, error)
 }
 
 // TokenPair represents an access/refresh token pair.
@@ -49,11 +51,22 @@ type TokenPair struct {
 
 // NewIssuer creates a new JWT issuer.
 func NewIssuer(issuerName, secret string, accessTTL, refreshTTL time.Duration) *Issuer {
+	return newIssuerWithDeps(issuerName, secret, accessTTL, refreshTTL, time.Now, generateSessionID)
+}
+
+func newIssuerWithDeps(
+	issuerName, secret string,
+	accessTTL, refreshTTL time.Duration,
+	now func() time.Time,
+	newSessionID func() (string, error),
+) *Issuer {
 	return &Issuer{
 		secret:          []byte(secret),
 		accessTokenTTL:  accessTTL,
 		refreshTokenTTL: refreshTTL,
 		issuer:          issuerName,
+		now:             now,
+		newSessionID:    newSessionID,
 	}
 }
 
@@ -71,17 +84,32 @@ func (i *Issuer) IssueTokenPair(userID, teamID, teamRole, email, name string, is
 		return nil, ErrJWTNotConfigured
 	}
 
-	now := time.Now()
-	accessExpiry := now.Add(i.accessTokenTTL)
-	refreshExpiry := now.Add(i.refreshTokenTTL)
+	now := time.Now
+	if i.now != nil {
+		now = i.now
+	}
+	sessionID := generateSessionID
+	if i.newSessionID != nil {
+		sessionID = i.newSessionID
+	}
+
+	sessionTokenID, err := sessionID()
+	if err != nil {
+		return nil, err
+	}
+
+	currentTime := now()
+	accessExpiry := currentTime.Add(i.accessTokenTTL)
+	refreshExpiry := currentTime.Add(i.refreshTokenTTL)
 
 	accessClaims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    i.issuer,
 			Subject:   userID,
+			ID:        sessionTokenID,
 			ExpiresAt: jwt.NewNumericDate(accessExpiry),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(currentTime),
+			NotBefore: jwt.NewNumericDate(currentTime),
 		},
 		UserID:    userID,
 		TeamID:    teamID,
@@ -102,9 +130,10 @@ func (i *Issuer) IssueTokenPair(userID, teamID, teamRole, email, name string, is
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    i.issuer,
 			Subject:   userID,
+			ID:        sessionTokenID,
 			ExpiresAt: jwt.NewNumericDate(refreshExpiry),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
+			IssuedAt:  jwt.NewNumericDate(currentTime),
+			NotBefore: jwt.NewNumericDate(currentTime),
 		},
 		UserID:    userID,
 		TokenType: "refresh",
@@ -122,6 +151,14 @@ func (i *Issuer) IssueTokenPair(userID, teamID, teamRole, email, name string, is
 		ExpiresAt:        accessExpiry,
 		RefreshExpiresAt: refreshExpiry,
 	}, nil
+}
+
+func generateSessionID() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
 // ValidateAccessToken validates an access token and returns claims.

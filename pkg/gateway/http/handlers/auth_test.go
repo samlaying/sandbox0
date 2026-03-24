@@ -34,6 +34,9 @@ func newMockAuthRepository() *mockAuthRepository {
 }
 
 func (m *mockAuthRepository) CreateRefreshToken(_ context.Context, token *identity.RefreshToken) error {
+	if _, exists := m.refreshTokens[token.TokenHash]; exists {
+		return errors.New("duplicate refresh token hash")
+	}
 	copyToken := *token
 	m.refreshTokens[token.TokenHash] = &copyToken
 	m.createCalls++
