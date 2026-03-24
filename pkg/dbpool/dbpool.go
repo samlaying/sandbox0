@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -32,10 +33,25 @@ func New(ctx context.Context, opts Options) (*pgxpool.Pool, error) {
 	}
 
 	if opts.Schema != "" {
+		setSearchPathSQL := buildSetSearchPathSQL(opts.Schema)
 		if poolConfig.ConnConfig.RuntimeParams == nil {
 			poolConfig.ConnConfig.RuntimeParams = map[string]string{}
 		}
 		poolConfig.ConnConfig.RuntimeParams["search_path"] = opts.Schema
+
+		existingAfterConnect := poolConfig.AfterConnect
+		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			if existingAfterConnect != nil {
+				if err := existingAfterConnect(ctx, conn); err != nil {
+					return err
+				}
+			}
+
+			if _, err := conn.Exec(ctx, setSearchPathSQL); err != nil {
+				return fmt.Errorf("set search_path via after connect: %w", err)
+			}
+			return nil
+		}
 	}
 
 	if opts.MaxConns == 0 && opts.DefaultMaxConns > 0 {
@@ -65,4 +81,8 @@ func New(ctx context.Context, opts Options) (*pgxpool.Pool, error) {
 	}
 
 	return pool, nil
+}
+
+func buildSetSearchPathSQL(schema string) string {
+	return fmt.Sprintf("SET search_path TO %s, public", pgx.Identifier{schema}.Sanitize())
 }
