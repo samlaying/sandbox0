@@ -93,11 +93,11 @@ export function createDashboardSessionRoute(
 }
 
 function dashboardURL(
-  requestURL: string,
+  siteURL: string,
   error?: string,
   switched?: boolean,
 ): URL {
-  const url = new URL("/", requestURL);
+  const url = new URL("/", siteURL);
   if (switched) {
     url.searchParams.set("team_switched", "1");
   }
@@ -120,7 +120,7 @@ export function createDashboardTeamSelectRoute(
 
     if (!teamID) {
       return NextResponse.redirect(
-        dashboardURL(request.url, "team_id is required"),
+        dashboardURL(config.siteURL, "team_id is required"),
         { status: 303 },
       );
     }
@@ -138,7 +138,7 @@ export function createDashboardTeamSelectRoute(
       if (!refreshed.tokens) {
         const response = NextResponse.redirect(
           dashboardURL(
-            request.url,
+            config.siteURL,
             refreshed.error ?? "session expired, please sign in again",
           ),
           { status: 303 },
@@ -152,7 +152,10 @@ export function createDashboardTeamSelectRoute(
 
     if (!accessToken) {
       const response = NextResponse.redirect(
-        dashboardURL(request.url, "browser session not found, please sign in again"),
+        dashboardURL(
+          config.siteURL,
+          "browser session not found, please sign in again",
+        ),
         { status: 303 },
       );
       clearDashboardAuthCookies(response, config);
@@ -172,7 +175,7 @@ export function createDashboardTeamSelectRoute(
     if (!updateResult.ok) {
       return NextResponse.redirect(
         dashboardURL(
-          request.url,
+          config.siteURL,
           updateResult.error ?? "failed to switch active team",
         ),
         { status: 303 },
@@ -182,7 +185,7 @@ export function createDashboardTeamSelectRoute(
     if (!refreshToken) {
       return NextResponse.redirect(
         dashboardURL(
-          request.url,
+          config.siteURL,
           "team updated but browser session could not be refreshed",
           true,
         ),
@@ -194,7 +197,7 @@ export function createDashboardTeamSelectRoute(
     if (!finalRefresh.tokens) {
       const response = NextResponse.redirect(
         dashboardURL(
-          request.url,
+          config.siteURL,
           finalRefresh.error ?? "team updated but session refresh failed",
           true,
         ),
@@ -207,7 +210,7 @@ export function createDashboardTeamSelectRoute(
     }
 
     const response = NextResponse.redirect(
-      dashboardURL(request.url, undefined, true),
+      dashboardURL(config.siteURL, undefined, true),
       { status: 303 },
     );
     setDashboardAuthCookies(response, config, finalRefresh.tokens);

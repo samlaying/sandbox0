@@ -16,13 +16,13 @@ import {
 import { dashboardLoginPath } from "./browser-auth-links";
 
 function dashboardHomeRedirectURL(
-  requestURL: string,
+  siteURL: string,
   options?: {
     refreshed?: boolean;
     loginError?: string;
   },
 ): URL {
-  const url = new URL("/", requestURL);
+  const url = new URL("/", siteURL);
   if (options?.refreshed) {
     url.searchParams.set("refreshed", "1");
   }
@@ -32,8 +32,8 @@ function dashboardHomeRedirectURL(
   return url;
 }
 
-function dashboardLoginRedirectURL(requestURL: string, error?: string): URL {
-  return new URL(dashboardLoginPath(error), requestURL);
+function dashboardLoginRedirectURL(siteURL: string, error?: string): URL {
+  return new URL(dashboardLoginPath(error), siteURL);
 }
 
 export async function handleDashboardAuthProvidersRequest(
@@ -53,7 +53,7 @@ export async function handleDashboardBuiltinLoginRequest(
 
   if (!email || !password) {
     return NextResponse.redirect(
-      dashboardLoginRedirectURL(request.url, "email and password are required"),
+      dashboardLoginRedirectURL(config.siteURL, "email and password are required"),
       { status: 303 },
     );
   }
@@ -61,13 +61,13 @@ export async function handleDashboardBuiltinLoginRequest(
   const result = await exchangeBuiltinLogin(config, email, password);
   if (!result.tokens) {
     return NextResponse.redirect(
-      dashboardLoginRedirectURL(request.url, result.error ?? "login failed"),
+      dashboardLoginRedirectURL(config.siteURL, result.error ?? "login failed"),
       { status: 303 },
     );
   }
 
   const response = NextResponse.redirect(
-    dashboardHomeRedirectURL(request.url),
+    dashboardHomeRedirectURL(config.siteURL),
     { status: 303 },
   );
   setDashboardAuthCookies(response, config, result.tokens);
@@ -84,7 +84,7 @@ export async function handleDashboardLogoutRequest(
   await forwardLogout(config, accessToken);
 
   const response = NextResponse.redirect(
-    dashboardHomeRedirectURL(request.url),
+    dashboardHomeRedirectURL(config.siteURL),
     { status: 303 },
   );
   clearDashboardAuthCookies(response, config);
@@ -100,7 +100,7 @@ export async function handleDashboardRefreshRequest(
 
   if (!refreshToken) {
     const response = NextResponse.redirect(
-      dashboardHomeRedirectURL(request.url, {
+      dashboardHomeRedirectURL(config.siteURL, {
         refreshed: true,
         loginError: "session expired, please sign in again",
       }),
@@ -113,7 +113,7 @@ export async function handleDashboardRefreshRequest(
   const result = await exchangeRefreshToken(config, refreshToken);
   if (!result.tokens) {
     const response = NextResponse.redirect(
-      dashboardHomeRedirectURL(request.url, {
+      dashboardHomeRedirectURL(config.siteURL, {
         refreshed: true,
         loginError: result.error ?? "session expired, please sign in again",
       }),
@@ -124,7 +124,7 @@ export async function handleDashboardRefreshRequest(
   }
 
   const response = NextResponse.redirect(
-    dashboardHomeRedirectURL(request.url, { refreshed: true }),
+    dashboardHomeRedirectURL(config.siteURL, { refreshed: true }),
     { status: 303 },
   );
   setDashboardAuthCookies(response, config, result.tokens);
@@ -140,7 +140,7 @@ export async function handleDashboardOIDCLoginRequest(
   if (!result.location) {
     return NextResponse.redirect(
       dashboardLoginRedirectURL(
-        request.url,
+        config.siteURL,
         result.error ?? "oidc login failed",
       ),
       { status: 303 },
@@ -154,13 +154,21 @@ export async function handleDashboardOIDCCallbackRequest(
   config: DashboardRuntimeConfig,
   request: Request,
   providerID: string,
+  options?: {
+    fetchImpl?: typeof fetch;
+  },
 ) {
   const rawQuery = new URL(request.url).search;
-  const result = await exchangeOIDCCallback(config, providerID, rawQuery);
+  const result = await exchangeOIDCCallback(
+    config,
+    providerID,
+    rawQuery,
+    options?.fetchImpl,
+  );
   if (!result.tokens) {
     return NextResponse.redirect(
       dashboardLoginRedirectURL(
-        request.url,
+        config.siteURL,
         result.error ?? "oidc callback failed",
       ),
       { status: 303 },
@@ -168,7 +176,7 @@ export async function handleDashboardOIDCCallbackRequest(
   }
 
   const response = NextResponse.redirect(
-    dashboardHomeRedirectURL(request.url),
+    dashboardHomeRedirectURL(config.siteURL),
     { status: 303 },
   );
   setDashboardAuthCookies(response, config, result.tokens);

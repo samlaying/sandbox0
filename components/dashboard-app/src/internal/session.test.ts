@@ -106,6 +106,13 @@ test("resolveDashboardSession resolves single-cluster metadata", async () => {
         }),
       );
     }
+    if (url.endsWith("/api/v1/sandboxvolumes")) {
+      return new Response(
+        JSON.stringify({
+          data: [],
+        }),
+      );
+    }
 
     throw new Error(`unexpected url ${url}`);
   };
@@ -121,7 +128,7 @@ test("resolveDashboardSession resolves single-cluster metadata", async () => {
   assert.equal(session.activeTeam?.teamID, "team_1");
   assert.equal(session.sandboxes.length, 1);
   assert.equal(session.templates.length, 1);
-  assert.equal(fetchCalls.length, 4);
+  assert.equal(fetchCalls.length, 5);
 });
 
 test("resolveDashboardSession resolves global-gateway metadata and region routing", async () => {
@@ -202,6 +209,13 @@ test("resolveDashboardSession resolves global-gateway metadata and region routin
         }),
       );
     }
+    if (url === "https://use1.example.com/api/v1/sandboxvolumes") {
+      return new Response(
+        JSON.stringify({
+          data: [],
+        }),
+      );
+    }
 
     throw new Error(`unexpected url ${url}`);
   };
@@ -259,6 +273,9 @@ test("resolveDashboardSession uses regional session directly when available", as
     if (url === "https://use1.example.com/api/v1/templates") {
       return new Response(JSON.stringify({ data: { templates: [] } }));
     }
+    if (url === "https://use1.example.com/api/v1/sandboxvolumes") {
+      return new Response(JSON.stringify({ data: [] }));
+    }
 
     throw new Error(`unexpected url ${url}`);
   };
@@ -285,5 +302,6 @@ test("resolveDashboardSession uses regional session directly when available", as
     "https://global.example.com/teams",
     "https://use1.example.com/api/v1/sandboxes?limit=5",
     "https://use1.example.com/api/v1/templates",
+    "https://use1.example.com/api/v1/sandboxvolumes",
   ]);
 });
