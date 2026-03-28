@@ -38,6 +38,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/internalauth"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/storage"
+	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
 	pkginternalauth "github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 )
 
@@ -87,6 +88,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 			return err
 		}
 		config.JuiceFSEncryptionKeyPath = juicefsEncryptionKeyPath
+	}
+	podAnnotations, err := common.ConfigHashAnnotation(config)
+	if err != nil {
+		return err
 	}
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, deploymentName, labels, config); err != nil {
 		return err
@@ -215,8 +220,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				Value: "/config/config.yaml",
 			},
 		},
-		VolumeMounts: volumeMounts,
-		Volumes:      volumes,
+		VolumeMounts:   volumeMounts,
+		Volumes:        volumes,
+		PodAnnotations: podAnnotations,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -242,12 +248,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		return err
 	}
 
-	// Create service (gRPC)
+	// Create service.
 	serviceType := common.ResolveServiceType(serviceConfig)
-	servicePort := common.ResolveServicePort(serviceConfig, grpcPort)
+	httpServicePort := common.ResolveServicePort(serviceConfig, httpPort)
 	if err := r.Resources.ReconcileServicePorts(ctx, infra, serviceName, labels, serviceType, []corev1.ServicePort{
-		common.BuildServicePort("grpc", servicePort, grpcPort, serviceType),
-		common.BuildServicePort("http", httpPort, httpPort, serviceType),
+		common.BuildServicePort("grpc", grpcPort, grpcPort, serviceType),
+		common.BuildServicePort("http", httpServicePort, httpPort, serviceType),
 		common.BuildServicePort("metrics", metricsPort, metricsPort, serviceType),
 	}); err != nil {
 		return err
@@ -304,8 +310,8 @@ func (r *Reconciler) ensureEncryptionKeySecret(ctx context.Context, infra *infra
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.StorageProxyConfig, error) {
 	cfg := &apiconfig.StorageProxyConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.StorageProxy != nil && infra.Spec.Services.StorageProxy.Config != nil {
-		cfg = infra.Spec.Services.StorageProxy.Config
+	if infra.Spec.Services != nil && infra.Spec.Services.StorageProxy != nil {
+		cfg = runtimeconfig.ToStorageProxy(infra.Spec.Services.StorageProxy.Config)
 	}
 
 	if dsn, err := database.GetDatabaseDSN(ctx, r.Resources.Client, infra); err == nil {

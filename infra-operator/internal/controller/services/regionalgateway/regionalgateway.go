@@ -34,6 +34,8 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/internalauth"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/registry"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
+	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
 	pkginternalauth "github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 )
 
@@ -46,8 +48,11 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 }
 
 // Reconcile reconciles the regional-gateway deployment.
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string, compiledPlan *infraplan.InfraPlan) error {
 	logger := log.FromContext(ctx)
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
 
 	// Skip if not enabled
 	if infra.Spec.Services != nil && infra.Spec.Services.RegionalGateway != nil && !infra.Spec.Services.RegionalGateway.Enabled {
@@ -66,13 +71,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	labels := common.GetServiceLabels(infra.Name, "regional-gateway")
 	keySecretName, privateKeyKey, _ := internalauth.GetControlPlaneKeyRefs(infra)
 
-	config, registryEnvVars, err := r.buildConfig(ctx, infra)
+	config, registryEnvVars, err := r.buildConfig(ctx, infra, compiledPlan)
 	if err != nil {
 		return err
 	}
-	needEnterpriseLicense := (config.SchedulerEnabled && strings.TrimSpace(config.SchedulerURL) != "") ||
-		apiconfig.HasEnabledOIDCProviders(config.OIDCProviders)
-	if err := common.EnsureEnterpriseLicense(ctx, r.Resources, infra, &config.LicenseFile, needEnterpriseLicense, "enterprise features"); err != nil {
+	needEnterpriseLicense := compiledPlan.Enterprise.RegionalGateway
+	common.NormalizeEnterpriseLicenseFile(&config.LicenseFile, needEnterpriseLicense)
+	podAnnotations, err := common.ConfigHashAnnotation(config)
+	if err != nil {
 		return err
 	}
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, deploymentName, labels, config); err != nil {
@@ -152,10 +158,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				ContainerPort: httpPort,
 			},
 		},
-		Image:        fmt.Sprintf("%s:%s", imageRepo, imageTag),
-		EnvVars:      envVars,
-		VolumeMounts: volumeMounts,
-		Volumes:      volumes,
+		Image:          fmt.Sprintf("%s:%s", imageRepo, imageTag),
+		EnvVars:        envVars,
+		VolumeMounts:   volumeMounts,
+		Volumes:        volumes,
+		PodAnnotations: podAnnotations,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -204,34 +211,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		return err
 	}
 
-	// Update endpoints in status
-	updateEndpoints(infra, serviceName, servicePort)
-
 	logger.Info("Edge gateway reconciled successfully")
 	return nil
 }
 
-func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.RegionalGatewayConfig, []corev1.EnvVar, error) {
+func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, compiledPlan *infraplan.InfraPlan) (*apiconfig.RegionalGatewayConfig, []corev1.EnvVar, error) {
 	cfg := &apiconfig.RegionalGatewayConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.RegionalGateway != nil && infra.Spec.Services.RegionalGateway.Config != nil {
-		cfg = infra.Spec.Services.RegionalGateway.Config
+	if infra.Spec.Services != nil && infra.Spec.Services.RegionalGateway != nil {
+		cfg = runtimeconfig.ToRegionalGateway(infra.Spec.Services.RegionalGateway.Config)
+	}
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
 	}
 
 	if dsn, err := database.GetDatabaseDSN(ctx, r.Resources.Client, infra); err == nil {
 		cfg.DatabaseURL = dsn
 	}
-
-	clusterGatewayConfig := &apiconfig.ClusterGatewayConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.ClusterGateway != nil && infra.Spec.Services.ClusterGateway.Config != nil {
-		clusterGatewayConfig = infra.Spec.Services.ClusterGateway.Config
-	}
-	clusterGatewayServiceConfig := (*infrav1alpha1.ServiceNetworkConfig)(nil)
-	if infra.Spec.Services != nil && infra.Spec.Services.ClusterGateway != nil {
-		clusterGatewayServiceConfig = infra.Spec.Services.ClusterGateway.Service
-	}
-	clusterGatewayPort := common.ResolveServicePort(clusterGatewayServiceConfig, int32(clusterGatewayConfig.HTTPPort))
-	clusterGatewayURL := fmt.Sprintf("http://%s-cluster-gateway:%d", infra.Name, clusterGatewayPort)
-	cfg.DefaultClusterGatewayURL = clusterGatewayURL
+	cfg.DefaultClusterGatewayURL = compiledPlan.RegionalGateway.DefaultClusterGatewayURL
 
 	if infra.Spec.InitUser != nil {
 		secretRef := common.ResolveSecretKeyRef(infra.Spec.InitUser.PasswordSecret, "admin-password", "password")
@@ -412,25 +408,6 @@ func secretEnvVar(name, secretName, key string) corev1.EnvVar {
 				Key:                  key,
 			},
 		},
-	}
-}
-
-func updateEndpoints(infra *infrav1alpha1.Sandbox0Infra, serviceName string, servicePort int32) {
-	if infra.Status.Endpoints == nil {
-		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
-	}
-
-	internalURL := fmt.Sprintf("http://%s:%d", serviceName, servicePort)
-	infra.Status.Endpoints.RegionalGatewayInternal = internalURL
-
-	if infra.Spec.Services != nil && infra.Spec.Services.RegionalGateway != nil &&
-		infra.Spec.Services.RegionalGateway.Ingress != nil && infra.Spec.Services.RegionalGateway.Ingress.Enabled {
-		ingress := infra.Spec.Services.RegionalGateway.Ingress
-		scheme := "http"
-		if ingress.TLSSecret != "" {
-			scheme = "https"
-		}
-		infra.Status.Endpoints.RegionalGateway = fmt.Sprintf("%s://%s", scheme, ingress.Host)
 	}
 }
 

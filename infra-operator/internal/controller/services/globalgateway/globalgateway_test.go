@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	apiconfig "github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
 )
@@ -49,9 +48,9 @@ func TestBuildConfigPopulatesDatabaseAndJWTSecret(t *testing.T) {
 			},
 			Services: &infrav1alpha1.ServicesConfig{
 				GlobalGateway: &infrav1alpha1.GlobalGatewayServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
-						Enabled:  true,
-						Replicas: 1,
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+						Replicas:             1,
 					},
 				},
 			},
@@ -168,11 +167,11 @@ func TestBuildConfigPreservesInitUserHomeRegionID(t *testing.T) {
 			},
 			Services: &infrav1alpha1.ServicesConfig{
 				GlobalGateway: &infrav1alpha1.GlobalGatewayServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
-						Enabled:  true,
-						Replicas: 1,
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+						Replicas:             1,
 					},
-					Config: &apiconfig.GlobalGatewayConfig{},
+					Config: &infrav1alpha1.GlobalGatewayConfig{},
 				},
 			},
 			InitUser: &infrav1alpha1.InitUserConfig{
@@ -230,7 +229,139 @@ func TestBuildConfigPreservesInitUserHomeRegionID(t *testing.T) {
 	}
 }
 
-func TestReconcileCreatesGlobalGatewayResourcesAndEndpoint(t *testing.T) {
+func TestBuildConfigDerivesRegionFromPublicExposure(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+	if err := infrav1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add infra scheme: %v", err)
+	}
+
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			Database: &infrav1alpha1.DatabaseConfig{
+				Type: infrav1alpha1.DatabaseTypeBuiltin,
+				Builtin: &infrav1alpha1.BuiltinDatabaseConfig{
+					Enabled:  true,
+					Port:     5432,
+					Username: "sandbox0",
+					Database: "sandbox0",
+					SSLMode:  "disable",
+				},
+			},
+			PublicExposure: &infrav1alpha1.PublicExposureConfig{
+				Enabled:    true,
+				RootDomain: "sandbox0.app",
+				RegionID:   "aws-us-east-1",
+			},
+			Services: &infrav1alpha1.ServicesConfig{
+				GlobalGateway: &infrav1alpha1.GlobalGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+						Replicas:             1,
+					},
+				},
+				RegionalGateway: &infrav1alpha1.RegionalGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+						Replicas:             1,
+					},
+				},
+			},
+			InitUser: &infrav1alpha1.InitUserConfig{
+				Email: "admin@example.com",
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			infra.DeepCopy(),
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "demo-sandbox0-database-credentials",
+					Namespace: infra.Namespace,
+				},
+				Data: map[string][]byte{
+					"username": []byte("sandbox0"),
+					"password": []byte("db-password"),
+					"database": []byte("sandbox0"),
+					"port":     []byte("5432"),
+				},
+			},
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "admin-password",
+					Namespace: infra.Namespace,
+				},
+				Data: map[string][]byte{
+					"password": []byte("admin-password"),
+				},
+			},
+		).
+		Build()
+
+	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
+	cfg, err := reconciler.buildConfig(context.Background(), infra)
+	if err != nil {
+		t.Fatalf("buildConfig returned error: %v", err)
+	}
+
+	if cfg.RegionID != "aws/us-east-1" {
+		t.Fatalf("expected canonical region id, got %q", cfg.RegionID)
+	}
+	if !cfg.PublicExposureEnabled {
+		t.Fatal("expected public exposure to be enabled")
+	}
+	if cfg.PublicRootDomain != "sandbox0.app" {
+		t.Fatalf("expected public root domain to be preserved, got %q", cfg.PublicRootDomain)
+	}
+	if cfg.BuiltInAuth.InitUser == nil || cfg.BuiltInAuth.InitUser.HomeRegionID != "aws/us-east-1" {
+		t.Fatalf("expected init user home region to default from canonical region, got %#v", cfg.BuiltInAuth.InitUser)
+	}
+}
+
+func TestDesiredBootstrapRegionUsesRegionalGatewayServiceAddress(t *testing.T) {
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			Services: &infrav1alpha1.ServicesConfig{
+				RegionalGateway: &infrav1alpha1.RegionalGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+					},
+					ServiceExposureConfig: infrav1alpha1.ServiceExposureConfig{
+						Service: &infrav1alpha1.ServiceNetworkConfig{
+							Port: 18080,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	region := desiredBootstrapRegion(infra, "aws/us-east-1")
+	if region == nil {
+		t.Fatal("expected bootstrap region")
+	}
+	if region.ID != "aws/us-east-1" {
+		t.Fatalf("unexpected region id: %q", region.ID)
+	}
+	if region.RegionalGatewayURL != "http://demo-regional-gateway:18080" {
+		t.Fatalf("unexpected regional gateway url: %q", region.RegionalGatewayURL)
+	}
+}
+
+func TestReconcileCreatesGlobalGatewayResources(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := appsv1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add appsv1 scheme: %v", err)
@@ -264,9 +395,9 @@ func TestReconcileCreatesGlobalGatewayResourcesAndEndpoint(t *testing.T) {
 			},
 			Services: &infrav1alpha1.ServicesConfig{
 				GlobalGateway: &infrav1alpha1.GlobalGatewayServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
-						Enabled:  true,
-						Replicas: replicas,
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+						Replicas:             replicas,
 					},
 				},
 			},
@@ -308,7 +439,7 @@ func TestReconcileCreatesGlobalGatewayResourcesAndEndpoint(t *testing.T) {
 		Build()
 
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
@@ -355,10 +486,4 @@ func TestReconcileCreatesGlobalGatewayResourcesAndEndpoint(t *testing.T) {
 		t.Fatalf("expected container port 8080, got %#v", container.Ports)
 	}
 
-	if infra.Status.Endpoints == nil || infra.Status.Endpoints.GlobalGateway == "" {
-		t.Fatal("expected global-gateway endpoint to be recorded")
-	}
-	if infra.Status.Endpoints.GlobalGateway != "http://demo-global-gateway:8080" {
-		t.Fatalf("unexpected global-gateway endpoint %q", infra.Status.Endpoints.GlobalGateway)
-	}
 }

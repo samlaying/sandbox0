@@ -22,6 +22,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
 )
@@ -42,17 +43,26 @@ func (r *Sandbox0InfraReconciler) runSteps(ctx context.Context, infra *infrav1al
 		if step.Run == nil {
 			continue
 		}
+		fresh, err := r.isLatestReconcileTarget(ctx, infra)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !fresh {
+			log.FromContext(ctx).Info("Stopping stale reconcile before step", "step", step.Name)
+			return ctrl.Result{}, nil
+		}
 
 		if err := step.Run(ctx); err != nil {
 			if step.ConditionType != "" {
 				r.setCondition(ctx, infra, step.ConditionType, metav1.ConditionFalse, step.ErrorReason, err.Error())
 			}
 			r.setLastMessage(infra, err.Error())
+			log.FromContext(ctx).Info("Reconcile step failed; scheduling retry", "step", step.Name, "error", err.Error())
 			result := ctrl.Result{RequeueAfter: requeueInterval}
 			if step.ErrorResult != nil {
 				result = *step.ErrorResult
 			}
-			return result, err
+			return result, nil
 		}
 
 		if step.ConditionType != "" && !step.SkipSuccessCondition {

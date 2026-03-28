@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
 )
 
 func TestExpectedConditionTypesIncludesGlobalGateway(t *testing.T) {
-	reconciler := &Sandbox0InfraReconciler{}
 	infra := &infrav1alpha1.Sandbox0Infra{
 		Spec: infrav1alpha1.Sandbox0InfraSpec{
 			Database: &infrav1alpha1.DatabaseConfig{
@@ -20,15 +20,15 @@ func TestExpectedConditionTypesIncludesGlobalGateway(t *testing.T) {
 			},
 			Services: &infrav1alpha1.ServicesConfig{
 				GlobalGateway: &infrav1alpha1.GlobalGatewayServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
-						Enabled: true,
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
 					},
 				},
 			},
 		},
 	}
 
-	conditions := reconciler.expectedConditionTypes(infra)
+	conditions := infraplan.Compile(infra).Status.ExpectedConditions
 	if len(conditions) != 2 {
 		t.Fatalf("expected 2 conditions, got %d: %#v", len(conditions), conditions)
 	}

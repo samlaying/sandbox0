@@ -20,8 +20,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	config "github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 )
 
 // DatabaseType defines the type of database
@@ -47,6 +45,12 @@ const (
 // +kubebuilder:validation:Enum=builtin;aws;gcp;azure;aliyun;harbor
 type RegistryProvider string
 
+// BuiltinStatefulResourcePolicy controls how builtin stateful resources are
+// handled when a builtin component is disabled or switched to an external
+// provider.
+// +kubebuilder:validation:Enum=Retain;Delete
+type BuiltinStatefulResourcePolicy string
+
 const (
 	RegistryProviderBuiltin RegistryProvider = "builtin"
 	RegistryProviderAWS     RegistryProvider = "aws"
@@ -54,6 +58,11 @@ const (
 	RegistryProviderAzure   RegistryProvider = "azure"
 	RegistryProviderAliyun  RegistryProvider = "aliyun"
 	RegistryProviderHarbor  RegistryProvider = "harbor"
+)
+
+const (
+	BuiltinStatefulResourcePolicyRetain BuiltinStatefulResourcePolicy = "Retain"
+	BuiltinStatefulResourcePolicyDelete BuiltinStatefulResourcePolicy = "Delete"
 )
 
 // Phase represents the current phase of the Sandbox0Infra
@@ -157,6 +166,7 @@ type DatabaseConfig struct {
 }
 
 // BuiltinDatabaseConfig defines built-in database configuration
+// +kubebuilder:validation:XValidation:rule="has(self.persistence) == has(oldSelf.persistence)",message="persistence presence is immutable after creation"
 type BuiltinDatabaseConfig struct {
 	// Enabled enables the built-in database
 	// +kubebuilder:default=true
@@ -169,16 +179,19 @@ type BuiltinDatabaseConfig struct {
 
 	// Port specifies the database port
 	// +kubebuilder:default=5432
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="port is immutable after creation"
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
 	// Username specifies the database username
 	// +kubebuilder:default="sandbox0"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="username is immutable after creation"
 	// +optional
 	Username string `json:"username,omitempty"`
 
 	// Database specifies the database name
 	// +kubebuilder:default="sandbox0"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="database is immutable after creation"
 	// +optional
 	Database string `json:"database,omitempty"`
 
@@ -188,16 +201,20 @@ type BuiltinDatabaseConfig struct {
 	SSLMode string `json:"sslMode,omitempty"`
 
 	// Persistence configures database storage
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="persistence is immutable after creation"
 	// +optional
 	Persistence *PersistenceConfig `json:"persistence,omitempty"`
+
+	// StatefulResourcePolicy controls what happens to the builtin PVC and
+	// generated credentials secret when the builtin database is disabled or
+	// replaced by an external database.
+	// +kubebuilder:default=Retain
+	// +optional
+	StatefulResourcePolicy BuiltinStatefulResourcePolicy `json:"statefulResourcePolicy,omitempty"`
 }
 
 // PersistenceConfig defines persistence configuration
 type PersistenceConfig struct {
-	// Enabled enables persistence
-	// +kubebuilder:default=true
-	Enabled bool `json:"enabled,omitempty"`
-
 	// Size specifies the storage size
 	// +kubebuilder:default="20Gi"
 	Size resource.Quantity `json:"size,omitempty"`
@@ -274,6 +291,8 @@ type StorageConfig struct {
 }
 
 // BuiltinStorageConfig defines built-in storage configuration
+// +kubebuilder:validation:XValidation:rule="has(self.persistence) == has(oldSelf.persistence)",message="persistence presence is immutable after creation"
+// +kubebuilder:validation:XValidation:rule="has(self.credentials) == has(oldSelf.credentials)",message="credentials presence is immutable after creation"
 type BuiltinStorageConfig struct {
 	// Enabled enables the built-in storage
 	// +kubebuilder:default=true
@@ -330,12 +349,21 @@ type BuiltinStorageConfig struct {
 	ObsEnvironment string `json:"obsEnvironment,omitempty"`
 
 	// Persistence configures storage persistence
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="persistence is immutable after creation"
 	// +optional
 	Persistence *PersistenceConfig `json:"persistence,omitempty"`
 
 	// Credentials configures access credentials (auto-generated if not specified)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="credentials are immutable after creation"
 	// +optional
 	Credentials *StorageCredentials `json:"credentials,omitempty"`
+
+	// StatefulResourcePolicy controls what happens to the builtin PVC and
+	// generated credentials secret when the builtin storage is disabled or
+	// replaced by an external storage backend.
+	// +kubebuilder:default=Retain
+	// +optional
+	StatefulResourcePolicy BuiltinStatefulResourcePolicy `json:"statefulResourcePolicy,omitempty"`
 }
 
 // StorageCredentials defines storage access credentials
@@ -450,6 +478,7 @@ type RegistryConfig struct {
 }
 
 // BuiltinRegistryConfig defines built-in registry configuration.
+// +kubebuilder:validation:XValidation:rule="has(self.persistence) == has(oldSelf.persistence)",message="persistence presence is immutable after creation"
 type BuiltinRegistryConfig struct {
 	// Enabled enables the built-in registry.
 	// +kubebuilder:default=true
@@ -466,6 +495,7 @@ type BuiltinRegistryConfig struct {
 	Port int32 `json:"port,omitempty"`
 
 	// Persistence configures registry persistence.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="persistence is immutable after creation"
 	// +optional
 	Persistence *PersistenceConfig `json:"persistence,omitempty"`
 
@@ -486,6 +516,13 @@ type BuiltinRegistryConfig struct {
 	// If omitted, the operator will generate a secret named "<infra-name>-registry-credentials".
 	// +optional
 	CredentialsSecret *RegistryCredentialsSecret `json:"credentialsSecret,omitempty"`
+
+	// StatefulResourcePolicy controls what happens to the builtin registry PVC
+	// when the builtin registry is disabled or replaced by an external
+	// registry provider.
+	// +kubebuilder:default=Retain
+	// +optional
+	StatefulResourcePolicy BuiltinStatefulResourcePolicy `json:"statefulResourcePolicy,omitempty"`
 }
 
 // RegistryCredentialsSecret references registry credentials in a secret.
@@ -742,12 +779,16 @@ type ServicesConfig struct {
 	Netd *NetdServiceConfig `json:"netd,omitempty"`
 }
 
-// BaseServiceConfig defines common service configuration
-type BaseServiceConfig struct {
+// EnabledServiceConfig defines the enabled state shared by all services.
+type EnabledServiceConfig struct {
 	// Enabled enables or disables the service
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
+}
 
+// WorkloadServiceConfig defines shared deployment-style service settings.
+type WorkloadServiceConfig struct {
+	EnabledServiceConfig `json:",inline"`
 	// Replicas specifies the number of replicas
 	// +kubebuilder:default=1
 	Replicas int32 `json:"replicas,omitempty"`
@@ -755,11 +796,17 @@ type BaseServiceConfig struct {
 	// Resources specifies resource requirements
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
 
+// ServiceExposureConfig defines Kubernetes Service exposure settings.
+type ServiceExposureConfig struct {
 	// Service configures the Kubernetes service
 	// +optional
 	Service *ServiceNetworkConfig `json:"service,omitempty"`
+}
 
+// IngressExposureConfig defines ingress exposure settings.
+type IngressExposureConfig struct {
 	// Ingress configures ingress settings
 	// +optional
 	Ingress *IngressConfig `json:"ingress,omitempty"`
@@ -767,61 +814,69 @@ type BaseServiceConfig struct {
 
 // GlobalGatewayServiceConfig defines configuration for global-gateway service.
 type GlobalGatewayServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
+	IngressExposureConfig `json:",inline"`
 	// Config contains global-gateway specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.GlobalGatewayConfig `json:"config,omitempty"`
+	Config *GlobalGatewayConfig `json:"config,omitempty"`
 }
 
 // RegionalGatewayServiceConfig defines configuration for regional-gateway service
 type RegionalGatewayServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
+	IngressExposureConfig `json:",inline"`
 	// Config contains regional-gateway specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.RegionalGatewayConfig `json:"config,omitempty"`
+	Config *RegionalGatewayConfig `json:"config,omitempty"`
 }
 
 // SchedulerServiceConfig defines configuration for scheduler service
 type SchedulerServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
 	// Config contains scheduler specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.SchedulerConfig `json:"config,omitempty"`
+	Config *SchedulerConfig `json:"config,omitempty"`
 }
 
 // ClusterGatewayServiceConfig defines configuration for cluster-gateway service
 type ClusterGatewayServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
 	// Config contains cluster-gateway specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.ClusterGatewayConfig `json:"config,omitempty"`
+	Config *ClusterGatewayConfig `json:"config,omitempty"`
 }
 
 // ManagerServiceConfig defines configuration for manager service
 type ManagerServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
 	// Config contains manager specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.ManagerConfig `json:"config,omitempty"`
+	Config *ManagerConfig `json:"config,omitempty"`
 }
 
 // StorageProxyServiceConfig defines configuration for storage-proxy service
 type StorageProxyServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	WorkloadServiceConfig `json:",inline"`
+	ServiceExposureConfig `json:",inline"`
 	// Config contains storage-proxy specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.StorageProxyConfig `json:"config,omitempty"`
+	Config *StorageProxyConfig `json:"config,omitempty"`
 }
 
 // NetdServiceConfig defines configuration for netd service
 type NetdServiceConfig struct {
-	BaseServiceConfig `json:",inline"`
+	EnabledServiceConfig `json:",inline"`
 	// MITMCASecretName overrides the operator-managed cluster-local MITM CA secret for HTTPS interception.
 	// Expected keys are ca.crt and ca.key. When unset, infra-operator generates and reuses a managed secret.
 	// +optional
@@ -843,7 +898,7 @@ type NetdServiceConfig struct {
 	// Config contains netd specific configuration
 	// +optional
 	// +kubebuilder:default={}
-	Config *config.NetdConfig `json:"config,omitempty"`
+	Config *NetdConfig `json:"config,omitempty"`
 }
 
 // IsGlobalGatewayEnabled returns true when global-gateway is enabled.
@@ -978,6 +1033,7 @@ func HasAnyServiceEnabled(infra *Sandbox0Infra) bool {
 }
 
 // ServiceNetworkConfig defines service network configuration
+// +kubebuilder:validation:XValidation:rule="self.type != 'NodePort' || self.port == 0 || (self.port >= 30000 && self.port <= 32767)",message="port must be within 30000-32767 when type is NodePort"
 type ServiceNetworkConfig struct {
 	// Type specifies the service type
 	// +kubebuilder:default="ClusterIP"
@@ -1140,6 +1196,11 @@ type Sandbox0InfraStatus struct {
 	// Progress shows readiness progress in "ready/total" format
 	// +optional
 	Progress string `json:"progress,omitempty"`
+
+	// RetainedResources lists builtin stateful resources intentionally retained
+	// after builtin-to-external or enabled-to-disabled transitions.
+	// +optional
+	RetainedResources []RetainedResourceStatus `json:"retainedResources,omitempty"`
 }
 
 // EndpointsStatus contains service endpoints
@@ -1174,6 +1235,26 @@ type ClusterStatus struct {
 	// RegisteredAt is the registration timestamp
 	// +optional
 	RegisteredAt *metav1.Time `json:"registeredAt,omitempty"`
+}
+
+// RetainedResourceStatus describes a builtin stateful resource retained by
+// policy after a lifecycle transition.
+type RetainedResourceStatus struct {
+	// Component is the logical component name, for example database or storage.
+	Component string `json:"component"`
+
+	// Kind is the Kubernetes resource kind.
+	Kind string `json:"kind"`
+
+	// Name is the Kubernetes resource name.
+	Name string `json:"name"`
+
+	// Policy is the stateful resource policy that caused the resource to be retained.
+	Policy BuiltinStatefulResourcePolicy `json:"policy,omitempty"`
+
+	// Reason explains why the resource is retained.
+	// +optional
+	Reason string `json:"reason,omitempty"`
 }
 
 // InternalAuthStatus contains internal authentication status

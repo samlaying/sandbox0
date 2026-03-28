@@ -159,6 +159,9 @@ spec:
                         default: sandbox0
                         description: Database specifies the database name
                         type: string
+                        x-kubernetes-validations:
+                        - message: database is immutable after creation
+                          rule: self == oldSelf
                       enabled:
                         default: true
                         description: Enabled enables the built-in database
@@ -171,10 +174,6 @@ spec:
                       persistence:
                         description: Persistence configures database storage
                         properties:
-                          enabled:
-                            default: true
-                            description: Enabled enables persistence
-                            type: boolean
                           size:
                             anyOf:
                             - type: integer
@@ -188,20 +187,42 @@ spec:
                               (empty for default)
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: persistence is immutable after creation
+                          rule: self == oldSelf
                       port:
                         default: 5432
                         description: Port specifies the database port
                         format: int32
                         type: integer
+                        x-kubernetes-validations:
+                        - message: port is immutable after creation
+                          rule: self == oldSelf
                       sslMode:
                         default: disable
                         description: SSLMode specifies the SSL mode for builtin DSN
+                        type: string
+                      statefulResourcePolicy:
+                        default: Retain
+                        description: |-
+                          StatefulResourcePolicy controls what happens to the builtin PVC and
+                          generated credentials secret when the builtin database is disabled or
+                          replaced by an external database.
+                        enum:
+                        - Retain
+                        - Delete
                         type: string
                       username:
                         default: sandbox0
                         description: Username specifies the database username
                         type: string
+                        x-kubernetes-validations:
+                        - message: username is immutable after creation
+                          rule: self == oldSelf
                     type: object
+                    x-kubernetes-validations:
+                    - message: persistence presence is immutable after creation
+                      rule: has(self.persistence) == has(oldSelf.persistence)
                   external:
                     description: External configures connection to external database
                     properties:
@@ -609,10 +630,6 @@ spec:
                       persistence:
                         description: Persistence configures registry persistence.
                         properties:
-                          enabled:
-                            default: true
-                            description: Enabled enables persistence
-                            type: boolean
                           size:
                             anyOf:
                             - type: integer
@@ -626,6 +643,9 @@ spec:
                               (empty for default)
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: persistence is immutable after creation
+                          rule: self == oldSelf
                       port:
                         default: 5000
                         description: Port specifies the registry port.
@@ -649,7 +669,24 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
+                      statefulResourcePolicy:
+                        default: Retain
+                        description: |-
+                          StatefulResourcePolicy controls what happens to the builtin registry PVC
+                          when the builtin registry is disabled or replaced by an external
+                          registry provider.
+                        enum:
+                        - Retain
+                        - Delete
+                        type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: persistence presence is immutable after creation
+                      rule: has(self.persistence) == has(oldSelf.persistence)
                   gcp:
                     description: GCP configures GCP registry integration.
                     properties:
@@ -830,19 +867,11 @@ spec:
                             default:
                             - regional-gateway
                             - scheduler
-                            description: |-
-                              AllowedCallers is the list of services allowed to call cluster-gateway
-                              Default: ["regional-gateway"], can include "scheduler" for multi-cluster mode
                             items:
                               type: string
                             type: array
                           authMode:
                             default: internal
-                            description: |-
-                              Internal authentication (for validating requests from regional-gateway and
-                              generating tokens for downstream services)
-                              AuthMode controls which authentication modes are accepted on /api/v1.
-                              Allowed values: "internal", "public", "both".
                             enum:
                             - internal
                             - public
@@ -850,28 +879,30 @@ spec:
                             type: string
                           baseUrl:
                             default: http://localhost:8080
-                            description: Base URL for OIDC callbacks
+                            description: BaseURL sets the external base URL used by
+                              browser-facing auth flows.
                             type: string
                           builtInAuth:
                             default: {}
-                            description: Built-in Authentication
+                            description: BuiltInAuth configures local email/password
+                              authentication.
                             properties:
                               adminOnly:
                                 description: AdminOnly restricts built-in auth to
-                                  admin accounts only
+                                  admin accounts only.
                                 type: boolean
                               allowRegistration:
                                 description: AllowRegistration allows new users to
-                                  register
+                                  register.
                                 type: boolean
                               emailVerificationRequired:
                                 description: EmailVerificationRequired requires email
-                                  verification
+                                  verification.
                                 type: boolean
                               enabled:
                                 default: true
                                 description: Enabled enables built-in email/password
-                                  authentication
+                                  authentication.
                                 type: boolean
                             type: object
                           databaseMaxConns:
@@ -889,12 +920,13 @@ spec:
                             type: string
                           httpPort:
                             default: 8443
-                            description: Server configuration
                             type: integer
                           jwtAccessTokenTTL:
                             default: 15m
                             type: string
                           jwtIssuer:
+                            description: JWTIssuer sets the JWT issuer for gateway-issued
+                              tokens.
                             type: string
                           jwtRefreshTokenTTL:
                             default: 168h
@@ -903,77 +935,55 @@ spec:
                             default: info
                             type: string
                           oidcProviders:
-                            description: OIDC Providers
+                            description: OIDCProviders configures external identity
+                              providers.
                             items:
-                              description: OIDCProviderConfig configures an OIDC provider.
+                              description: OIDCProviderConfig configures an OIDC identity
+                                provider.
                               properties:
                                 autoProvision:
-                                  description: AutoProvision automatically creates
-                                    users on first login
                                   type: boolean
                                 clientId:
-                                  description: ClientID is the OAuth client ID
                                   type: string
                                 clientSecret:
-                                  description: ClientSecret is the OAuth client secret
                                   type: string
                                 discoveryUrl:
-                                  description: DiscoveryURL is the OIDC discovery
-                                    URL (.well-known/openid-configuration)
                                   type: string
                                 enabled:
-                                  description: Enabled toggles the provider
                                   type: boolean
                                 externalAuthPortalUrl:
-                                  description: |-
-                                    ExternalAuthPortalURL, when set, redirects unauthenticated browser users to this URL
-                                    instead of initiating the OIDC flow directly. Use for deployments that host their own
-                                    login portal that handles OIDC initiation externally.
                                   type: string
                                 id:
-                                  description: ID is the unique identifier for the
-                                    provider (e.g., "github", "google")
                                   type: string
                                 name:
-                                  description: Name is the display name
                                   type: string
                                 scopes:
                                   default:
                                   - openid
                                   - email
                                   - profile
-                                  description: Scopes are the OAuth scopes to request
                                   items:
                                     type: string
                                   type: array
                                 teamMapping:
-                                  description: TeamMapping configures automatic team
-                                    assignment
+                                  description: TeamMappingConfig configures automatic
+                                    team mapping for OIDC users.
                                   properties:
                                     defaultRole:
-                                      description: DefaultRole is the role assigned
-                                        to new users
                                       type: string
                                     defaultTeamId:
-                                      description: DefaultTeamID is the team to add
-                                        users to
                                       type: string
                                     domain:
-                                      description: Domain filters users by email domain
                                       type: string
                                   type: object
                                 tokenEndpointAuthMethod:
-                                  description: |-
-                                    TokenEndpointAuthMethod controls how the client authenticates to the token endpoint.
-                                    Supported values are "client_secret_basic" and "client_secret_post".
-                                    When omitted, the oauth2 library auto-detects the method.
                                   type: string
                               type: object
                             type: array
                           oidcStateCleanupInterval:
                             default: 5m
                             type: string
-                          oidcStateTTL:
+                          oidcStateTtl:
                             default: 10m
                             type: string
                           procdStoragePermissions:
@@ -985,7 +995,6 @@ spec:
                             type: array
                           proxyTimeout:
                             default: 10s
-                            description: Proxy configuration
                             type: string
                           rateLimitBurst:
                             default: 200
@@ -993,48 +1002,24 @@ spec:
                           rateLimitCleanupInterval:
                             default: 10m
                             type: string
-                          rateLimitRPS:
+                          rateLimitRps:
                             default: 100
                             description: Rate limiting
                             type: integer
-                          regionId:
-                            description: |-
-                              RegionID is the canonical region identifier used by tenancy and routing
-                              contracts, for example "aws/us-east-1".
-                            type: string
                           schedulerPermissions:
                             default:
                             - '*:*'
-                            description: Permissions
                             items:
                               type: string
                             type: array
                           shutdownTimeout:
                             default: 30s
-                            description: Timeouts
                             type: string
                         type: object
                       enabled:
                         default: false
                         description: Enabled enables or disables the service
                         type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
                       replicas:
                         default: 1
                         description: Replicas specifies the number of replicas
@@ -1112,6 +1097,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                   globalGateway:
                     default: {}
@@ -1124,28 +1113,30 @@ spec:
                         properties:
                           baseUrl:
                             default: http://localhost:8080
-                            description: Base URL for OIDC callbacks
+                            description: BaseURL sets the external base URL used by
+                              browser-facing auth flows.
                             type: string
                           builtInAuth:
                             default: {}
-                            description: Built-in Authentication
+                            description: BuiltInAuth configures local email/password
+                              authentication.
                             properties:
                               adminOnly:
                                 description: AdminOnly restricts built-in auth to
-                                  admin accounts only
+                                  admin accounts only.
                                 type: boolean
                               allowRegistration:
                                 description: AllowRegistration allows new users to
-                                  register
+                                  register.
                                 type: boolean
                               emailVerificationRequired:
                                 description: EmailVerificationRequired requires email
-                                  verification
+                                  verification.
                                 type: boolean
                               enabled:
                                 default: true
                                 description: Enabled enables built-in email/password
-                                  authentication
+                                  authentication.
                                 type: boolean
                             type: object
                           databaseMaxConns:
@@ -1168,6 +1159,8 @@ spec:
                             default: 15m
                             type: string
                           jwtIssuer:
+                            description: JWTIssuer sets the JWT issuer for gateway-issued
+                              tokens.
                             type: string
                           jwtRefreshTokenTTL:
                             default: 168h
@@ -1176,77 +1169,55 @@ spec:
                             default: info
                             type: string
                           oidcProviders:
-                            description: OIDC Providers
+                            description: OIDCProviders configures external identity
+                              providers.
                             items:
-                              description: OIDCProviderConfig configures an OIDC provider.
+                              description: OIDCProviderConfig configures an OIDC identity
+                                provider.
                               properties:
                                 autoProvision:
-                                  description: AutoProvision automatically creates
-                                    users on first login
                                   type: boolean
                                 clientId:
-                                  description: ClientID is the OAuth client ID
                                   type: string
                                 clientSecret:
-                                  description: ClientSecret is the OAuth client secret
                                   type: string
                                 discoveryUrl:
-                                  description: DiscoveryURL is the OIDC discovery
-                                    URL (.well-known/openid-configuration)
                                   type: string
                                 enabled:
-                                  description: Enabled toggles the provider
                                   type: boolean
                                 externalAuthPortalUrl:
-                                  description: |-
-                                    ExternalAuthPortalURL, when set, redirects unauthenticated browser users to this URL
-                                    instead of initiating the OIDC flow directly. Use for deployments that host their own
-                                    login portal that handles OIDC initiation externally.
                                   type: string
                                 id:
-                                  description: ID is the unique identifier for the
-                                    provider (e.g., "github", "google")
                                   type: string
                                 name:
-                                  description: Name is the display name
                                   type: string
                                 scopes:
                                   default:
                                   - openid
                                   - email
                                   - profile
-                                  description: Scopes are the OAuth scopes to request
                                   items:
                                     type: string
                                   type: array
                                 teamMapping:
-                                  description: TeamMapping configures automatic team
-                                    assignment
+                                  description: TeamMappingConfig configures automatic
+                                    team mapping for OIDC users.
                                   properties:
                                     defaultRole:
-                                      description: DefaultRole is the role assigned
-                                        to new users
                                       type: string
                                     defaultTeamId:
-                                      description: DefaultTeamID is the team to add
-                                        users to
                                       type: string
                                     domain:
-                                      description: Domain filters users by email domain
                                       type: string
                                   type: object
                                 tokenEndpointAuthMethod:
-                                  description: |-
-                                    TokenEndpointAuthMethod controls how the client authenticates to the token endpoint.
-                                    Supported values are "client_secret_basic" and "client_secret_post".
-                                    When omitted, the oauth2 library auto-detects the method.
                                   type: string
                               type: object
                             type: array
                           oidcStateCleanupInterval:
                             default: 5m
                             type: string
-                          oidcStateTTL:
+                          oidcStateTtl:
                             default: 10m
                             type: string
                           rateLimitBurst:
@@ -1255,16 +1226,11 @@ spec:
                           rateLimitCleanupInterval:
                             default: 10m
                             type: string
-                          rateLimitRPS:
+                          rateLimitRps:
                             default: 100
                             description: Rate limiting
                             type: integer
-                          regionId:
-                            description: |-
-                              RegionID is the canonical region identifier used by tenancy and routing
-                              contracts, for example "aws/us-east-1".
-                            type: string
-                          regionTokenTTL:
+                          regionTokenTtl:
                             default: 5m
                             type: string
                           serverIdleTimeout:
@@ -1378,6 +1344,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                   manager:
                     default: {}
@@ -1389,54 +1359,35 @@ spec:
                         properties:
                           autoscaler:
                             default: {}
-                            description: Autoscaler config for pool scaling behavior
+                            description: AutoscalerConfig defines manager autoscaler
+                              settings.
                             properties:
                               maxScaleStep:
                                 default: 10
-                                description: MaxScaleStep caps the maximum pods to
-                                  add in a single scale operation.
                                 format: int32
                                 type: integer
                               minIdleBuffer:
                                 default: 2
-                                description: |-
-                                  MinIdleBuffer is the minimum number of idle pods to maintain above minIdle.
-                                  When idle count drops to minIdle + MinIdleBuffer, proactive scaling kicks in.
                                 format: int32
                                 type: integer
                               minScaleInterval:
                                 default: 100ms
-                                description: |-
-                                  MinScaleInterval is the minimum time between scale operations for a template.
-                                  This prevents thundering herd when multiple cold claims arrive simultaneously.
                                 type: string
                               noTrafficScaleDownAfter:
                                 default: 10m
-                                description: |-
-                                  NoTrafficScaleDownAfter is the duration without any claims before scaling down.
-                                  Scale down is still async and happens in the background reconcile loop.
                                 type: string
                               scaleDownPercent:
                                 default: "0.1"
-                                description: ScaleDownPercent is the percentage to
-                                  reduce replicas during scale down.
                                 type: string
                               scaleUpFactor:
                                 default: "1.5"
-                                description: |-
-                                  ScaleUpFactor determines how aggressively to scale up.
-                                  When cold claim occurs, newReplicas = current * ScaleUpFactor.
                                 type: string
                               targetIdleRatio:
                                 default: "0.2"
-                                description: |-
-                                  TargetIdleRatio is the target ratio of idle pods to active pods.
-                                  Formula: desiredIdle = active * TargetIdleRatio
                                 type: string
                             type: object
                           cleanupInterval:
                             default: 60s
-                            description: Cleanup Controller
                             type: string
                           databaseMaxConns:
                             default: 10
@@ -1446,39 +1397,33 @@ spec:
                             default: 2
                             format: int32
                             type: integer
-                          defaultSandboxTTL:
+                          defaultSandboxTtl:
                             default: 0s
-                            description: Sandbox
                             type: string
                           httpPort:
                             default: 8080
-                            description: HTTP Server
                             type: integer
                           kubeConfig:
-                            description: Kubernetes
                             type: string
                           leaderElection:
                             default: true
                             type: boolean
                           logLevel:
                             default: info
-                            description: Logging
                             type: string
                           metricsPort:
                             default: 9090
-                            description: Metrics
                             type: integer
                           netdPolicyApplyPollInterval:
                             default: 500ms
                             type: string
                           netdPolicyApplyTimeout:
                             default: 30s
-                            description: Netd apply wait
                             type: string
                           pauseMemoryBufferRatio:
                             default: "1.1"
                             type: string
-                          pauseMinCPU:
+                          pauseMinCpu:
                             default: 10m
                             type: string
                           pauseMinMemoryLimit:
@@ -1486,29 +1431,26 @@ spec:
                             type: string
                           pauseMinMemoryRequest:
                             default: 10Mi
-                            description: Pause/Resume
                             type: string
                           procdClientTimeout:
                             default: 30s
-                            description: Timeouts
                             type: string
                           procdConfig:
                             default: {}
-                            description: Procd config injected into sandbox pods
+                            description: ProcdConfig defines user-facing procd settings
+                              managed by manager.
                             properties:
                               cacheMaxBytes:
                                 default: 104857600
-                                description: Cache configuration
                                 format: int64
                                 type: integer
-                              cacheTTL:
+                              cacheTtl:
                                 default: 30s
                                 type: string
                               contextCleanupInterval:
                                 default: 30s
-                                description: Context cleanup configuration
                                 type: string
-                              contextFinishedTTL:
+                              contextFinishedTtl:
                                 default: 0s
                                 type: string
                               contextIdleTimeout:
@@ -1519,14 +1461,12 @@ spec:
                                 type: string
                               httpPort:
                                 default: 49983
-                                description: Server configuration
                                 type: integer
                               juicefsBufferSize:
                                 default: "300"
                                 type: string
                               juicefsCacheSize:
                                 default: "100"
-                                description: JuiceFS Mount Defaults
                                 type: string
                               juicefsPrefetch:
                                 default: 3
@@ -1539,7 +1479,6 @@ spec:
                                 type: string
                               rootPath:
                                 default: /workspace
-                                description: File manager configuration
                                 type: string
                               webhookBaseBackoff:
                                 default: 500ms
@@ -1571,30 +1510,12 @@ spec:
                             type: string
                           webhookPort:
                             default: 9443
-                            description: Webhook
                             type: integer
                         type: object
                       enabled:
                         default: false
                         description: Enabled enables or disables the service
                         type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
                       replicas:
                         default: 1
                         description: Replicas specifies the number of replicas
@@ -1672,6 +1593,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                   netd:
                     default: {}
@@ -1711,12 +1636,8 @@ spec:
                             type: string
                           egressAuthResolverTimeout:
                             default: 2s
-                            description: EgressAuthResolverTimeout is the timeout
-                              for runtime egress auth resolve calls.
                             type: string
                           egressAuthResolverUrl:
-                            description: EgressAuthResolverURL is the base URL for
-                              the runtime egress auth resolver.
                             type: string
                           failClosed:
                             default: true
@@ -1736,18 +1657,12 @@ spec:
                           metricsReportInterval:
                             default: 10s
                             type: string
-                          mitmCaCertPath:
-                            type: string
-                          mitmCaKeyPath:
-                            type: string
                           mitmLeafTtl:
                             default: 1h
                             type: string
                           nodeName:
                             type: string
                           platformAllowedCidrs:
-                            description: Platform allow/deny lists (override user
-                              policy)
                             items:
                               type: string
                             type: array
@@ -1777,7 +1692,6 @@ spec:
                             type: integer
                           proxyListenAddr:
                             default: 0.0.0.0
-                            description: Proxy settings
                             type: string
                           proxyUpstreamTimeout:
                             default: 30s
@@ -1789,7 +1703,6 @@ spec:
                             default: 2s
                             type: string
                           useEbpf:
-                            description: eBPF and tc
                             type: boolean
                           useEdt:
                             type: boolean
@@ -1800,23 +1713,6 @@ spec:
                         default: false
                         description: Enabled enables or disables the service
                         type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
                       mitmCaSecretName:
                         description: |-
                           MITMCASecretName overrides the operator-managed cluster-local MITM CA secret for HTTPS interception.
@@ -1830,88 +1726,11 @@ spec:
                           Deprecated: use spec.sandboxNodePlacement.nodeSelector instead. This field
                           remains as a backward-compatible alias when the shared placement is unset.
                         type: object
-                      replicas:
-                        default: 1
-                        description: Replicas specifies the number of replicas
-                        format: int32
-                        type: integer
-                      resources:
-                        description: Resources specifies resource requirements
-                        properties:
-                          claims:
-                            description: |-
-                              Claims lists the names of resources, defined in spec.resourceClaims,
-                              that are used by this container.
-
-                              This field depends on the
-                              DynamicResourceAllocation feature gate.
-
-                              This field is immutable. It can only be set for containers.
-                            items:
-                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                              properties:
-                                name:
-                                  description: |-
-                                    Name must match the name of one entry in pod.spec.resourceClaims of
-                                    the Pod where this field is used. It makes that resource available
-                                    inside a container.
-                                  type: string
-                                request:
-                                  description: |-
-                                    Request is the name chosen for a request in the referenced claim.
-                                    If empty, everything from the claim is made available, otherwise
-                                    only the result of this request.
-                                  type: string
-                              required:
-                              - name
-                              type: object
-                            type: array
-                            x-kubernetes-list-map-keys:
-                            - name
-                            x-kubernetes-list-type: map
-                          limits:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Limits describes the maximum amount of compute resources allowed.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                          requests:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Requests describes the minimum amount of compute resources required.
-                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                        type: object
                       runtimeClassName:
                         description: |-
                           RuntimeClassName specifies the Kubernetes runtime class for the netd daemonset.
                           Use a host-compatible runtime such as runc. Do not run netd on gVisor or Kata.
                         type: string
-                      service:
-                        description: Service configures the Kubernetes service
-                        properties:
-                          port:
-                            default: 80
-                            description: Port specifies the service port
-                            format: int32
-                            type: integer
-                          type:
-                            default: ClusterIP
-                            description: Type specifies the service type
-                            type: string
-                        type: object
                       tolerations:
                         description: |-
                           Tolerations allow netd to run on tainted sandbox nodes.
@@ -1967,42 +1786,40 @@ spec:
                         properties:
                           authMode:
                             default: self_hosted
-                            description: |-
-                              AuthMode controls how human-facing authentication is handled.
-                              Allowed values: "self_hosted", "federated_global".
                             enum:
                             - self_hosted
                             - federated_global
                             type: string
                           baseUrl:
                             default: http://localhost:8080
-                            description: Base URL for OIDC callbacks
+                            description: BaseURL sets the external base URL used by
+                              browser-facing auth flows.
                             type: string
                           builtInAuth:
                             default: {}
-                            description: Built-in Authentication
+                            description: BuiltInAuth configures local email/password
+                              authentication.
                             properties:
                               adminOnly:
                                 description: AdminOnly restricts built-in auth to
-                                  admin accounts only
+                                  admin accounts only.
                                 type: boolean
                               allowRegistration:
                                 description: AllowRegistration allows new users to
-                                  register
+                                  register.
                                 type: boolean
                               emailVerificationRequired:
                                 description: EmailVerificationRequired requires email
-                                  verification
+                                  verification.
                                 type: boolean
                               enabled:
                                 default: true
                                 description: Enabled enables built-in email/password
-                                  authentication
+                                  authentication.
                                 type: boolean
                             type: object
-                          clusterCacheTTL:
+                          clusterCacheTtl:
                             default: 30s
-                            description: Cache configuration
                             type: string
                           databaseMaxConns:
                             default: 30
@@ -2016,23 +1833,22 @@ spec:
                             type: string
                           edition:
                             default: self-hosted
-                            description: 'Edition: "saas" or "self-hosted"'
                             type: string
                           httpPort:
                             default: 8080
-                            description: Server configuration
                             type: integer
                           internalAuthCaller:
                             default: regional-gateway
                             type: string
-                          internalAuthTTL:
+                          internalAuthTtl:
                             default: 30s
-                            description: Internal Authentication
                             type: string
                           jwtAccessTokenTTL:
                             default: 15m
                             type: string
                           jwtIssuer:
+                            description: JWTIssuer sets the JWT issuer for gateway-issued
+                              tokens.
                             type: string
                           jwtRefreshTokenTTL:
                             default: 168h
@@ -2041,82 +1857,59 @@ spec:
                             default: info
                             type: string
                           oidcProviders:
-                            description: OIDC Providers
+                            description: OIDCProviders configures external identity
+                              providers.
                             items:
-                              description: OIDCProviderConfig configures an OIDC provider.
+                              description: OIDCProviderConfig configures an OIDC identity
+                                provider.
                               properties:
                                 autoProvision:
-                                  description: AutoProvision automatically creates
-                                    users on first login
                                   type: boolean
                                 clientId:
-                                  description: ClientID is the OAuth client ID
                                   type: string
                                 clientSecret:
-                                  description: ClientSecret is the OAuth client secret
                                   type: string
                                 discoveryUrl:
-                                  description: DiscoveryURL is the OIDC discovery
-                                    URL (.well-known/openid-configuration)
                                   type: string
                                 enabled:
-                                  description: Enabled toggles the provider
                                   type: boolean
                                 externalAuthPortalUrl:
-                                  description: |-
-                                    ExternalAuthPortalURL, when set, redirects unauthenticated browser users to this URL
-                                    instead of initiating the OIDC flow directly. Use for deployments that host their own
-                                    login portal that handles OIDC initiation externally.
                                   type: string
                                 id:
-                                  description: ID is the unique identifier for the
-                                    provider (e.g., "github", "google")
                                   type: string
                                 name:
-                                  description: Name is the display name
                                   type: string
                                 scopes:
                                   default:
                                   - openid
                                   - email
                                   - profile
-                                  description: Scopes are the OAuth scopes to request
                                   items:
                                     type: string
                                   type: array
                                 teamMapping:
-                                  description: TeamMapping configures automatic team
-                                    assignment
+                                  description: TeamMappingConfig configures automatic
+                                    team mapping for OIDC users.
                                   properties:
                                     defaultRole:
-                                      description: DefaultRole is the role assigned
-                                        to new users
                                       type: string
                                     defaultTeamId:
-                                      description: DefaultTeamID is the team to add
-                                        users to
                                       type: string
                                     domain:
-                                      description: Domain filters users by email domain
                                       type: string
                                   type: object
                                 tokenEndpointAuthMethod:
-                                  description: |-
-                                    TokenEndpointAuthMethod controls how the client authenticates to the token endpoint.
-                                    Supported values are "client_secret_basic" and "client_secret_post".
-                                    When omitted, the oauth2 library auto-detects the method.
                                   type: string
                               type: object
                             type: array
                           oidcStateCleanupInterval:
                             default: 5m
                             type: string
-                          oidcStateTTL:
+                          oidcStateTtl:
                             default: 10m
                             type: string
                           proxyTimeout:
-                            default: 30s
-                            description: Timeouts
+                            default: 10s
                             type: string
                           rateLimitBurst:
                             default: 200
@@ -2124,18 +1917,11 @@ spec:
                           rateLimitCleanupInterval:
                             default: 10m
                             type: string
-                          rateLimitRPS:
+                          rateLimitRps:
                             default: 100
                             description: Rate limiting
                             type: integer
-                          regionId:
-                            description: |-
-                              RegionID is the canonical region identifier used by tenancy and routing
-                              contracts, for example "aws/us-east-1".
-                            type: string
                           schedulerEnabled:
-                            description: Scheduler configuration (optional, for multi-cluster
-                              mode)
                             type: boolean
                           schedulerUrl:
                             type: string
@@ -2250,6 +2036,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                   scheduler:
                     description: Scheduler configures the scheduler service (control
@@ -2260,7 +2050,8 @@ spec:
                         description: Config contains scheduler specific configuration
                         properties:
                           databasePool:
-                            description: Database Pool configuration
+                            description: DatabasePoolConfig defines scheduler database
+                              pool settings.
                             properties:
                               maxConnIdleTime:
                                 default: 5m
@@ -2279,7 +2070,6 @@ spec:
                             type: object
                           httpPort:
                             default: 8080
-                            description: Server configuration
                             type: integer
                           idleTimeout:
                             default: 120s
@@ -2298,11 +2088,9 @@ spec:
                             type: string
                           reconcileInterval:
                             default: 30s
-                            description: Reconciler configuration
                             type: string
                           shutdownTimeout:
                             default: 30s
-                            description: Timeouts
                             type: string
                           writeTimeout:
                             default: 60s
@@ -2312,23 +2100,6 @@ spec:
                         default: false
                         description: Enabled enables or disables the service
                         type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
                       replicas:
                         default: 1
                         description: Replicas specifies the number of replicas
@@ -2406,6 +2177,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                   storageProxy:
                     default: {}
@@ -2445,21 +2220,18 @@ spec:
                             type: string
                           grpcAddr:
                             default: 0.0.0.0
-                            description: gRPC Server
                             type: string
                           grpcPort:
                             default: 8080
                             type: integer
                           heartbeatInterval:
                             default: 5s
-                            description: Coordination
                             type: string
                           heartbeatTimeout:
                             default: 15
                             type: integer
                           httpAddr:
                             default: 0.0.0.0
-                            description: HTTP Management API
                             type: string
                           httpIdleTimeout:
                             default: 60s
@@ -2469,7 +2241,6 @@ spec:
                             type: integer
                           httpReadTimeout:
                             default: 15s
-                            description: Timeouts
                             type: string
                           httpWriteTimeout:
                             default: 15s
@@ -2492,8 +2263,6 @@ spec:
                           juicefsEncryptionEnabled:
                             default: false
                             type: boolean
-                          juicefsEncryptionKeyPath:
-                            type: string
                           juicefsEncryptionPassphrase:
                             type: string
                           juicefsEntryTimeout:
@@ -2512,11 +2281,9 @@ spec:
                             default: 1
                             type: integer
                           kubeconfigPath:
-                            description: Kubernetes
                             type: string
                           logLevel:
                             default: info
-                            description: Logging
                             type: string
                           maxBytesPerSecond:
                             default: 1073741824
@@ -2524,22 +2291,18 @@ spec:
                             type: integer
                           maxOpsPerSecond:
                             default: 10000
-                            description: Rate limiting
                             type: integer
                           metricsEnabled:
                             default: true
-                            description: Monitoring
                             type: boolean
                           metricsPort:
                             default: 9090
                             type: integer
                           restoreRemountTimeout:
                             default: 30s
-                            description: Snapshot restore
                             type: string
                           syncCompactionInterval:
                             default: 10m
-                            description: Volume sync maintenance
                             type: string
                           syncJournalRetainEntries:
                             default: 10000
@@ -2553,30 +2316,12 @@ spec:
                             type: integer
                           watchEventsEnabled:
                             default: true
-                            description: Watch events
                             type: boolean
                         type: object
                       enabled:
                         default: false
                         description: Enabled enables or disables the service
                         type: boolean
-                      ingress:
-                        description: Ingress configures ingress settings
-                        properties:
-                          className:
-                            description: ClassName specifies the ingress class name
-                            type: string
-                          enabled:
-                            default: false
-                            description: Enabled enables ingress
-                            type: boolean
-                          host:
-                            description: Host specifies the ingress host
-                            type: string
-                          tlsSecret:
-                            description: TLSSecret specifies the TLS secret name
-                            type: string
-                        type: object
                       replicas:
                         default: 1
                         description: Replicas specifies the number of replicas
@@ -2654,6 +2399,10 @@ spec:
                             description: Type specifies the service type
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: port must be within 30000-32767 when type is NodePort
+                          rule: self.type != 'NodePort' || self.port == 0 || (self.port
+                            >= 30000 && self.port <= 32767)
                     type: object
                 type: object
               storage:
@@ -2688,6 +2437,9 @@ spec:
                             description: SecretKey is the secret key
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: credentials are immutable after creation
+                          rule: self == oldSelf
                       enabled:
                         default: true
                         description: Enabled enables the built-in storage
@@ -2713,10 +2465,6 @@ spec:
                       persistence:
                         description: Persistence configures storage persistence
                         properties:
-                          enabled:
-                            default: true
-                            description: Enabled enables persistence
-                            type: boolean
                           size:
                             anyOf:
                             - type: integer
@@ -2730,6 +2478,9 @@ spec:
                               (empty for default)
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: persistence is immutable after creation
+                          rule: self == oldSelf
                       port:
                         default: 9000
                         description: Port specifies the RustFS API port
@@ -2740,11 +2491,26 @@ spec:
                         description: Region specifies the default region for builtin
                           storage
                         type: string
+                      statefulResourcePolicy:
+                        default: Retain
+                        description: |-
+                          StatefulResourcePolicy controls what happens to the builtin PVC and
+                          generated credentials secret when the builtin storage is disabled or
+                          replaced by an external storage backend.
+                        enum:
+                        - Retain
+                        - Delete
+                        type: string
                       volumes:
                         default: /data
                         description: Volumes specifies the RustFS data path
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: persistence presence is immutable after creation
+                      rule: has(self.persistence) == has(oldSelf.persistence)
+                    - message: credentials presence is immutable after creation
+                      rule: has(self.credentials) == has(oldSelf.credentials)
                   oss:
                     description: OSS configures Aliyun OSS storage
                     properties:
@@ -2998,6 +2764,41 @@ spec:
               progress:
                 description: Progress shows readiness progress in "ready/total" format
                 type: string
+              retainedResources:
+                description: |-
+                  RetainedResources lists builtin stateful resources intentionally retained
+                  after builtin-to-external or enabled-to-disabled transitions.
+                items:
+                  description: |-
+                    RetainedResourceStatus describes a builtin stateful resource retained by
+                    policy after a lifecycle transition.
+                  properties:
+                    component:
+                      description: Component is the logical component name, for example
+                        database or storage.
+                      type: string
+                    kind:
+                      description: Kind is the Kubernetes resource kind.
+                      type: string
+                    name:
+                      description: Name is the Kubernetes resource name.
+                      type: string
+                    policy:
+                      description: Policy is the stateful resource policy that caused
+                        the resource to be retained.
+                      enum:
+                      - Retain
+                      - Delete
+                      type: string
+                    reason:
+                      description: Reason explains why the resource is retained.
+                      type: string
+                  required:
+                  - component
+                  - kind
+                  - name
+                  type: object
+                type: array
             type: object
         type: object
     served: true

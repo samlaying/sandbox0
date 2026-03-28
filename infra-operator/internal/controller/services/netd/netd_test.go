@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +21,7 @@ import (
 	apiconfig "github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
 )
 
 func TestReconcileUsesSharedSandboxNodePlacement(t *testing.T) {
@@ -93,18 +95,11 @@ func TestReconcileMountsExplicitMITMCASecret(t *testing.T) {
 	client, scheme := newNetdTestClient(t, infra.DeepCopy())
 
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
 	assertNetdMITMSecretMounted(t, client, infra, "netd-mitm-ca")
-
-	if got := infra.Spec.Services.Netd.Config.MITMCACertPath; got != "" {
-		t.Fatalf("expected input config to remain unchanged, got cert path %q", got)
-	}
-	if got := infra.Spec.Services.Netd.Config.MITMCAKeyPath; got != "" {
-		t.Fatalf("expected input config to remain unchanged, got key path %q", got)
-	}
 }
 
 func TestReconcileAutoGeneratesManagedMITMCASecret(t *testing.T) {
@@ -112,7 +107,7 @@ func TestReconcileAutoGeneratesManagedMITMCASecret(t *testing.T) {
 	client, scheme := newNetdTestClient(t, infra.DeepCopy())
 
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
@@ -137,7 +132,7 @@ func TestReconcileReusesManagedMITMCASecretAcrossReconciles(t *testing.T) {
 	client, scheme := newNetdTestClient(t, infra.DeepCopy())
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
 
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("first reconcile returned error: %v", err)
 	}
 
@@ -152,7 +147,7 @@ func TestReconcileReusesManagedMITMCASecretAcrossReconciles(t *testing.T) {
 	firstCert := append([]byte(nil), secret.Data[mitmCACertKey]...)
 	firstKey := append([]byte(nil), secret.Data[mitmCAKeyKey]...)
 
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("second reconcile returned error: %v", err)
 	}
 	if err := client.Get(context.Background(), types.NamespacedName{
@@ -182,7 +177,7 @@ func TestReconcileRepairsInvalidManagedMITMCASecret(t *testing.T) {
 	client, scheme := newNetdTestClient(t, infra.DeepCopy(), invalidSecret)
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
 
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
@@ -202,7 +197,7 @@ func TestReconcileExplicitMITMCASecretSkipsManagedSecret(t *testing.T) {
 	client, scheme := newNetdTestClient(t, infra.DeepCopy())
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
 
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
@@ -223,7 +218,7 @@ func reconcileNetdDaemonSet(t *testing.T, infra *infrav1alpha1.Sandbox0Infra) *a
 
 	client, scheme := newNetdTestClient(t, infra.DeepCopy())
 	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
-	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest"); err != nil {
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", nil); err != nil {
 		t.Fatalf("reconcile returned error: %v", err)
 	}
 
@@ -236,6 +231,34 @@ func reconcileNetdDaemonSet(t *testing.T, infra *infrav1alpha1.Sandbox0Infra) *a
 	}
 
 	return ds
+}
+
+func TestReconcileUsesCompiledPlanForEgressAuthResolverURL(t *testing.T) {
+	infra := newNetdTestInfra()
+	client, scheme := newNetdTestClient(t, infra.DeepCopy())
+	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
+	compiled := infraplan.Compile(infra)
+	compiled.Netd.EgressAuthResolverURL = "http://planned-manager.sandbox0-system.svc.cluster.local:19090"
+
+	if err := reconciler.Reconcile(context.Background(), infra, "ghcr.io/sandbox0-ai/sandbox0", "latest", compiled); err != nil {
+		t.Fatalf("reconcile returned error: %v", err)
+	}
+
+	configMap := &corev1.ConfigMap{}
+	if err := client.Get(context.Background(), types.NamespacedName{
+		Name:      infra.Name + "-netd",
+		Namespace: infra.Namespace,
+	}, configMap); err != nil {
+		t.Fatalf("expected configmap to be created: %v", err)
+	}
+
+	cfg := &apiconfig.NetdConfig{}
+	if err := yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), cfg); err != nil {
+		t.Fatalf("failed to parse netd config: %v", err)
+	}
+	if got := cfg.EgressAuthResolverURL; got != compiled.Netd.EgressAuthResolverURL {
+		t.Fatalf("expected resolver URL %q, got %q", compiled.Netd.EgressAuthResolverURL, got)
+	}
 }
 
 func newNetdTestClient(t *testing.T, objects ...ctrlclient.Object) (ctrlclient.Client, *runtime.Scheme) {
@@ -251,6 +274,16 @@ func newNetdTestClient(t *testing.T, objects ...ctrlclient.Object) (ctrlclient.C
 	if err := infrav1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatalf("add infra scheme: %v", err)
 	}
+
+	objects = append(objects, &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-dns",
+			Namespace: "kube-system",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.96.0.10",
+		},
+	})
 
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -335,17 +368,15 @@ func newNetdTestInfra() *infrav1alpha1.Sandbox0Infra {
 		Spec: infrav1alpha1.Sandbox0InfraSpec{
 			Services: &infrav1alpha1.ServicesConfig{
 				Netd: &infrav1alpha1.NetdServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
+					EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{
 						Enabled: true,
 					},
 					RuntimeClassName: &runtimeClass,
-					Config: &apiconfig.NetdConfig{
-						ClusterDNSCIDR: "10.96.0.10/32",
-					},
+					Config:           &infrav1alpha1.NetdConfig{},
 				},
 				Manager: &infrav1alpha1.ManagerServiceConfig{
-					BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
-						Enabled: true,
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
 					},
 				},
 			},

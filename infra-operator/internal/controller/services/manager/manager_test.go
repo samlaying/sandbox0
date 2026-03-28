@@ -6,12 +6,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
 )
 
-func TestResolveNetworkPolicyProvider(t *testing.T) {
+func TestCompilePlanDefaultsToNoopNetworkPolicyProviderWhenNetdIsDisabled(t *testing.T) {
 	t.Run("defaults to noop when netd is disabled", func(t *testing.T) {
 		infra := &infrav1alpha1.Sandbox0Infra{}
-		if got := resolveNetworkPolicyProvider(infra); got != "noop" {
+		if got := infraplan.Compile(infra).Manager.NetworkPolicyProvider; got != "noop" {
 			t.Fatalf("expected noop provider, got %q", got)
 		}
 	})
@@ -21,20 +22,20 @@ func TestResolveNetworkPolicyProvider(t *testing.T) {
 			Spec: infrav1alpha1.Sandbox0InfraSpec{
 				Services: &infrav1alpha1.ServicesConfig{
 					Netd: &infrav1alpha1.NetdServiceConfig{
-						BaseServiceConfig: infrav1alpha1.BaseServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{
 							Enabled: true,
 						},
 					},
 				},
 			},
 		}
-		if got := resolveNetworkPolicyProvider(infra); got != "netd" {
+		if got := infraplan.Compile(infra).Manager.NetworkPolicyProvider; got != "netd" {
 			t.Fatalf("expected netd provider, got %q", got)
 		}
 	})
 }
 
-func TestResolveSandboxPodPlacementPrefersSharedPlacement(t *testing.T) {
+func TestCompilePlanSandboxPodPlacementPrefersSharedPlacement(t *testing.T) {
 	infra := &infrav1alpha1.Sandbox0Infra{
 		Spec: infrav1alpha1.Sandbox0InfraSpec{
 			SandboxNodePlacement: &infrav1alpha1.SandboxNodePlacementConfig{
@@ -60,7 +61,7 @@ func TestResolveSandboxPodPlacementPrefersSharedPlacement(t *testing.T) {
 		},
 	}
 
-	placement := resolveSandboxPodPlacement(infra)
+	placement := infraplan.Compile(infra).Manager.SandboxPodPlacement
 	if got := placement.NodeSelector["sandbox0.ai/node-role"]; got != "shared" {
 		t.Fatalf("expected shared placement to win, got %q", got)
 	}

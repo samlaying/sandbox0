@@ -30,6 +30,8 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/internalauth"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
+	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
 	pkginternalauth "github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 )
 
@@ -42,8 +44,11 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 }
 
 // Reconcile reconciles the cluster-gateway deployment.
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string, compiledPlan *infraplan.InfraPlan) error {
 	logger := log.FromContext(ctx)
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
 
 	// Skip if not enabled
 	if infra.Spec.Services != nil && infra.Spec.Services.ClusterGateway != nil && !infra.Spec.Services.ClusterGateway.Enabled {
@@ -66,9 +71,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	if err != nil {
 		return err
 	}
-	needEnterpriseLicense := clusterGatewayPublicAuthEnabled(config.AuthMode) &&
-		apiconfig.HasEnabledOIDCProviders(config.OIDCProviders)
-	if err := common.EnsureEnterpriseLicense(ctx, r.Resources, infra, &config.LicenseFile, needEnterpriseLicense, "OIDC SSO"); err != nil {
+	needEnterpriseLicense := compiledPlan.Enterprise.ClusterGateway
+	common.NormalizeEnterpriseLicenseFile(&config.LicenseFile, needEnterpriseLicense)
+	podAnnotations, err := common.ConfigHashAnnotation(config)
+	if err != nil {
 		return err
 	}
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, deploymentName, labels, config); err != nil {
@@ -181,8 +187,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				Value: "/config/config.yaml",
 			},
 		},
-		VolumeMounts: volumeMounts,
-		Volumes:      volumes,
+		VolumeMounts:   volumeMounts,
+		Volumes:        volumes,
+		PodAnnotations: podAnnotations,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -219,20 +226,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		return err
 	}
 
-	// Update endpoints in status
-	if infra.Status.Endpoints == nil {
-		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
-	}
-	infra.Status.Endpoints.ClusterGateway = fmt.Sprintf("http://%s:%d", serviceName, servicePort)
-
 	logger.Info("Internal gateway reconciled successfully")
 	return nil
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.ClusterGatewayConfig, error) {
 	cfg := &apiconfig.ClusterGatewayConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.ClusterGateway != nil && infra.Spec.Services.ClusterGateway.Config != nil {
-		cfg = infra.Spec.Services.ClusterGateway.Config
+	if infra.Spec.Services != nil && infra.Spec.Services.ClusterGateway != nil {
+		cfg = runtimeconfig.ToClusterGateway(infra.Spec.Services.ClusterGateway.Config)
 	}
 
 	if dsn, err := database.GetDatabaseDSN(ctx, r.Resources.Client, infra); err == nil {
@@ -240,8 +241,8 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 
 	managerConfig := &apiconfig.ManagerConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil && infra.Spec.Services.Manager.Config != nil {
-		managerConfig = infra.Spec.Services.Manager.Config
+	if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil {
+		managerConfig = runtimeconfig.ToManager(infra.Spec.Services.Manager.Config)
 	}
 	managerServiceConfig := (*infrav1alpha1.ServiceNetworkConfig)(nil)
 	if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil {
@@ -256,11 +257,13 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 
 	storageProxyConfig := &apiconfig.StorageProxyConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.StorageProxy != nil && infra.Spec.Services.StorageProxy.Config != nil {
-		storageProxyConfig = infra.Spec.Services.StorageProxy.Config
+	storageProxyServiceConfig := (*infrav1alpha1.ServiceNetworkConfig)(nil)
+	if infra.Spec.Services != nil && infra.Spec.Services.StorageProxy != nil {
+		storageProxyConfig = runtimeconfig.ToStorageProxy(infra.Spec.Services.StorageProxy.Config)
+		storageProxyServiceConfig = infra.Spec.Services.StorageProxy.Service
 	}
 	if infrav1alpha1.IsStorageProxyEnabled(infra) {
-		storageProxyHTTPPort := int32(storageProxyConfig.HTTPPort)
+		storageProxyHTTPPort := common.ResolveServicePort(storageProxyServiceConfig, int32(storageProxyConfig.HTTPPort))
 		storageProxyURL := fmt.Sprintf("http://%s-storage-proxy:%d", infra.Name, storageProxyHTTPPort)
 		cfg.StorageProxyURL = storageProxyURL
 	} else {

@@ -22,6 +22,8 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/internalauth"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
+	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
 	pkginternalauth "github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 )
 
@@ -33,8 +35,11 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 	return &Reconciler{Resources: resources}
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string, compiledPlan *infraplan.InfraPlan) error {
 	logger := log.FromContext(ctx)
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
 	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil && !infra.Spec.Services.Netd.Enabled {
 		logger.Info("netd is disabled, skipping")
 		return nil
@@ -56,13 +61,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	runtimeClassName := (*string)(nil)
 	nodeSelector := map[string]string(nil)
 	tolerations := []corev1.Toleration(nil)
-	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil && infra.Spec.Services.Netd.Config != nil {
-		config = infra.Spec.Services.Netd.Config.DeepCopy()
+	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil {
+		config = runtimeconfig.ToNetd(infra.Spec.Services.Netd.Config)
 	}
 	if infra.Spec.Services != nil && infra.Spec.Services.Netd != nil {
 		runtimeClassName = infra.Spec.Services.Netd.RuntimeClassName
 	}
-	nodeSelector, tolerations = common.ResolveSandboxNodePlacement(infra)
+	nodeSelector, tolerations = compiledPlan.Netd.NodeSelector, compiledPlan.Netd.Tolerations
 	if config.NodeName == "" {
 		config.NodeName = "${NODE_NAME}"
 	}
@@ -84,18 +89,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 			config.DatabaseURL = dsn
 		}
 	}
-	if infra.Spec.Region != "" {
-		config.RegionID = infra.Spec.Region
-	}
-	if infra.Spec.Cluster != nil && infra.Spec.Cluster.ID != "" {
-		config.ClusterID = infra.Spec.Cluster.ID
-	}
-	if infrav1alpha1.IsManagerEnabled(infra) && config.EgressAuthResolverURL == "" {
-		port := 8080
-		if infra.Spec.Services != nil && infra.Spec.Services.Manager != nil && infra.Spec.Services.Manager.Config != nil && infra.Spec.Services.Manager.Config.HTTPPort > 0 {
-			port = infra.Spec.Services.Manager.Config.HTTPPort
-		}
-		config.EgressAuthResolverURL = fmt.Sprintf("http://%s-manager.%s.svc.cluster.local:%d", infra.Name, infra.Namespace, port)
+	config.RegionID = compiledPlan.Netd.RegionID
+	config.ClusterID = compiledPlan.Netd.ClusterID
+	if config.EgressAuthResolverURL == "" {
+		config.EgressAuthResolverURL = compiledPlan.Netd.EgressAuthResolverURL
 	}
 	mitmCASecretName, err := r.resolveMITMCASecretName(ctx, infra, labels)
 	if err != nil {
@@ -109,6 +106,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		if config.MITMCAKeyPath == "" {
 			config.MITMCAKeyPath = "/tls/ca.key"
 		}
+	}
+	podAnnotations, err := common.ConfigHashAnnotation(config)
+	if err != nil {
+		return err
 	}
 
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, name, labels, config); err != nil {
@@ -225,7 +226,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      labels,
-					Annotations: common.EnsurePodTemplateAnnotations(infra, nil),
+					Annotations: common.EnsurePodTemplateAnnotations(podAnnotations),
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: name,

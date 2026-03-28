@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -27,11 +28,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,6 +56,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/scheduler"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/storage"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/storageproxy"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
 	"github.com/sandbox0-ai/sandbox0/pkg/naming"
 	"github.com/sandbox0-ai/sandbox0/pkg/template"
 )
@@ -94,7 +97,7 @@ func (r *Sandbox0InfraReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Fetch the Sandbox0Infra instance
 	infra := &infrav1alpha1.Sandbox0Infra{}
 	if err := r.Get(ctx, req.NamespacedName, infra); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Sandbox0Infra resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -123,10 +126,17 @@ func (r *Sandbox0InfraReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set default values
 	r.setDefaults(infra)
+	if err := r.validateSpecSemantics(ctx, infra); err != nil {
+		logger.Error(err, "Sandbox0Infra validation failed")
+		if updateErr := r.updateValidationFailureStatus(ctx, infra, err); updateErr != nil {
+			logger.Error(updateErr, "Failed to project validation failure status")
+		}
+		return ctrl.Result{}, err
+	}
 
-	// Main reconciliation logic based on configured components
-	plan := r.buildComponentPlan(infra)
-	result, err := r.reconcileComponentPlan(ctx, infra, plan)
+	// Main reconciliation logic based on compiled desired state.
+	compiledPlan := infraplan.Compile(infra)
+	result, err := r.reconcileComponentPlan(ctx, infra, compiledPlan)
 
 	// Update overall status
 	if updateErr := r.updateOverallStatus(ctx, infra); updateErr != nil {
@@ -191,89 +201,25 @@ func (r *Sandbox0InfraReconciler) reconcileDelete(ctx context.Context, infra *in
 	return ctrl.Result{}, nil
 }
 
-type componentPlan struct {
-	EnableGlobalGateway       bool
-	HasControlPlane           bool
-	HasDataPlane              bool
-	EnableRegionalGateway     bool
-	EnableScheduler           bool
-	EnableClusterGateway      bool
-	EnableManager             bool
-	EnableStorageProxy        bool
-	EnableFusePlugin          bool
-	EnableNetd                bool
-	EnableInternalAuth        bool
-	EnableDatabase            bool
-	EnableStorage             bool
-	EnableRegistry            bool
-	EnableInitUser            bool
-	EnableClusterRegistration bool
-	RequireControlPlaneConfig bool
-}
-
-func (r *Sandbox0InfraReconciler) buildComponentPlan(infra *infrav1alpha1.Sandbox0Infra) componentPlan {
-	enableGlobalGateway := infrav1alpha1.IsGlobalGatewayEnabled(infra)
-	enableRegionalGateway := infrav1alpha1.IsRegionalGatewayEnabled(infra)
-	enableScheduler := infrav1alpha1.IsSchedulerEnabled(infra)
-	enableClusterGateway := infrav1alpha1.IsClusterGatewayEnabled(infra)
-	enableManager := infrav1alpha1.IsManagerEnabled(infra)
-	enableStorageProxy := infrav1alpha1.IsStorageProxyEnabled(infra)
-
-	hasControlPlane := enableRegionalGateway || enableScheduler
-	hasDataPlane := enableClusterGateway || enableManager || enableStorageProxy
-
-	return componentPlan{
-		EnableGlobalGateway:       enableGlobalGateway,
-		HasControlPlane:           hasControlPlane,
-		HasDataPlane:              hasDataPlane,
-		EnableRegionalGateway:     enableRegionalGateway,
-		EnableScheduler:           enableScheduler,
-		EnableClusterGateway:      enableClusterGateway,
-		EnableManager:             enableManager,
-		EnableStorageProxy:        enableStorageProxy,
-		EnableFusePlugin:          enableManager,
-		EnableNetd:                infrav1alpha1.IsNetdEnabled(infra),
-		EnableInternalAuth:        hasControlPlane || hasDataPlane,
-		EnableDatabase:            infrav1alpha1.IsDatabaseEnabled(infra),
-		EnableStorage:             infrav1alpha1.IsStorageEnabled(infra),
-		EnableRegistry:            infrav1alpha1.IsRegistryEnabled(infra),
-		EnableInitUser:            infra.Spec.InitUser != nil,
-		EnableClusterRegistration: hasDataPlane && infra.Spec.Cluster != nil,
-		RequireControlPlaneConfig: hasDataPlane && infra.Spec.ControlPlane != nil,
-	}
-}
-
-func (r *Sandbox0InfraReconciler) validateComponentPlan(infra *infrav1alpha1.Sandbox0Infra, plan componentPlan) error {
-	if plan.RequireControlPlaneConfig && infra.Spec.ControlPlane != nil &&
-		infra.Spec.ControlPlane.InternalAuthPublicKeySecret.Name == "" {
-		return fmt.Errorf("controlPlane.internalAuthPublicKeySecret.name is required when controlPlane are enabled")
-	}
-	if infra.Spec.InitUser != nil && !plan.EnableDatabase {
-		return fmt.Errorf("initUser can only be enabled when database is enabled")
-	}
-	if plan.EnableGlobalGateway && !plan.EnableDatabase {
-		return fmt.Errorf("globalGateway requires database to be enabled")
-	}
-	if infra.Spec.Cluster != nil && !plan.HasDataPlane {
-		return fmt.Errorf("cluster configuration requires at least one data-plane service")
-	}
-	if plan.EnableNetd && infra.Spec.Services != nil && infra.Spec.Services.Netd != nil && infra.Spec.Services.Netd.Config != nil &&
-		infra.Spec.Services.Netd.Config.EgressAuthEnabled && !plan.EnableManager {
-		return fmt.Errorf("netd egress auth requires manager to be enabled")
-	}
-	return nil
-}
-
 // reconcileComponentPlan reconciles components based on spec configuration.
-func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, plan componentPlan) (ctrl.Result, error) {
+func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, compiledPlan *infraplan.InfraPlan) (ctrl.Result, error) {
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
+	plan := compiledPlan.Components
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling components", "controlPlane", plan.HasControlPlane, "dataPlane", plan.HasDataPlane)
 
-	if err := r.validateComponentPlan(infra, plan); err != nil {
+	if len(compiledPlan.Validation.FatalErrors) > 0 {
+		return ctrl.Result{}, stderrors.New(strings.Join(compiledPlan.Validation.FatalErrors, "; "))
+	}
+	fresh, err := r.isLatestReconcileTarget(ctx, infra)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if err := r.cleanupDisabledServiceResources(ctx, infra, plan); err != nil {
-		return ctrl.Result{RequeueAfter: requeueInterval}, err
+	if !fresh {
+		logger.Info("Stopping stale reconcile before component cleanup")
+		return ctrl.Result{}, nil
 	}
 
 	resources := common.NewResourceManager(r.Client, r.Scheme, r.getImagePullPolicy(ctx), r.getLocalDevConfig(ctx))
@@ -293,439 +239,219 @@ func (r *Sandbox0InfraReconciler) reconcileComponentPlan(ctx context.Context, in
 	netdReconciler := netd.NewReconciler(resources)
 	rbacReconciler := rbac.NewReconciler(resources)
 
-	steps := []reconcileStep{}
-	if plan.RequireControlPlaneConfig {
-		steps = append(steps, reconcileStep{
-			Name: "control-plane-config",
-			Run: func(ctx context.Context) error {
-				if infra.Spec.ControlPlane == nil {
-					return fmt.Errorf("controlPlane configuration is required when data-plane services are enabled")
-				}
-				return nil
-			},
-			ConditionType:        infrav1alpha1.ConditionTypeInternalAuthReady,
-			ErrorReason:          "MissingControlPlane",
-			SkipSuccessCondition: true,
-			ErrorResult:          &ctrl.Result{},
-		})
-		steps = append(steps, reconcileStep{
-			Name: "control-plane-public-key",
-			Run: func(ctx context.Context) error {
-				publicKeySecret := &corev1.Secret{}
-				return r.Get(ctx, types.NamespacedName{
-					Name:      infra.Spec.ControlPlane.InternalAuthPublicKeySecret.Name,
-					Namespace: infra.Namespace,
-				}, publicKeySecret)
-			},
-			ConditionType:        infrav1alpha1.ConditionTypeInternalAuthReady,
-			ErrorReason:          "PublicKeySecretNotFound",
-			SkipSuccessCondition: true,
-		})
-	}
-	if plan.EnableInternalAuth {
-		steps = append(steps, reconcileStep{
-			Name:           "internal-auth",
-			Run:            func(ctx context.Context) error { return authReconciler.Reconcile(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeInternalAuthReady,
-			SuccessReason:  "KeysReady",
-			SuccessMessage: "Internal auth keys are ready",
-			ErrorReason:    "KeyGenerationFailed",
-		})
-	}
-	if plan.EnableDatabase {
-		steps = append(steps, reconcileStep{
-			Name:           "database",
-			Run:            func(ctx context.Context) error { return dbReconciler.Reconcile(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeDatabaseReady,
-			SuccessReason:  "DatabaseReady",
-			SuccessMessage: "Database is ready",
-			ErrorReason:    "DatabaseFailed",
-		})
-	}
-	if plan.EnableStorage {
-		steps = append(steps, reconcileStep{
-			Name:           "storage",
-			Run:            func(ctx context.Context) error { return storageReconciler.Reconcile(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeStorageReady,
-			SuccessReason:  "StorageReady",
-			SuccessMessage: "Storage is ready",
-			ErrorReason:    "StorageFailed",
-		})
-	}
-	if plan.EnableRegistry {
-		steps = append(steps, reconcileStep{
-			Name:           "registry",
-			Run:            func(ctx context.Context) error { return registryReconciler.Reconcile(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeRegistryReady,
-			SuccessReason:  "RegistryReady",
-			SuccessMessage: "Registry is ready",
-			ErrorReason:    "RegistryFailed",
-		})
-	}
-	if plan.EnableGlobalGateway {
-		steps = append(steps, reconcileStep{
-			Name: "global-gateway",
-			Run: func(ctx context.Context) error {
-				return globalGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
-			},
-			ConditionType:  infrav1alpha1.ConditionTypeGlobalGatewayReady,
-			SuccessReason:  "GlobalGatewayReady",
-			SuccessMessage: "Global gateway is ready",
-			ErrorReason:    "GlobalGatewayFailed",
-		})
-	}
-	if plan.EnableInitUser {
-		steps = append(steps, reconcileStep{
-			Name:           "init-user-secret",
-			Run:            func(ctx context.Context) error { return r.ensureInitUserPasswordSecret(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeSecretsGenerated,
-			SuccessReason:  "InitUserSecretReady",
-			SuccessMessage: "Init user password secret is ready",
-			ErrorReason:    "InitUserSecretFailed",
-		})
-	}
-	if plan.EnableRegionalGateway {
-		steps = append(steps, reconcileStep{
-			Name: "regional-gateway",
-			Run: func(ctx context.Context) error {
-				return regionalGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
-			},
-			ConditionType:  infrav1alpha1.ConditionTypeRegionalGatewayReady,
-			SuccessReason:  "RegionalGatewayReady",
-			SuccessMessage: "Edge gateway is ready",
-			ErrorReason:    "RegionalGatewayFailed",
-		})
-	}
-	if plan.EnableScheduler {
-		steps = append(steps,
-			reconcileStep{
-				Name:                 "scheduler-rbac",
-				Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileSchedulerRBAC(ctx, infra) },
-				ConditionType:        infrav1alpha1.ConditionTypeSchedulerReady,
-				ErrorReason:          "SchedulerRBACFailed",
-				SkipSuccessCondition: true,
-			},
-			reconcileStep{
-				Name:           "scheduler",
-				Run:            func(ctx context.Context) error { return schedulerReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
-				ConditionType:  infrav1alpha1.ConditionTypeSchedulerReady,
-				SuccessReason:  "SchedulerReady",
-				SuccessMessage: "Scheduler is ready",
-				ErrorReason:    "SchedulerFailed",
-			},
-		)
-	}
-	if plan.EnableClusterGateway {
-		steps = append(steps, reconcileStep{
-			Name: "cluster-gateway",
-			Run: func(ctx context.Context) error {
-				return clusterGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
-			},
-			ConditionType:  infrav1alpha1.ConditionTypeClusterGatewayReady,
-			SuccessReason:  "ClusterGatewayReady",
-			SuccessMessage: "Internal gateway is ready",
-			ErrorReason:    "ClusterGatewayFailed",
-		})
-	}
-	if plan.EnableNetd {
-		steps = append(steps, reconcileStep{
-			Name:                 "netd-rbac",
-			Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) },
-			ConditionType:        infrav1alpha1.ConditionTypeNetdReady,
-			ErrorReason:          "NetdRBACFailed",
-			SkipSuccessCondition: true,
-		})
-		steps = append(steps, reconcileStep{
-			Name:           "netd",
-			Run:            func(ctx context.Context) error { return netdReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
-			ConditionType:  infrav1alpha1.ConditionTypeNetdReady,
-			SuccessReason:  "NetdReady",
-			SuccessMessage: "netd is ready",
-			ErrorReason:    "NetdFailed",
-		})
-	}
-	if plan.EnableFusePlugin {
-		steps = append(steps, reconcileStep{
-			Name: "fuse-device-plugin",
-			Run: func(ctx context.Context) error {
-				return fusePluginReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
-			},
-			ConditionType:  infrav1alpha1.ConditionTypeFusePluginReady,
-			SuccessReason:  "FusePluginReady",
-			SuccessMessage: "FUSE device plugin is ready",
-			ErrorReason:    "FusePluginFailed",
-		})
-	}
-	if plan.EnableManager {
-		steps = append(steps,
-			reconcileStep{
-				Name:                 "manager-rbac",
-				Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) },
-				ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
-				ErrorReason:          "ManagerRBACFailed",
-				SkipSuccessCondition: true,
-			},
-			reconcileStep{
-				Name:           "manager",
-				Run:            func(ctx context.Context) error { return managerReconciler.Reconcile(ctx, infra, imageRepo, imageTag) },
-				ConditionType:  infrav1alpha1.ConditionTypeManagerReady,
-				SuccessReason:  "ManagerReady",
-				SuccessMessage: "Manager is ready",
-				ErrorReason:    "ManagerFailed",
-			},
-		)
-		steps = append(steps, reconcileStep{
-			Name:                 "builtin-template-pods",
-			Run:                  func(ctx context.Context) error { return r.waitBuiltinTemplatePodsReady(ctx, infra) },
-			ConditionType:        infrav1alpha1.ConditionTypeManagerReady,
-			ErrorReason:          "BuiltinTemplatePodsNotReady",
-			SkipSuccessCondition: true,
-		})
-	}
-	if plan.EnableStorageProxy {
-		steps = append(steps,
-			reconcileStep{
-				Name:                 "storage-proxy-rbac",
-				Run:                  func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) },
-				ConditionType:        infrav1alpha1.ConditionTypeStorageProxyReady,
-				ErrorReason:          "StorageProxyRBACFailed",
-				SkipSuccessCondition: true,
-			},
-			reconcileStep{
-				Name: "storage-proxy",
-				Run: func(ctx context.Context) error {
-					return storageProxyReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
-				},
-				ConditionType:  infrav1alpha1.ConditionTypeStorageProxyReady,
-				SuccessReason:  "StorageProxyReady",
-				SuccessMessage: "Storage proxy is ready",
-				ErrorReason:    "StorageProxyFailed",
-			},
-		)
-	}
-	if plan.EnableInitUser {
-		steps = append(steps, reconcileStep{
-			Name:           "init-user",
-			Run:            func(ctx context.Context) error { return r.reconcileInitUser(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeInitUserReady,
-			SuccessReason:  "InitUserReady",
-			SuccessMessage: "Initial admin user created",
-			ErrorReason:    "InitUserFailed",
-		})
-	}
-	if plan.EnableClusterRegistration {
-		steps = append(steps, reconcileStep{
-			Name:           "register-cluster",
-			Run:            func(ctx context.Context) error { return r.registerCluster(ctx, infra) },
-			ConditionType:  infrav1alpha1.ConditionTypeClusterRegistered,
-			SuccessReason:  "ClusterRegistered",
-			SuccessMessage: "Cluster registration completed",
-			ErrorReason:    "ClusterRegistrationFailed",
-		})
+	if err := r.cleanupDisabledServiceResources(ctx, infra, compiledPlan.Cleanup, dbReconciler, storageReconciler, registryReconciler); err != nil {
+		return ctrl.Result{RequeueAfter: requeueInterval}, err
 	}
 
+	steps, err := r.bindWorkflowSteps(infra, compiledPlan, resources, imageRepo, imageTag, authReconciler, dbReconciler, storageReconciler, registryReconciler, globalGatewayReconciler, regionalGatewayReconciler, schedulerReconciler, clusterGatewayReconciler, managerReconciler, storageProxyReconciler, fusePluginReconciler, netdReconciler, rbacReconciler)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	return r.runSteps(ctx, infra, steps)
 }
 
-func (r *Sandbox0InfraReconciler) cleanupDisabledServiceResources(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, plan componentPlan) error {
-	deleteNamespaced := func(name string, obj client.Object) error {
-		key := types.NamespacedName{Name: name, Namespace: infra.Namespace}
+func (r *Sandbox0InfraReconciler) bindWorkflowSteps(
+	infra *infrav1alpha1.Sandbox0Infra,
+	compiledPlan *infraplan.InfraPlan,
+	resources *common.ResourceManager,
+	imageRepo, imageTag string,
+	authReconciler *internalauth.Reconciler,
+	dbReconciler *database.Reconciler,
+	storageReconciler *storage.Reconciler,
+	registryReconciler *registry.Reconciler,
+	globalGatewayReconciler *globalgateway.Reconciler,
+	regionalGatewayReconciler *regionalgateway.Reconciler,
+	schedulerReconciler *scheduler.Reconciler,
+	clusterGatewayReconciler *clustergateway.Reconciler,
+	managerReconciler *manager.Reconciler,
+	storageProxyReconciler *storageproxy.Reconciler,
+	fusePluginReconciler *fuseplugin.Reconciler,
+	netdReconciler *netd.Reconciler,
+	rbacReconciler *rbac.Reconciler,
+) ([]reconcileStep, error) {
+	steps := make([]reconcileStep, 0, len(compiledPlan.Workflow.Steps))
+	for _, planned := range compiledPlan.Workflow.Steps {
+		run, err := r.workflowStepRunner(infra, compiledPlan, resources, imageRepo, imageTag, planned.Name, authReconciler, dbReconciler, storageReconciler, registryReconciler, globalGatewayReconciler, regionalGatewayReconciler, schedulerReconciler, clusterGatewayReconciler, managerReconciler, storageProxyReconciler, fusePluginReconciler, netdReconciler, rbacReconciler)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, reconcileStep{
+			Name:                 planned.Name,
+			Run:                  run,
+			ConditionType:        planned.ConditionType,
+			SuccessReason:        planned.SuccessReason,
+			SuccessMessage:       planned.SuccessMessage,
+			ErrorReason:          planned.ErrorReason,
+			SkipSuccessCondition: planned.SkipSuccessCondition,
+		})
+	}
+	return steps, nil
+}
+
+func (r *Sandbox0InfraReconciler) workflowStepRunner(
+	infra *infrav1alpha1.Sandbox0Infra,
+	compiledPlan *infraplan.InfraPlan,
+	resources *common.ResourceManager,
+	imageRepo, imageTag, name string,
+	authReconciler *internalauth.Reconciler,
+	dbReconciler *database.Reconciler,
+	storageReconciler *storage.Reconciler,
+	registryReconciler *registry.Reconciler,
+	globalGatewayReconciler *globalgateway.Reconciler,
+	regionalGatewayReconciler *regionalgateway.Reconciler,
+	schedulerReconciler *scheduler.Reconciler,
+	clusterGatewayReconciler *clustergateway.Reconciler,
+	managerReconciler *manager.Reconciler,
+	storageProxyReconciler *storageproxy.Reconciler,
+	fusePluginReconciler *fuseplugin.Reconciler,
+	netdReconciler *netd.Reconciler,
+	rbacReconciler *rbac.Reconciler,
+) (func(context.Context) error, error) {
+	switch name {
+	case "control-plane-public-key":
+		return func(ctx context.Context) error {
+			publicKeySecret := &corev1.Secret{}
+			return r.Get(ctx, types.NamespacedName{
+				Name:      infra.Spec.ControlPlane.InternalAuthPublicKeySecret.Name,
+				Namespace: infra.Namespace,
+			}, publicKeySecret)
+		}, nil
+	case "internal-auth":
+		return func(ctx context.Context) error { return authReconciler.Reconcile(ctx, infra) }, nil
+	case "database":
+		return func(ctx context.Context) error { return dbReconciler.Reconcile(ctx, infra) }, nil
+	case "storage":
+		return func(ctx context.Context) error { return storageReconciler.Reconcile(ctx, infra) }, nil
+	case "registry":
+		return func(ctx context.Context) error { return registryReconciler.Reconcile(ctx, infra) }, nil
+	case "global-gateway-enterprise-license":
+		return func(ctx context.Context) error {
+			licenseFile := ""
+			return common.EnsureEnterpriseLicense(ctx, resources, infra, &licenseFile, true, "global-gateway enterprise SSO")
+		}, nil
+	case "global-gateway":
+		return func(ctx context.Context) error {
+			return globalGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "init-user-secret":
+		return func(ctx context.Context) error { return r.ensureInitUserPasswordSecret(ctx, infra) }, nil
+	case "regional-gateway-enterprise-license":
+		return func(ctx context.Context) error {
+			licenseFile := ""
+			return common.EnsureEnterpriseLicense(ctx, resources, infra, &licenseFile, true, "enterprise features")
+		}, nil
+	case "regional-gateway":
+		return func(ctx context.Context) error {
+			return regionalGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "scheduler-enterprise-license":
+		return func(ctx context.Context) error {
+			licenseFile := ""
+			return common.EnsureEnterpriseLicense(ctx, resources, infra, &licenseFile, true, "scheduler")
+		}, nil
+	case "scheduler-rbac":
+		return func(ctx context.Context) error { return rbacReconciler.ReconcileSchedulerRBAC(ctx, infra) }, nil
+	case "scheduler":
+		return func(ctx context.Context) error {
+			return schedulerReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "cluster-gateway-enterprise-license":
+		return func(ctx context.Context) error {
+			licenseFile := ""
+			return common.EnsureEnterpriseLicense(ctx, resources, infra, &licenseFile, true, "OIDC SSO")
+		}, nil
+	case "cluster-gateway":
+		return func(ctx context.Context) error {
+			return clusterGatewayReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "fuse-device-plugin":
+		return func(ctx context.Context) error {
+			return fusePluginReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+		}, nil
+	case "manager-rbac":
+		return func(ctx context.Context) error { return rbacReconciler.ReconcileManagerRBAC(ctx, infra) }, nil
+	case "manager":
+		return func(ctx context.Context) error {
+			return managerReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "builtin-template-pods":
+		return func(ctx context.Context) error { return r.waitBuiltinTemplatePodsReady(ctx, infra, compiledPlan) }, nil
+	case "netd-rbac":
+		return func(ctx context.Context) error { return rbacReconciler.ReconcileNetdRBAC(ctx, infra) }, nil
+	case "netd":
+		return func(ctx context.Context) error {
+			return netdReconciler.Reconcile(ctx, infra, imageRepo, imageTag, compiledPlan)
+		}, nil
+	case "storage-proxy-rbac":
+		return func(ctx context.Context) error { return rbacReconciler.ReconcileStorageProxyRBAC(ctx, infra) }, nil
+	case "storage-proxy":
+		return func(ctx context.Context) error {
+			return storageProxyReconciler.Reconcile(ctx, infra, imageRepo, imageTag)
+		}, nil
+	case "init-user":
+		return func(ctx context.Context) error { return r.reconcileInitUser(ctx, infra) }, nil
+	case "register-cluster":
+		return func(ctx context.Context) error { return r.registerCluster(ctx, infra) }, nil
+	default:
+		return nil, fmt.Errorf("unsupported workflow step %q", name)
+	}
+}
+
+func (r *Sandbox0InfraReconciler) cleanupDisabledServiceResources(
+	ctx context.Context,
+	infra *infrav1alpha1.Sandbox0Infra,
+	cleanupPlan infraplan.CleanupPlan,
+	dbReconciler *database.Reconciler,
+	storageReconciler *storage.Reconciler,
+	registryReconciler *registry.Reconciler,
+) error {
+	deleteResource := func(ref infraplan.ResourceRef, obj client.Object) error {
+		key := types.NamespacedName{Name: ref.Name, Namespace: ref.Namespace}
+		if ref.Namespace == "" {
+			key = types.NamespacedName{Name: ref.Name}
+		}
 		if err := r.Get(ctx, key, obj); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				return nil
 			}
 			return err
 		}
-		if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) {
-			return err
-		}
-		return nil
-	}
-	deleteClusterScoped := func(name string, obj client.Object) error {
-		key := types.NamespacedName{Name: name}
-		if err := r.Get(ctx, key, obj); err != nil {
-			if errors.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-		if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 		return nil
 	}
 
-	globalGatewayName := fmt.Sprintf("%s-global-gateway", infra.Name)
-	if !plan.EnableGlobalGateway {
-		if err := deleteNamespaced(globalGatewayName, &appsv1.Deployment{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(globalGatewayName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(globalGatewayName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(globalGatewayName, &networkingv1.Ingress{}); err != nil {
+	if cleanupPlan.CleanupBuiltinDatabase && dbReconciler != nil {
+		if err := dbReconciler.CleanupBuiltinResources(ctx, infra); err != nil {
 			return err
 		}
 	}
-
-	edgeName := fmt.Sprintf("%s-regional-gateway", infra.Name)
-	if !plan.EnableRegionalGateway {
-		if err := deleteNamespaced(edgeName, &appsv1.Deployment{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(edgeName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(edgeName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(edgeName, &networkingv1.Ingress{}); err != nil {
+	if cleanupPlan.CleanupBuiltinStorage && storageReconciler != nil {
+		if err := storageReconciler.CleanupBuiltinResources(ctx, infra); err != nil {
 			return err
 		}
 	}
-
-	schedulerName := fmt.Sprintf("%s-scheduler", infra.Name)
-	if !plan.EnableScheduler {
-		if err := deleteNamespaced(schedulerName, &appsv1.Deployment{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(schedulerName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(schedulerName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(schedulerName, &corev1.ServiceAccount{}); err != nil {
+	if cleanupPlan.CleanupBuiltinRegistry && registryReconciler != nil {
+		if err := registryReconciler.CleanupBuiltinResources(ctx, infra); err != nil {
 			return err
 		}
 	}
-
-	clusterGatewayName := fmt.Sprintf("%s-cluster-gateway", infra.Name)
-	if !plan.EnableClusterGateway {
-		if err := deleteNamespaced(clusterGatewayName, &appsv1.Deployment{}); err != nil {
+	for _, ref := range cleanupPlan.DeleteNamespaced {
+		obj, err := objectForCleanupKind(ref.Kind)
+		if err != nil {
 			return err
 		}
-		if err := deleteNamespaced(clusterGatewayName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(clusterGatewayName, &corev1.ConfigMap{}); err != nil {
+		if err := deleteResource(ref, obj); err != nil {
 			return err
 		}
 	}
-
-	managerName := fmt.Sprintf("%s-manager", infra.Name)
-	if !plan.EnableManager {
-		if err := deleteNamespaced(managerName, &appsv1.Deployment{}); err != nil {
+	for _, ref := range cleanupPlan.DeleteClusterScoped {
+		obj, err := objectForCleanupKind(ref.Kind)
+		if err != nil {
 			return err
 		}
-		if err := deleteNamespaced(managerName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(managerName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(managerName, &corev1.ServiceAccount{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(managerName, &rbacv1.ClusterRole{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(managerName, &rbacv1.ClusterRoleBinding{}); err != nil {
-			return err
-		}
-	}
-
-	storageProxyName := fmt.Sprintf("%s-storage-proxy", infra.Name)
-	if !plan.EnableStorageProxy {
-		if err := deleteNamespaced(storageProxyName, &appsv1.Deployment{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(storageProxyName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(storageProxyName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(storageProxyName, &corev1.ServiceAccount{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(storageProxyName, &rbacv1.ClusterRole{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(storageProxyName, &rbacv1.ClusterRoleBinding{}); err != nil {
-			return err
-		}
-	}
-
-	egressBrokerName := fmt.Sprintf("%s-egress-broker", infra.Name)
-	if err := deleteNamespaced(egressBrokerName, &appsv1.Deployment{}); err != nil {
-		return err
-	}
-	if err := deleteNamespaced(egressBrokerName, &corev1.Service{}); err != nil {
-		return err
-	}
-	if err := deleteNamespaced(egressBrokerName, &corev1.ConfigMap{}); err != nil {
-		return err
-	}
-
-	netdName := fmt.Sprintf("%s-netd", infra.Name)
-	if !plan.EnableNetd {
-		if err := deleteNamespaced(netdName, &appsv1.DaemonSet{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(netdName, &corev1.ConfigMap{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(netdName, &corev1.ServiceAccount{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(netdName, &rbacv1.ClusterRole{}); err != nil {
-			return err
-		}
-		if err := deleteClusterScoped(netdName, &rbacv1.ClusterRoleBinding{}); err != nil {
-			return err
-		}
-	}
-
-	fusePluginName := fmt.Sprintf("%s-k8s-plugin", infra.Name)
-	if !plan.EnableFusePlugin {
-		if err := deleteNamespaced(fusePluginName, &appsv1.DaemonSet{}); err != nil {
-			return err
-		}
-	}
-
-	postgresName := fmt.Sprintf("%s-postgres", infra.Name)
-	if !plan.EnableDatabase {
-		if err := deleteNamespaced(postgresName, &appsv1.StatefulSet{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(postgresName, &corev1.Service{}); err != nil {
-			return err
-		}
-	}
-
-	rustfsName := fmt.Sprintf("%s-rustfs", infra.Name)
-	if !plan.EnableStorage {
-		if err := deleteNamespaced(rustfsName, &appsv1.StatefulSet{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(rustfsName, &corev1.Service{}); err != nil {
-			return err
-		}
-	}
-
-	registryName := fmt.Sprintf("%s-registry", infra.Name)
-	if !plan.EnableRegistry {
-		if err := deleteNamespaced(registryName, &appsv1.Deployment{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(registryName, &corev1.Service{}); err != nil {
-			return err
-		}
-		if err := deleteNamespaced(registryName, &networkingv1.Ingress{}); err != nil {
+		if err := deleteResource(ref, obj); err != nil {
 			return err
 		}
 	}
@@ -733,12 +459,62 @@ func (r *Sandbox0InfraReconciler) cleanupDisabledServiceResources(ctx context.Co
 	return nil
 }
 
+func objectForCleanupKind(kind string) (client.Object, error) {
+	switch kind {
+	case "Deployment":
+		return &appsv1.Deployment{}, nil
+	case "StatefulSet":
+		return &appsv1.StatefulSet{}, nil
+	case "DaemonSet":
+		return &appsv1.DaemonSet{}, nil
+	case "Service":
+		return &corev1.Service{}, nil
+	case "ConfigMap":
+		return &corev1.ConfigMap{}, nil
+	case "Ingress":
+		return &networkingv1.Ingress{}, nil
+	case "ServiceAccount":
+		return &corev1.ServiceAccount{}, nil
+	case "ClusterRole":
+		return &rbacv1.ClusterRole{}, nil
+	case "ClusterRoleBinding":
+		return &rbacv1.ClusterRoleBinding{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported cleanup resource kind %q", kind)
+	}
+}
+
+func (r *Sandbox0InfraReconciler) isLatestReconcileTarget(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (bool, error) {
+	if infra == nil {
+		return false, nil
+	}
+	if r == nil || r.Client == nil || infra.Name == "" || infra.Namespace == "" {
+		return true, nil
+	}
+
+	latest := &infrav1alpha1.Sandbox0Infra{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(infra), latest); err != nil {
+		return false, err
+	}
+	if latest.Generation != infra.Generation {
+		return false, nil
+	}
+	return true, nil
+}
+
 // updateOverallStatus updates the overall status based on conditions
 func (r *Sandbox0InfraReconciler) updateOverallStatus(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
 	logger := log.FromContext(ctx)
-	original := infra.Status.DeepCopy()
+	compiledPlan := infraplan.Compile(infra)
+	r.projectStatusForPlan(infra, compiledPlan)
 
-	expectedConditions := r.expectedConditionTypes(infra)
+	retainedResources, err := collectRetainedResources(ctx, r.Client, infra.Namespace, compiledPlan.Status.RetainedResources)
+	if err != nil {
+		return err
+	}
+	infra.Status.RetainedResources = retainedResources
+
+	expectedConditions := compiledPlan.Status.ExpectedConditions
 	totalCount := len(expectedConditions)
 	readyCount := 0
 	allReady := totalCount > 0
@@ -823,64 +599,154 @@ func (r *Sandbox0InfraReconciler) updateOverallStatus(ctx context.Context, infra
 		r.setCondition(ctx, infra, infrav1alpha1.ConditionTypeReady, metav1.ConditionFalse, "ServicesNotReady", "Some services are not ready")
 	}
 
-	// Update status
-	if reflect.DeepEqual(original, &infra.Status) {
-		return nil
-	}
-	if err := r.Status().Update(ctx, infra); err != nil {
-		logger.Error(err, "Failed to update status")
-		return err
-	}
+	desiredStatus := infra.Status.DeepCopy()
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &infrav1alpha1.Sandbox0Infra{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(infra), latest); err != nil {
+			return err
+		}
+		if latest.Generation != infra.Generation {
+			logger.Info("Skipping stale status update", "reconciledGeneration", infra.Generation, "latestGeneration", latest.Generation)
+			return nil
+		}
 
-	return nil
+		if reflect.DeepEqual(&latest.Status, desiredStatus) {
+			return nil
+		}
+
+		base := latest.DeepCopy()
+		latest.Status = *desiredStatus
+		if err := r.Status().Patch(ctx, latest, client.MergeFrom(base)); err != nil {
+			logger.Error(err, "Failed to patch status")
+			return err
+		}
+		return nil
+	})
 }
 
-func (r *Sandbox0InfraReconciler) expectedConditionTypes(infra *infrav1alpha1.Sandbox0Infra) []string {
-	plan := r.buildComponentPlan(infra)
-	conditions := []string{}
-	if plan.EnableInternalAuth {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeInternalAuthReady)
+func (r *Sandbox0InfraReconciler) updateValidationFailureStatus(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, validationErr error) error {
+	if infra == nil || validationErr == nil {
+		return nil
 	}
-	if plan.EnableDatabase {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeDatabaseReady)
+
+	desired := infra.DeepCopy()
+	desired.Status.Phase = infrav1alpha1.PhaseDegraded
+	desired.Status.LastMessage = validationErr.Error()
+	r.setCondition(ctx, desired, infrav1alpha1.ConditionTypeReady, metav1.ConditionFalse, "SpecValidationFailed", validationErr.Error())
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &infrav1alpha1.Sandbox0Infra{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(infra), latest); err != nil {
+			return err
+		}
+		if latest.Generation != infra.Generation {
+			return nil
+		}
+
+		base := latest.DeepCopy()
+		latest.Status.Phase = desired.Status.Phase
+		latest.Status.LastMessage = desired.Status.LastMessage
+		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+			Type:               infrav1alpha1.ConditionTypeReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: infra.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "SpecValidationFailed",
+			Message:            validationErr.Error(),
+		})
+		return r.Status().Patch(ctx, latest, client.MergeFrom(base))
+	})
+}
+
+func (r *Sandbox0InfraReconciler) projectStatusForPlan(infra *infrav1alpha1.Sandbox0Infra, compiledPlan *infraplan.InfraPlan) {
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
 	}
-	if plan.EnableStorage {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeStorageReady)
+	r.pruneManagedConditions(infra, compiledPlan.Status.ExpectedConditions)
+	r.projectEndpointsForPlan(infra, compiledPlan.Status.Endpoints)
+	r.projectClusterForPlan(infra, compiledPlan.Status.Cluster)
+}
+
+func (r *Sandbox0InfraReconciler) pruneManagedConditions(infra *infrav1alpha1.Sandbox0Infra, expected []string) {
+	if infra == nil || len(infra.Status.Conditions) == 0 {
+		return
 	}
-	if plan.EnableRegistry {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeRegistryReady)
+
+	expectedSet := make(map[string]struct{}, len(expected)+1)
+	expectedSet[infrav1alpha1.ConditionTypeReady] = struct{}{}
+	for _, conditionType := range expected {
+		expectedSet[conditionType] = struct{}{}
 	}
-	if plan.EnableGlobalGateway {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeGlobalGatewayReady)
+
+	managed := managedConditionTypeSet()
+	filtered := make([]metav1.Condition, 0, len(infra.Status.Conditions))
+	for _, condition := range infra.Status.Conditions {
+		if _, ok := managed[condition.Type]; ok {
+			if _, keep := expectedSet[condition.Type]; !keep {
+				continue
+			}
+		}
+		filtered = append(filtered, condition)
 	}
-	if plan.EnableRegionalGateway {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeRegionalGatewayReady)
+	infra.Status.Conditions = filtered
+}
+
+func (r *Sandbox0InfraReconciler) projectEndpointsForPlan(infra *infrav1alpha1.Sandbox0Infra, endpointsPlan infraplan.EndpointStatusPlan) {
+	if infra == nil {
+		return
 	}
-	if plan.EnableScheduler {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeSchedulerReady)
+
+	if endpointsPlan.GlobalGateway == "" &&
+		endpointsPlan.RegionalGateway == "" &&
+		endpointsPlan.RegionalGatewayInternal == "" &&
+		endpointsPlan.ClusterGateway == "" {
+		infra.Status.Endpoints = nil
+		return
 	}
-	if plan.EnableClusterGateway {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeClusterGatewayReady)
+
+	if infra.Status.Endpoints == nil {
+		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
 	}
-	if plan.EnableManager {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeManagerReady)
+	infra.Status.Endpoints.GlobalGateway = endpointsPlan.GlobalGateway
+	infra.Status.Endpoints.RegionalGateway = endpointsPlan.RegionalGateway
+	infra.Status.Endpoints.RegionalGatewayInternal = endpointsPlan.RegionalGatewayInternal
+	infra.Status.Endpoints.ClusterGateway = endpointsPlan.ClusterGateway
+}
+
+func (r *Sandbox0InfraReconciler) projectClusterForPlan(infra *infrav1alpha1.Sandbox0Infra, clusterPlan infraplan.ClusterStatusPlan) {
+	if infra == nil {
+		return
 	}
-	if plan.EnableStorageProxy {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeStorageProxyReady)
+
+	if !clusterPlan.Present {
+		infra.Status.Cluster = nil
+		return
 	}
-	if plan.EnableNetd {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeNetdReady)
+	if infra.Status.Cluster == nil {
+		infra.Status.Cluster = &infrav1alpha1.ClusterStatus{}
 	}
-	if plan.EnableFusePlugin {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeFusePluginReady)
+	infra.Status.Cluster.ID = clusterPlan.ID
+}
+
+func managedConditionTypeSet() map[string]struct{} {
+	return map[string]struct{}{
+		infrav1alpha1.ConditionTypeReady:                {},
+		infrav1alpha1.ConditionTypeInternalAuthReady:    {},
+		infrav1alpha1.ConditionTypeDatabaseReady:        {},
+		infrav1alpha1.ConditionTypeStorageReady:         {},
+		infrav1alpha1.ConditionTypeRegistryReady:        {},
+		infrav1alpha1.ConditionTypeGlobalGatewayReady:   {},
+		infrav1alpha1.ConditionTypeRegionalGatewayReady: {},
+		infrav1alpha1.ConditionTypeSchedulerReady:       {},
+		infrav1alpha1.ConditionTypeClusterGatewayReady:  {},
+		infrav1alpha1.ConditionTypeManagerReady:         {},
+		infrav1alpha1.ConditionTypeStorageProxyReady:    {},
+		infrav1alpha1.ConditionTypeNetdReady:            {},
+		infrav1alpha1.ConditionTypeFusePluginReady:      {},
+		infrav1alpha1.ConditionTypeInitUserReady:        {},
+		infrav1alpha1.ConditionTypeClusterRegistered:    {},
+		infrav1alpha1.ConditionTypeSecretsGenerated:     {},
 	}
-	if plan.EnableInitUser {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeInitUserReady)
-	}
-	if plan.EnableClusterRegistration {
-		conditions = append(conditions, infrav1alpha1.ConditionTypeClusterRegistered)
-	}
-	return conditions
 }
 
 // setCondition sets or updates a condition
@@ -918,34 +784,30 @@ func (r *Sandbox0InfraReconciler) ensureInitUserPasswordSecret(ctx context.Conte
 
 // registerCluster registers the cluster with the control plane
 func (r *Sandbox0InfraReconciler) registerCluster(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
-	logger := log.FromContext(ctx)
-
 	if infra.Status.Cluster == nil {
 		infra.Status.Cluster = &infrav1alpha1.ClusterStatus{}
 	}
+	if infra.Spec.Cluster != nil {
+		infra.Status.Cluster.ID = infra.Spec.Cluster.ID
+	}
+	infra.Status.Cluster.Registered = false
+	infra.Status.Cluster.RegisteredAt = nil
 
-	if infra.Status.Cluster.Registered {
-		return nil
+	if infra.Spec.ControlPlane == nil || infra.Spec.ControlPlane.URL == "" {
+		return fmt.Errorf("controlPlane.url is required for cluster registration")
 	}
 
-	// TODO: Implement actual registration with control plane
-	logger.Info("Would register cluster with control plane",
-		"clusterId", infra.Spec.Cluster.ID,
-		"controlPlaneUrl", infra.Spec.ControlPlane.URL)
-
-	now := metav1.Now()
-	infra.Status.Cluster.ID = infra.Spec.Cluster.ID
-	infra.Status.Cluster.Registered = true
-	infra.Status.Cluster.RegisteredAt = &now
-
-	return nil
+	return fmt.Errorf("cluster registration is not implemented yet; refusing to report success without a real control-plane side effect")
 }
 
-func (r *Sandbox0InfraReconciler) waitBuiltinTemplatePodsReady(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+func (r *Sandbox0InfraReconciler) waitBuiltinTemplatePodsReady(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, compiledPlan *infraplan.InfraPlan) error {
 	if infra == nil || len(infra.Spec.BuiltinTemplates) == 0 {
 		return nil
 	}
-	if !infrav1alpha1.IsManagerEnabled(infra) || !isManagerTemplateStoreEnabled(infra) {
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
+	if !compiledPlan.Components.EnableManager || !compiledPlan.Manager.TemplateStoreEnabled {
 		return nil
 	}
 
@@ -996,21 +858,6 @@ func isReadyPod(pod *corev1.Pod) bool {
 		}
 	}
 	return false
-}
-
-func isManagerTemplateStoreEnabled(infra *infrav1alpha1.Sandbox0Infra) bool {
-	if infra == nil || infra.Spec.Services == nil || infra.Spec.Services.ClusterGateway == nil {
-		return false
-	}
-	authMode := ""
-	if cfg := infra.Spec.Services.ClusterGateway.Config; cfg != nil {
-		authMode = cfg.AuthMode
-	}
-	authMode = strings.TrimSpace(strings.ToLower(authMode))
-	if authMode == "" {
-		authMode = "internal"
-	}
-	return authMode != "internal"
 }
 
 // SetupWithManager sets up the controller with the Manager.

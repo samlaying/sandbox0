@@ -18,6 +18,7 @@ package globalgateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,6 +35,12 @@ import (
 	infrav1alpha1 "github.com/sandbox0-ai/sandbox0/infra-operator/api/v1alpha1"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
+	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
+	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
+	"github.com/sandbox0-ai/sandbox0/pkg/dbpool"
+	gatewaymigrations "github.com/sandbox0-ai/sandbox0/pkg/gateway/migrations"
+	"github.com/sandbox0-ai/sandbox0/pkg/gateway/tenantdir"
+	"github.com/sandbox0-ai/sandbox0/pkg/migrate"
 )
 
 type Reconciler struct {
@@ -45,8 +52,11 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 }
 
 // Reconcile reconciles the global-gateway deployment.
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string, compiledPlan *infraplan.InfraPlan) error {
 	logger := log.FromContext(ctx)
+	if compiledPlan == nil {
+		compiledPlan = infraplan.Compile(infra)
+	}
 
 	if !infrav1alpha1.IsGlobalGatewayEnabled(infra) {
 		logger.Info("Global gateway is disabled, skipping")
@@ -62,8 +72,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 	if err != nil {
 		return err
 	}
-	needEnterpriseLicense := apiconfig.HasEnabledOIDCProviders(config.OIDCProviders)
-	if err := common.EnsureEnterpriseLicense(ctx, r.Resources, infra, &config.LicenseFile, needEnterpriseLicense, "global-gateway enterprise SSO"); err != nil {
+	needEnterpriseLicense := compiledPlan.Enterprise.GlobalGateway
+	common.NormalizeEnterpriseLicenseFile(&config.LicenseFile, needEnterpriseLicense)
+	if err := ensureGlobalGatewayBootstrapState(ctx, infra, config); err != nil {
+		return err
+	}
+	podAnnotations, err := common.ConfigHashAnnotation(config)
+	if err != nil {
 		return err
 	}
 	if err := r.Resources.ReconcileServiceConfigMap(ctx, infra, deploymentName, labels, config); err != nil {
@@ -123,8 +138,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 				Value: "/config/config.yaml",
 			},
 		},
-		VolumeMounts: volumeMounts,
-		Volumes:      volumes,
+		VolumeMounts:   volumeMounts,
+		Volumes:        volumes,
+		PodAnnotations: podAnnotations,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -170,17 +186,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 		return err
 	}
 
-	updateEndpoints(infra, serviceName, servicePort)
 	logger.Info("Global gateway reconciled successfully")
 	return nil
 }
 
 func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) (*apiconfig.GlobalGatewayConfig, error) {
 	cfg := &apiconfig.GlobalGatewayConfig{}
-	if infra.Spec.Services != nil && infra.Spec.Services.GlobalGateway != nil && infra.Spec.Services.GlobalGateway.Config != nil {
-		cfg = infra.Spec.Services.GlobalGateway.Config
+	if infra.Spec.Services != nil && infra.Spec.Services.GlobalGateway != nil {
+		cfg = runtimeconfig.ToGlobalGateway(infra.Spec.Services.GlobalGateway.Config)
 	}
 	applyConfigDefaults(cfg)
+	cfg.RegionID = resolveGlobalRegionID(infra, cfg.RegionID)
+	if infra.Spec.PublicExposure != nil {
+		cfg.PublicExposureEnabled = infra.Spec.PublicExposure.Enabled
+		if strings.TrimSpace(infra.Spec.PublicExposure.RootDomain) != "" {
+			cfg.PublicRootDomain = infra.Spec.PublicExposure.RootDomain
+		}
+		if strings.TrimSpace(infra.Spec.PublicExposure.RegionID) != "" {
+			cfg.PublicRegionID = infra.Spec.PublicExposure.RegionID
+		}
+	}
 
 	dsn, err := database.GetDatabaseDSN(ctx, r.Resources.Client, infra)
 	if err != nil {
@@ -194,12 +219,16 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 		if err != nil {
 			return nil, err
 		}
+		homeRegionID := strings.TrimSpace(infra.Spec.InitUser.HomeRegionID)
+		if homeRegionID == "" {
+			homeRegionID = cfg.RegionID
+		}
 
 		cfg.BuiltInAuth.InitUser = &apiconfig.InitUserConfig{
 			Email:        infra.Spec.InitUser.Email,
 			Password:     password,
 			Name:         infra.Spec.InitUser.Name,
-			HomeRegionID: infra.Spec.InitUser.HomeRegionID,
+			HomeRegionID: homeRegionID,
 		}
 	}
 
@@ -224,6 +253,101 @@ func (r *Reconciler) buildConfig(ctx context.Context, infra *infrav1alpha1.Sandb
 	}
 
 	return cfg, nil
+}
+
+func resolveGlobalRegionID(infra *infrav1alpha1.Sandbox0Infra, current string) string {
+	if trimmed := strings.TrimSpace(current); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(infra.Spec.Region); trimmed != "" {
+		return trimmed
+	}
+	if infra.Spec.PublicExposure == nil {
+		return ""
+	}
+	return inferCanonicalRegionID(infra.Spec.PublicExposure.RegionID)
+}
+
+func inferCanonicalRegionID(publicRegionID string) string {
+	trimmed := strings.TrimSpace(publicRegionID)
+	parts := strings.SplitN(trimmed, "-", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+func desiredBootstrapRegion(infra *infrav1alpha1.Sandbox0Infra, regionID string) *tenantdir.Region {
+	if strings.TrimSpace(regionID) == "" || infra.Spec.Services == nil || infra.Spec.Services.RegionalGateway == nil || !infra.Spec.Services.RegionalGateway.Enabled {
+		return nil
+	}
+
+	regionalHTTPPort := int32(8080)
+	if infra.Spec.Services.RegionalGateway.Config != nil && infra.Spec.Services.RegionalGateway.Config.HTTPPort != 0 {
+		regionalHTTPPort = int32(infra.Spec.Services.RegionalGateway.Config.HTTPPort)
+	}
+
+	servicePort := common.ResolveServicePort(infra.Spec.Services.RegionalGateway.Service, regionalHTTPPort)
+	serviceName := fmt.Sprintf("%s-regional-gateway", infra.Name)
+	return &tenantdir.Region{
+		ID:                 regionID,
+		DisplayName:        regionID,
+		RegionalGatewayURL: fmt.Sprintf("http://%s:%d", serviceName, servicePort),
+		Enabled:            true,
+	}
+}
+
+func ensureGlobalGatewayBootstrapState(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, cfg *apiconfig.GlobalGatewayConfig) error {
+	if cfg == nil || strings.TrimSpace(cfg.DatabaseURL) == "" {
+		return nil
+	}
+
+	bootstrapRegion := desiredBootstrapRegion(infra, cfg.RegionID)
+	if bootstrapRegion == nil {
+		return nil
+	}
+
+	pool, err := dbpool.New(ctx, dbpool.Options{
+		DatabaseURL: cfg.DatabaseURL,
+		MaxConns:    int32(cfg.DatabaseMaxConns),
+		MinConns:    int32(cfg.DatabaseMinConns),
+		Schema:      cfg.DatabaseSchema,
+	})
+	if err != nil {
+		return fmt.Errorf("connect global-gateway database: %w", err)
+	}
+	defer pool.Close()
+
+	if err := migrate.Up(ctx, pool, ".",
+		migrate.WithBaseFS(gatewaymigrations.FS),
+		migrate.WithSchema(cfg.DatabaseSchema),
+	); err != nil {
+		return fmt.Errorf("run global-gateway migrations: %w", err)
+	}
+
+	repo := tenantdir.NewRepository(pool)
+	existing, err := repo.GetRegion(ctx, bootstrapRegion.ID)
+	if err != nil {
+		if errors.Is(err, tenantdir.ErrRegionNotFound) {
+			if err := repo.CreateRegion(ctx, bootstrapRegion); err != nil {
+				return fmt.Errorf("create bootstrap region: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("get bootstrap region: %w", err)
+	}
+
+	if existing.DisplayName == bootstrapRegion.DisplayName &&
+		existing.RegionalGatewayURL == bootstrapRegion.RegionalGatewayURL &&
+		existing.MeteringExportURL == bootstrapRegion.MeteringExportURL &&
+		existing.Enabled == bootstrapRegion.Enabled {
+		return nil
+	}
+
+	if err := repo.UpdateRegion(ctx, bootstrapRegion); err != nil {
+		return fmt.Errorf("update bootstrap region: %w", err)
+	}
+	return nil
 }
 
 func applyConfigDefaults(cfg *apiconfig.GlobalGatewayConfig) {
@@ -303,11 +427,4 @@ func (r *Reconciler) deleteIngressIfExists(ctx context.Context, infra *infrav1al
 		return err
 	}
 	return r.Resources.Client.Delete(ctx, ingress)
-}
-
-func updateEndpoints(infra *infrav1alpha1.Sandbox0Infra, serviceName string, servicePort int32) {
-	if infra.Status.Endpoints == nil {
-		infra.Status.Endpoints = &infrav1alpha1.EndpointsStatus{}
-	}
-	infra.Status.Endpoints.GlobalGateway = fmt.Sprintf("http://%s:%d", serviceName, servicePort)
 }
