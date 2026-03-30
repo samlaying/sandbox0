@@ -70,6 +70,7 @@ spec:
         port: 30080
       config:
         authMode: federated_global
+        schedulerEnabled: true
     scheduler:
       enabled: true
       replicas: 1
