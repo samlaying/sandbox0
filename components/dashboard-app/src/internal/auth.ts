@@ -314,7 +314,7 @@ export async function exchangeOIDCCallback(
   providerID: string,
   rawQuery: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ tokens?: LoginResponse; error?: string }> {
+): Promise<{ tokens?: LoginResponse; redirectLocation?: string; error?: string }> {
   const baseURL = resolveDashboardControlPlaneURL(config);
   if (!baseURL) {
     return { error: "dashboard auth is missing a control-plane base URL" };
@@ -331,7 +331,7 @@ export async function exchangeOIDCCallback(
     });
     const response = await sdk.auth.authOidcProviderCallbackGet(
       { provider: providerID, code, state },
-      { cache: "no-store" },
+      { cache: "no-store", redirect: "manual" },
     );
     if (!response.data) {
       return { error: `/auth/oidc/${providerID}/callback returned an empty response` };
@@ -339,6 +339,18 @@ export async function exchangeOIDCCallback(
 
     return { tokens: toLoginResponse(response.data) };
   } catch (error) {
+    const response = await readSDKResponseError(error);
+    if (response) {
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          return { error: "oidc callback did not return a redirect location" };
+        }
+
+        return { redirectLocation: location };
+      }
+    }
+
     return {
       error: await resolveSDKErrorMessage(error, "failed to complete oidc login"),
     };

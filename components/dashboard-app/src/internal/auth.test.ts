@@ -332,6 +332,35 @@ test("exchangeOIDCCallback exchanges code and state through the sdk auth api", a
   assert.equal(result.tokens?.refresh_token, "oidc-refresh-token");
 });
 
+test("exchangeOIDCCallback relays upstream redirect targets", async () => {
+  const result = await exchangeOIDCCallback(
+    singleClusterConfig,
+    "auth0",
+    "?code=code-123&state=state-456",
+    async (input, init) => {
+      assert.equal(
+        String(input),
+        "https://single.example.com/auth/oidc/auth0/callback?code=code-123&state=state-456",
+      );
+      assert.equal(init?.method, "GET");
+      assert.equal(init?.redirect, "manual");
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: "http://127.0.0.1:39123/callback?access_token=token",
+        },
+      });
+    },
+  );
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.tokens, undefined);
+  assert.equal(
+    result.redirectLocation,
+    "http://127.0.0.1:39123/callback?access_token=token",
+  );
+});
+
 test("exchangeOIDCCallback rejects callbacks without code or state", async () => {
   const result = await exchangeOIDCCallback(
     singleClusterConfig,

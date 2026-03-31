@@ -167,6 +167,9 @@ export async function handleDashboardOIDCCallbackRequest(
     rawQuery,
     options?.fetchImpl,
   );
+  if (result.redirectLocation) {
+    return NextResponse.redirect(result.redirectLocation, { status: 302 });
+  }
   if (!result.tokens) {
     return NextResponse.redirect(
       dashboardLoginRedirectURL(

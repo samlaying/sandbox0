@@ -126,3 +126,36 @@ test("oidc callback redirects to configured site url instead of internal request
   assert.equal(response.status, 303);
   assert.equal(response.headers.get("location"), "https://cloud.sandbox0.ai/");
 });
+
+test("oidc callback preserves upstream cli redirect targets", async () => {
+  const response = await handleDashboardOIDCCallbackRequest(
+    config,
+    new Request(
+      "http://0.0.0.0:4401/api/auth/oidc/supabase/callback?code=code-123&state=state-456",
+    ),
+    "supabase",
+    {
+      fetchImpl: async (input, init) => {
+        assert.equal(
+          String(input),
+          "https://api.sandbox0.ai/auth/oidc/supabase/callback?code=code-123&state=state-456",
+        );
+        assert.equal(init?.method, "GET");
+        assert.equal(init?.redirect, "manual");
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "http://127.0.0.1:39123/callback?access_token=oidc-access-token",
+          },
+        });
+      },
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    "http://127.0.0.1:39123/callback?access_token=oidc-access-token",
+  );
+});
