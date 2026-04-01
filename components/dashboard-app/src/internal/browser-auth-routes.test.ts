@@ -32,7 +32,7 @@ test("onboarding creates team and refreshes session on success", async () => {
         { status: 201 },
       );
     }
-    if (url === "https://api.sandbox0.ai/tenant/active" && init?.method === "PUT") {
+    if (url === "https://api.sandbox0.ai/users/me" && init?.method === "PUT") {
       return new Response(JSON.stringify({ success: true }));
     }
     if (url === "https://api.sandbox0.ai/auth/refresh" && init?.method === "POST") {

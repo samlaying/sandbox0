@@ -294,7 +294,7 @@ export async function updateDefaultTeam(
       token: accessToken,
       fetch: fetchImpl,
     });
-    await sdk.users.tenantActivePut({
+    await sdk.users.usersMePut({
       updateUserRequest: { defaultTeamId: teamID },
     });
     return { ok: true };

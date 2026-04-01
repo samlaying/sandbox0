@@ -2671,5 +2671,5 @@ type PostTeamsIdMembersJSONRequestBody = AddTeamMemberRequest
 // PutTeamsIdMembersUserIdJSONRequestBody defines body for PutTeamsIdMembersUserId for application/json ContentType.
 type PutTeamsIdMembersUserIdJSONRequestBody = UpdateTeamMemberRequest
 
-// PutTenantActiveJSONRequestBody defines body for PutTenantActive for application/json ContentType.
-type PutTenantActiveJSONRequestBody = UpdateUserRequest
+// PutUsersMeJSONRequestBody defines body for PutUsersMe for application/json ContentType.
+type PutUsersMeJSONRequestBody = UpdateUserRequest
