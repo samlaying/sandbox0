@@ -11,7 +11,7 @@ import { DashboardOnboardingView } from "./onboarding-view";
 import type { DashboardRuntimeConfig, DashboardSession } from "./types";
 
 export interface DashboardPageSearchParams {
-  searchParams: Promise<{ login_error?: string }>;
+  searchParams: Promise<{ login_error?: string; refreshed?: string }>;
 }
 
 export interface DashboardLoginViewOptions {
@@ -59,7 +59,7 @@ export function createDashboardLoginPage(
 
 export async function requireDashboardHomeRender(
   resolveConfig: DashboardConfigResolver,
-  searchParams: Promise<{ login_error?: string }>,
+  searchParams: Promise<{ login_error?: string; refreshed?: string }>,
 ): Promise<DashboardSession> {
   const { login_error: loginError } = await searchParams;
   const result = await resolveDashboardHomeEntry(

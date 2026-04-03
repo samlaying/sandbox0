@@ -5,6 +5,7 @@ export interface DashboardRuntimeConfig {
   siteURL: string;
   singleClusterURL?: string;
   globalGatewayURL?: string;
+  cookieDomains?: string[];
 }
 
 export type DashboardAuthProviderType = "oidc" | "builtin";

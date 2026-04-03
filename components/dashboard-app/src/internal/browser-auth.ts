@@ -62,6 +62,13 @@ export async function resolveDashboardHomeEntry(
     return { kind: "render", session };
   }
 
+  if (options?.loginError) {
+    return {
+      kind: "redirect",
+      location: dashboardLoginPath(options.loginError),
+    };
+  }
+
   if (refreshToken) {
     return { kind: "redirect", location: "/api/auth/refresh" };
   }

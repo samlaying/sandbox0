@@ -25,3 +25,14 @@ test("resolveDashboardRuntimeConfig supports global-gateway mode", () => {
   assert.equal(config.globalGatewayURL, "https://api.sandbox0.ai");
   assert.equal(config.siteURL, "https://sandbox0.ai");
 });
+
+test("resolveDashboardRuntimeConfig normalizes configured cookie domains", () => {
+  const config = resolveDashboardRuntimeConfig({
+    NODE_ENV: "production",
+    SANDBOX0_DASHBOARD_SITE_URL: "https://cloud.sandbox0.ai",
+    SANDBOX0_DASHBOARD_COOKIE_DOMAINS:
+      " .sandbox0.ai, sandbox0.ai , .example.com. ",
+  });
+
+  assert.deepEqual(config.cookieDomains, ["sandbox0.ai", "example.com"]);
+});

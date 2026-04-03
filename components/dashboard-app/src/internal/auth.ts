@@ -39,6 +39,39 @@ export const dashboardRegionalRegionIDCookieName = "sandbox0_region_id";
 export const dashboardRegionalExpiresAtCookieName =
   "sandbox0_regional_expires_at";
 
+function configuredCookieDomains(
+  config: DashboardRuntimeConfig,
+): string[] {
+  const domains = (config.cookieDomains ?? [])
+    .map((entry) => entry.trim().toLowerCase().replace(/^\.+/, "").replace(/\.+$/, ""))
+    .filter((entry) => entry !== "");
+
+  return [...new Set(domains)];
+}
+
+function expireDashboardCookie(
+  response: NextResponse,
+  config: DashboardRuntimeConfig,
+  name: string,
+): void {
+  const secure = config.siteURL.startsWith("https://");
+  const baseOptions = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure,
+    path: dashboardHomePath,
+    maxAge: 0,
+  };
+
+  response.cookies.set(name, "", baseOptions);
+  for (const domain of configuredCookieDomains(config)) {
+    response.cookies.set(name, "", {
+      ...baseOptions,
+      domain,
+    });
+  }
+}
+
 function toLoginResponse(data: {
   accessToken: string;
   refreshToken: string;
@@ -502,82 +535,20 @@ export function setDashboardAuthCookies(
     return;
   }
 
-  response.cookies.set(dashboardRegionalAccessTokenCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalGatewayURLCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalRegionIDCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalExpiresAtCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
+  expireDashboardCookie(response, config, dashboardRegionalAccessTokenCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalGatewayURLCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalRegionIDCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalExpiresAtCookieName);
 }
 
 export function clearDashboardAuthCookies(
   response: NextResponse,
   config: DashboardRuntimeConfig,
 ): void {
-  const secure = config.siteURL.startsWith("https://");
-
-  response.cookies.set(dashboardAccessTokenCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRefreshTokenCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalAccessTokenCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalGatewayURLCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalRegionIDCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
-  response.cookies.set(dashboardRegionalExpiresAtCookieName, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: dashboardHomePath,
-    maxAge: 0,
-  });
+  expireDashboardCookie(response, config, dashboardAccessTokenCookieName);
+  expireDashboardCookie(response, config, dashboardRefreshTokenCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalAccessTokenCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalGatewayURLCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalRegionIDCookieName);
+  expireDashboardCookie(response, config, dashboardRegionalExpiresAtCookieName);
 }

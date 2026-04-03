@@ -204,6 +204,45 @@ test("resolveDashboardLoginEntry reuses external auth portal url", async () => {
   });
 });
 
+test("resolveDashboardHomeEntry falls back to login when refresh already failed", async () => {
+  const result = await resolveDashboardHomeEntry(
+    {
+      ...globalGatewayConfig,
+      siteURL: "https://cloud.sandbox0.ai",
+      cookieDomains: ["sandbox0.ai"],
+    },
+    {
+      get(name: string) {
+        if (name === "sandbox0_refresh_token") {
+          return { value: "stale-refresh-token" };
+        }
+        return undefined;
+      },
+    },
+    {
+      loginError: "invalid refresh token",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        if (url === "https://global.example.com/auth/providers") {
+          return new Response(
+            JSON.stringify({
+              data: {
+                providers: [{ id: "supabase", name: "Supabase", type: "oidc" }],
+              },
+            }),
+          );
+        }
+        throw new Error(`unexpected url ${url}`);
+      },
+    },
+  );
+
+  assert.deepEqual(result, {
+    kind: "redirect",
+    location: "/login?login_error=invalid%20refresh%20token",
+  });
+});
+
 test("resolveDashboardLoginEntry sends authenticated system admins to onboarding when onboarding is pending", async () => {
   const result = await resolveDashboardLoginEntry(
     globalGatewayConfig,
@@ -431,4 +470,18 @@ test("clearDashboardAuthCookies expires dashboard auth cookies", () => {
   assert.equal(accessCookie?.maxAge, 0);
   assert.equal(refreshCookie?.maxAge, 0);
   assert.equal(regionalAccessCookie?.maxAge, 0);
+});
+
+test("clearDashboardAuthCookies also expires configured parent-domain cookies", () => {
+  const response = NextResponse.json({ ok: true });
+  clearDashboardAuthCookies(response, {
+    ...singleClusterConfig,
+    siteURL: "https://cloud.sandbox0.ai",
+    cookieDomains: ["sandbox0.ai"],
+  });
+
+  const setCookieHeader = response.headers.get("set-cookie") ?? "";
+  assert.match(setCookieHeader, /sandbox0_refresh_token=;/);
+  assert.match(setCookieHeader, /Domain=sandbox0\.ai/i);
+  assert.match(setCookieHeader, /sandbox0_regional_access_token=;/);
 });
