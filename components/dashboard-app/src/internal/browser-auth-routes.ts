@@ -98,7 +98,16 @@ export async function handleDashboardRefreshRequest(
   request: Request,
   cookieStore: { get(name: string): { value: string } | undefined },
 ) {
+  const currentAccessCookie = cookieStore.get(
+    dashboardCookieNames().accessToken,
+  )?.value;
   const refreshToken = cookieStore.get(dashboardRefreshTokenCookieName)?.value;
+
+  console.info("dashboard_auth_refresh_request", {
+    siteURL: config.siteURL,
+    currentAccessCookiePresent: Boolean(currentAccessCookie),
+    refreshCookiePresent: Boolean(refreshToken),
+  });
 
   if (!refreshToken) {
     const response = NextResponse.redirect(
@@ -114,6 +123,11 @@ export async function handleDashboardRefreshRequest(
 
   const result = await exchangeRefreshToken(config, refreshToken);
   if (!result.tokens) {
+    console.info("dashboard_auth_refresh_failed", {
+      siteURL: config.siteURL,
+      refreshCookiePresent: true,
+      error: result.error ?? "session expired, please sign in again",
+    });
     const response = NextResponse.redirect(
       dashboardHomeRedirectURL(config.siteURL, {
         refreshed: true,
@@ -130,6 +144,11 @@ export async function handleDashboardRefreshRequest(
     { status: 303 },
   );
   setDashboardAuthCookies(response, config, result.tokens);
+  console.info("dashboard_auth_refresh_succeeded", {
+    siteURL: config.siteURL,
+    refreshCookiePresent: true,
+    setCookieHeaderLength: (response.headers.get("set-cookie") ?? "").length,
+  });
   return response;
 }
 

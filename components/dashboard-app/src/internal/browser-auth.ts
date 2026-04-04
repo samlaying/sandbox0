@@ -1,6 +1,8 @@
 import type { DashboardAuthProvider, DashboardRegion, DashboardRuntimeConfig, DashboardSession } from "./types";
 import {
+  dashboardAccessTokenCookieName,
   dashboardRefreshTokenCookieName,
+  legacyDashboardAccessTokenCookieNames,
   listRegions,
   resolveDashboardAuthProviders,
 } from "./auth";
@@ -46,6 +48,15 @@ export async function resolveDashboardHomeEntry(
   },
 ): Promise<DashboardRenderResult | DashboardRedirectResult> {
   const fetchImpl = options?.fetchImpl ?? fetch;
+  const currentAccessCookie = cookieStore.get(
+    dashboardAccessTokenCookieName,
+  )?.value;
+  const legacyHostAccessCookie = cookieStore.get(
+    legacyDashboardAccessTokenCookieNames[0],
+  )?.value;
+  const legacyAccessCookie = cookieStore.get(
+    legacyDashboardAccessTokenCookieNames[1],
+  )?.value;
   const accessToken = readBearerToken(null, cookieStore);
   const refreshToken = cookieStore.get(dashboardRefreshTokenCookieName)?.value;
   const session = await resolveDashboardSession(
@@ -53,6 +64,18 @@ export async function resolveDashboardHomeEntry(
     { bearerToken: accessToken },
     fetchImpl,
   );
+
+  if (!session.authenticated && (accessToken || refreshToken)) {
+    console.info("dashboard_auth_session_unresolved", {
+      siteURL: config.siteURL,
+      currentAccessCookiePresent: Boolean(currentAccessCookie),
+      legacyHostAccessCookiePresent: Boolean(legacyHostAccessCookie),
+      legacyAccessCookiePresent: Boolean(legacyAccessCookie),
+      selectedAccessCookiePresent: Boolean(accessToken),
+      refreshCookiePresent: Boolean(refreshToken),
+      sessionErrors: session.errors,
+    });
+  }
 
   if (session.authenticated && session.needsOnboarding) {
     return { kind: "redirect", location: dashboardOnboardingPath() };
@@ -70,6 +93,14 @@ export async function resolveDashboardHomeEntry(
   }
 
   if (refreshToken) {
+    console.info("dashboard_auth_refresh_redirect", {
+      siteURL: config.siteURL,
+      currentAccessCookiePresent: Boolean(currentAccessCookie),
+      legacyHostAccessCookiePresent: Boolean(legacyHostAccessCookie),
+      legacyAccessCookiePresent: Boolean(legacyAccessCookie),
+      selectedAccessCookiePresent: Boolean(accessToken),
+      refreshCookiePresent: true,
+    });
     return { kind: "redirect", location: "/api/auth/refresh" };
   }
 

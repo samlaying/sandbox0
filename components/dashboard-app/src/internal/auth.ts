@@ -184,6 +184,11 @@ function resolveCookieExpiry(
   };
 }
 
+function tokenExpiryUnix(token: string | undefined): number | undefined {
+  const value = token ? Number(decodeJWTPayload(token)?.exp ?? "") : Number.NaN;
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 function toLoginResponse(data: {
   accessToken: string;
   refreshToken: string;
@@ -583,6 +588,7 @@ export function setDashboardAuthCookies(
     tokens.access_token,
     tokens.expires_at,
   );
+  const accessTokenExp = tokenExpiryUnix(tokens.access_token);
 
   setDashboardCookie(
     response,
@@ -607,6 +613,19 @@ export function setDashboardAuthCookies(
       tokens.regional_session.token,
       tokens.regional_session.expires_at,
     );
+    const regionalTokenExp = tokenExpiryUnix(tokens.regional_session.token);
+
+    console.info("dashboard_auth_set_cookies", {
+      siteURL: config.siteURL,
+      cookieDomains: config.cookieDomains ?? [],
+      accessCookieMaxAge: accessCookieExpiry.maxAge ?? null,
+      accessTokenExp: accessTokenExp ?? null,
+      accessExpiresAt: tokens.expires_at,
+      refreshTokenPresent: tokens.refresh_token !== "",
+      regionalCookieMaxAge: regionalCookieExpiry.maxAge ?? null,
+      regionalTokenExp: regionalTokenExp ?? null,
+      regionalExpiresAt: tokens.regional_session.expires_at,
+    });
 
     setDashboardCookie(
       response,
@@ -638,6 +657,18 @@ export function setDashboardAuthCookies(
     );
     return;
   }
+
+  console.info("dashboard_auth_set_cookies", {
+    siteURL: config.siteURL,
+    cookieDomains: config.cookieDomains ?? [],
+    accessCookieMaxAge: accessCookieExpiry.maxAge ?? null,
+    accessTokenExp: accessTokenExp ?? null,
+    accessExpiresAt: tokens.expires_at,
+    refreshTokenPresent: tokens.refresh_token !== "",
+    regionalCookieMaxAge: null,
+    regionalTokenExp: null,
+    regionalExpiresAt: null,
+  });
 
   expireDashboardCookie(response, config, dashboardRegionalAccessTokenCookieName);
   expireDashboardCookie(response, config, dashboardRegionalGatewayURLCookieName);
