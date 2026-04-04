@@ -29,6 +29,25 @@ test("readBearerToken prefers Authorization header", () => {
   assert.equal(token, "header-token");
 });
 
+test("readBearerToken prefers current access cookie over legacy aliases", () => {
+  const token = readBearerToken(null, {
+    get(name: string) {
+      if (name === "sandbox0_access_token") {
+        return { value: "current-token" };
+      }
+      if (name === "__Host-sandbox0_access_token") {
+        return { value: "legacy-host-token" };
+      }
+      if (name === "sandbox0_token") {
+        return { value: "legacy-token" };
+      }
+      return undefined;
+    },
+  });
+
+  assert.equal(token, "current-token");
+});
+
 test("resolveDashboardSession returns unauthenticated session without token", async () => {
   const session = await resolveDashboardSession(singleClusterConfig, {});
 

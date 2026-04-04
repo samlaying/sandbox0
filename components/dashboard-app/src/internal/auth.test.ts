@@ -521,6 +521,11 @@ test("setDashboardAuthCookies falls back to session cookies when expires_at is u
   const accessCookie = response.cookies.get("sandbox0_access_token");
   assert.equal(accessCookie?.value, accessToken);
   assert.equal(accessCookie?.maxAge, 3600);
+
+  const legacyAccessCookie = response.cookies.get("__Host-sandbox0_access_token");
+  const legacyTokenCookie = response.cookies.get("sandbox0_token");
+  assert.equal(legacyAccessCookie?.maxAge, 0);
+  assert.equal(legacyTokenCookie?.maxAge, 0);
 });
 
 test("clearDashboardAuthCookies expires dashboard auth cookies", () => {
@@ -532,9 +537,11 @@ test("clearDashboardAuthCookies expires dashboard auth cookies", () => {
   const regionalAccessCookie = response.cookies.get(
     "sandbox0_regional_access_token",
   );
+  const legacyAccessCookie = response.cookies.get("__Host-sandbox0_access_token");
   assert.equal(accessCookie?.maxAge, 0);
   assert.equal(refreshCookie?.maxAge, 0);
   assert.equal(regionalAccessCookie?.maxAge, 0);
+  assert.equal(legacyAccessCookie?.maxAge, 0);
 });
 
 test("clearDashboardAuthCookies also expires configured parent-domain cookies", () => {

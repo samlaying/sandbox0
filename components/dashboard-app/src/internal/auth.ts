@@ -38,6 +38,10 @@ export const dashboardRegionalGatewayURLCookieName =
 export const dashboardRegionalRegionIDCookieName = "sandbox0_region_id";
 export const dashboardRegionalExpiresAtCookieName =
   "sandbox0_regional_expires_at";
+export const legacyDashboardAccessTokenCookieNames = [
+  "__Host-sandbox0_access_token",
+  "sandbox0_token",
+] as const;
 
 function configuredCookieDomains(
   config: DashboardRuntimeConfig,
@@ -88,6 +92,16 @@ function expireDashboardCookie(
       ...baseOptions,
       domain,
     });
+  }
+}
+
+function expireDashboardCookieNames(
+  response: NextResponse,
+  config: DashboardRuntimeConfig,
+  names: readonly string[],
+): void {
+  for (const name of names) {
+    expireDashboardCookie(response, config, name);
   }
 }
 
@@ -559,6 +573,12 @@ export function setDashboardAuthCookies(
   config: DashboardRuntimeConfig,
   tokens: LoginResponse,
 ): void {
+  expireDashboardCookieNames(
+    response,
+    config,
+    legacyDashboardAccessTokenCookieNames,
+  );
+
   const accessCookieExpiry = resolveCookieExpiry(
     tokens.access_token,
     tokens.expires_at,
@@ -629,6 +649,11 @@ export function clearDashboardAuthCookies(
   response: NextResponse,
   config: DashboardRuntimeConfig,
 ): void {
+  expireDashboardCookieNames(
+    response,
+    config,
+    legacyDashboardAccessTokenCookieNames,
+  );
   expireDashboardCookie(response, config, dashboardAccessTokenCookieName);
   expireDashboardCookie(response, config, dashboardRefreshTokenCookieName);
   expireDashboardCookie(response, config, dashboardRegionalAccessTokenCookieName);

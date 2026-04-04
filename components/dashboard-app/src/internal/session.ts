@@ -15,6 +15,7 @@ import {
   dashboardRegionalExpiresAtCookieName,
   dashboardRegionalGatewayURLCookieName,
   dashboardRegionalRegionIDCookieName,
+  legacyDashboardAccessTokenCookieNames,
 } from "./auth";
 import {
   createDashboardControlPlaneSDK,
@@ -278,9 +279,8 @@ export function readBearerToken(
   }
 
   const cookieNames = [
-    "__Host-sandbox0_access_token",
     dashboardAccessTokenCookieName,
-    "sandbox0_token",
+    ...legacyDashboardAccessTokenCookieNames,
   ];
   for (const cookieName of cookieNames) {
     const token = cookies.get(cookieName)?.value?.trim();
