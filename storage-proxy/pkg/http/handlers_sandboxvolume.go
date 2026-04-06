@@ -19,19 +19,48 @@ import (
 )
 
 type createSandboxVolumeRequest struct {
-	CacheSize  string `json:"cache_size"`
-	Prefetch   int    `json:"prefetch"`
-	BufferSize string `json:"buffer_size"`
-	Writeback  bool   `json:"writeback"`
-	AccessMode string `json:"access_mode"`
+	CacheSize       string `json:"cache_size"`
+	Prefetch        int    `json:"prefetch"`
+	BufferSize      string `json:"buffer_size"`
+	Writeback       bool   `json:"writeback"`
+	AccessMode      string `json:"access_mode"`
+	DefaultPosixUID *int64 `json:"default_posix_uid,omitempty"`
+	DefaultPosixGID *int64 `json:"default_posix_gid,omitempty"`
 }
 
 type forkSandboxVolumeRequest struct {
-	CacheSize  *string `json:"cache_size"`
-	Prefetch   *int    `json:"prefetch"`
-	BufferSize *string `json:"buffer_size"`
-	Writeback  *bool   `json:"writeback"`
-	AccessMode *string `json:"access_mode"`
+	CacheSize       *string `json:"cache_size"`
+	Prefetch        *int    `json:"prefetch"`
+	BufferSize      *string `json:"buffer_size"`
+	Writeback       *bool   `json:"writeback"`
+	AccessMode      *string `json:"access_mode"`
+	DefaultPosixUID *int64  `json:"default_posix_uid,omitempty"`
+	DefaultPosixGID *int64  `json:"default_posix_gid,omitempty"`
+}
+
+func defaultZeroPosixIdentity(uid, gid **int64) {
+	if uid == nil || gid == nil {
+		return
+	}
+	if *uid != nil || *gid != nil {
+		return
+	}
+	defaultPosixID := int64(0)
+	*uid = &defaultPosixID
+	*gid = &defaultPosixID
+}
+
+func validateDefaultPosixIdentity(uid, gid *int64) error {
+	if (uid == nil) != (gid == nil) {
+		return errors.New("default_posix_uid and default_posix_gid must be set together")
+	}
+	if uid == nil {
+		return nil
+	}
+	if *uid < 0 || *gid < 0 {
+		return errors.New("default_posix_uid and default_posix_gid must be non-negative")
+	}
+	return nil
 }
 
 func (s *Server) createSandboxVolume(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +90,7 @@ func (s *Server) createSandboxVolume(w http.ResponseWriter, r *http.Request) {
 	if req.BufferSize == "" {
 		req.BufferSize = "32M"
 	}
+	defaultZeroPosixIdentity(&req.DefaultPosixUID, &req.DefaultPosixGID)
 
 	accessMode, ok := volume.ParseAccessMode(req.AccessMode)
 	if req.AccessMode == "" {
@@ -71,18 +101,24 @@ func (s *Server) createSandboxVolume(w http.ResponseWriter, r *http.Request) {
 		_ = spec.WriteError(w, http.StatusBadRequest, spec.CodeBadRequest, "invalid access_mode")
 		return
 	}
+	if err := validateDefaultPosixIdentity(req.DefaultPosixUID, req.DefaultPosixGID); err != nil {
+		_ = spec.WriteError(w, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
+		return
+	}
 
 	vol := &db.SandboxVolume{
-		ID:         uuid.New().String(),
-		TeamID:     teamId,
-		UserID:     userId,
-		CacheSize:  req.CacheSize,
-		Prefetch:   req.Prefetch,
-		BufferSize: req.BufferSize,
-		Writeback:  req.Writeback,
-		AccessMode: string(accessMode),
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:              uuid.New().String(),
+		TeamID:          teamId,
+		UserID:          userId,
+		DefaultPosixUID: req.DefaultPosixUID,
+		DefaultPosixGID: req.DefaultPosixGID,
+		CacheSize:       req.CacheSize,
+		Prefetch:        req.Prefetch,
+		BufferSize:      req.BufferSize,
+		Writeback:       req.Writeback,
+		AccessMode:      string(accessMode),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := s.repo.WithTx(r.Context(), func(tx pgx.Tx) error {
@@ -282,16 +318,22 @@ func (s *Server) forkVolume(w http.ResponseWriter, r *http.Request) {
 		_ = spec.WriteError(w, http.StatusInternalServerError, spec.CodeInternal, "snapshot manager is not configured")
 		return
 	}
+	if err := validateDefaultPosixIdentity(req.DefaultPosixUID, req.DefaultPosixGID); err != nil {
+		_ = spec.WriteError(w, http.StatusBadRequest, spec.CodeBadRequest, err.Error())
+		return
+	}
 
 	vol, err := s.snapshotMgr.ForkVolume(r.Context(), &snapshot.ForkVolumeRequest{
-		SourceVolumeID: id,
-		TeamID:         claims.TeamID,
-		UserID:         claims.UserID,
-		CacheSize:      req.CacheSize,
-		Prefetch:       req.Prefetch,
-		BufferSize:     req.BufferSize,
-		Writeback:      req.Writeback,
-		AccessMode:     req.AccessMode,
+		SourceVolumeID:  id,
+		TeamID:          claims.TeamID,
+		UserID:          claims.UserID,
+		CacheSize:       req.CacheSize,
+		Prefetch:        req.Prefetch,
+		BufferSize:      req.BufferSize,
+		Writeback:       req.Writeback,
+		AccessMode:      req.AccessMode,
+		DefaultPosixUID: req.DefaultPosixUID,
+		DefaultPosixGID: req.DefaultPosixGID,
 	})
 	if err != nil {
 		switch {
