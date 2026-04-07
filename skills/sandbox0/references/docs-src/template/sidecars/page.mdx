@@ -69,7 +69,7 @@ spec:
             memory: 4Gi
     sharedVolumes:
         - name: workspace
-          sandboxVolumeId: vol_123
+          # sandboxVolumeId: vol_123  # optional
           mountPath: /workspace/shared
           writeback: true
     sidecars:
@@ -107,7 +107,7 @@ spec:
             memory: 4Gi
     sharedVolumes:
         - name: workspace
-          sandboxVolumeId: vol_123
+          # sandboxVolumeId: vol_123  # optional
           mountPath: /workspace/shared
     sidecars:
         - name: codex
