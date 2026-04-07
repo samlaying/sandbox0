@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +81,76 @@ func TestClaimIdlePodClaimsReadyPod(t *testing.T) {
 	}
 }
 
+func TestWaitForPodReadyWaitsUntilReady(t *testing.T) {
+	pod := newClaimTestPod("ns-a", "cold-pod", "template-a", false)
+	indexer := newClaimTestPodIndexer(t, pod)
+	svc := &SandboxService{
+		podLister: corelisters.NewPodLister(indexer),
+		config: SandboxServiceConfig{
+			ProcdInitTimeout: 100 * time.Millisecond,
+		},
+	}
+
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		updated := pod.DeepCopy()
+		updated.Status.Conditions[0].Status = corev1.ConditionTrue
+		updated.Status.Conditions[0].LastTransitionTime = metav1.NewTime(time.Now().UTC())
+		if err := indexer.Update(updated); err != nil {
+			t.Errorf("update pod: %v", err)
+		}
+	}()
+
+	readyPod, err := svc.waitForPodReady(context.Background(), pod.Namespace, pod.Name)
+	if err != nil {
+		t.Fatalf("waitForPodReady() error = %v", err)
+	}
+	if !controller.IsPodReady(readyPod) {
+		t.Fatalf("waitForPodReady() returned pod that is not ready")
+	}
+}
+
+func TestWaitForPodReadyTimesOut(t *testing.T) {
+	pod := newClaimTestPod("ns-a", "cold-pod", "template-a", false)
+	svc := &SandboxService{
+		podLister: newClaimTestPodLister(t, pod),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := svc.waitForPodReady(ctx, pod.Namespace, pod.Name)
+	if err == nil {
+		t.Fatal("waitForPodReady() error = nil, want timeout")
+	}
+}
+
+func TestWaitForPodReadyWaitsForPodToAppear(t *testing.T) {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	svc := &SandboxService{
+		podLister: corelisters.NewPodLister(indexer),
+		config: SandboxServiceConfig{
+			ProcdInitTimeout: 100 * time.Millisecond,
+		},
+	}
+
+	pod := newClaimTestPod("ns-a", "cold-pod", "template-a", true)
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		if err := indexer.Add(pod); err != nil {
+			t.Errorf("add pod: %v", err)
+		}
+	}()
+
+	readyPod, err := svc.waitForPodReady(context.Background(), pod.Namespace, pod.Name)
+	if err != nil {
+		t.Fatalf("waitForPodReady() error = %v", err)
+	}
+	if readyPod.Name != pod.Name {
+		t.Fatalf("waitForPodReady() returned %q, want %q", readyPod.Name, pod.Name)
+	}
+}
+
 func TestValidateClaimMountsRejectsDuplicateVolume(t *testing.T) {
 	req := &ClaimRequest{
 		Mounts: []ClaimMount{
@@ -127,6 +198,86 @@ func TestValidateClaimMountsNormalizesMountPoint(t *testing.T) {
 	}
 }
 
+func TestMergeTemplateSharedVolumeMountsUsesClaimBindingForOptionalSharedVolume(t *testing.T) {
+	claimWriteback := true
+	claimPrefetch := int32(128)
+	got, err := mergeTemplateSharedVolumeMounts(
+		[]ClaimMount{{
+			SandboxVolumeID: "vol-claim",
+			MountPoint:      "/workspace/shared",
+			VolumeConfig: &MountVolumeConfig{
+				Writeback: &claimWriteback,
+				Prefetch:  &claimPrefetch,
+			},
+		}},
+		[]v1alpha1.SharedVolumeSpec{{
+			Name:      "workspace",
+			MountPath: "/workspace/shared",
+			CacheSize: "4Gi",
+		}},
+	)
+	if err != nil {
+		t.Fatalf("mergeTemplateSharedVolumeMounts() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("mount count = %d, want 1", len(got))
+	}
+	if got[0].SandboxVolumeID != "vol-claim" {
+		t.Fatalf("sandbox volume id = %q, want %q", got[0].SandboxVolumeID, "vol-claim")
+	}
+	if got[0].MountPoint != "/workspace/shared" {
+		t.Fatalf("mount point = %q, want %q", got[0].MountPoint, "/workspace/shared")
+	}
+	if got[0].VolumeConfig == nil {
+		t.Fatal("expected merged volume config")
+	}
+	if got[0].VolumeConfig.CacheSize != "4Gi" {
+		t.Fatalf("cache size = %q, want %q", got[0].VolumeConfig.CacheSize, "4Gi")
+	}
+	if got[0].VolumeConfig.Prefetch == nil || *got[0].VolumeConfig.Prefetch != claimPrefetch {
+		t.Fatalf("prefetch = %v, want %d", got[0].VolumeConfig.Prefetch, claimPrefetch)
+	}
+	if got[0].VolumeConfig.Writeback == nil || !*got[0].VolumeConfig.Writeback {
+		t.Fatalf("writeback = %v, want true", got[0].VolumeConfig.Writeback)
+	}
+}
+
+func TestMergeTemplateSharedVolumeMountsRejectsMissingClaimBindingForOptionalSharedVolume(t *testing.T) {
+	_, err := mergeTemplateSharedVolumeMounts(nil, []v1alpha1.SharedVolumeSpec{{
+		Name:      "workspace",
+		MountPath: "/workspace/shared",
+	}})
+	if err == nil {
+		t.Fatal("expected missing claim binding error")
+	}
+	if !errors.Is(err, ErrInvalidClaimRequest) {
+		t.Fatalf("expected ErrInvalidClaimRequest, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `shared volume "workspace" requires a claim mount for "/workspace/shared"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMergeTemplateSharedVolumeMountsRejectsClaimConflictForPinnedSharedVolume(t *testing.T) {
+	_, err := mergeTemplateSharedVolumeMounts(
+		[]ClaimMount{{SandboxVolumeID: "vol-claim", MountPoint: "/workspace/shared"}},
+		[]v1alpha1.SharedVolumeSpec{{
+			Name:            "workspace",
+			SandboxVolumeID: "vol-template",
+			MountPath:       "/workspace/shared",
+		}},
+	)
+	if err == nil {
+		t.Fatal("expected claim conflict error")
+	}
+	if !errors.Is(err, ErrInvalidClaimRequest) {
+		t.Fatalf("expected ErrInvalidClaimRequest, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `claim mount "/workspace/shared" conflicts with template shared volume "workspace"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestClaimMountWaitTimeoutDefaultsWhenEnabled(t *testing.T) {
 	got := claimMountWaitTimeout(&ClaimRequest{WaitForMounts: true})
 	if got != 30*time.Second {
@@ -141,6 +292,11 @@ func TestClaimMountWaitTimeoutDefaultsWhenEnabled(t *testing.T) {
 
 func newClaimTestPodLister(t *testing.T, pods ...*corev1.Pod) corelisters.PodLister {
 	t.Helper()
+	return corelisters.NewPodLister(newClaimTestPodIndexer(t, pods...))
+}
+
+func newClaimTestPodIndexer(t *testing.T, pods ...*corev1.Pod) cache.Indexer {
+	t.Helper()
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{
 		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
 	})
@@ -149,7 +305,7 @@ func newClaimTestPodLister(t *testing.T, pods ...*corev1.Pod) corelisters.PodLis
 			t.Fatalf("add pod: %v", err)
 		}
 	}
-	return corelisters.NewPodLister(indexer)
+	return indexer
 }
 
 func newClaimTestPod(namespace, name, templateID string, ready bool) *corev1.Pod {
