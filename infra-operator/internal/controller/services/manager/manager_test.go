@@ -173,6 +173,43 @@ func TestBuildConfigPropagatesNetdMITMCASecretName(t *testing.T) {
 	})
 }
 
+func TestBuildConfigPreservesSandboxRuntimeClassName(t *testing.T) {
+	reconciler := newManagerTestReconciler(t)
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			Database: &infrav1alpha1.DatabaseConfig{
+				Type: infrav1alpha1.DatabaseTypeBuiltin,
+				Builtin: &infrav1alpha1.BuiltinDatabaseConfig{
+					Enabled:  true,
+					Port:     5432,
+					Username: "sandbox0",
+					Database: "sandbox0",
+					SSLMode:  "disable",
+				},
+			},
+			Services: &infrav1alpha1.ServicesConfig{
+				Manager: &infrav1alpha1.ManagerServiceConfig{
+					Config: &infrav1alpha1.ManagerConfig{
+						SandboxRuntimeClassName: "kata-shared",
+					},
+				},
+			},
+		},
+	}
+
+	cfg, err := reconciler.buildConfig(context.Background(), infra, "sandbox0/manager", "test", infraplan.Compile(infra))
+	if err != nil {
+		t.Fatalf("buildConfig returned error: %v", err)
+	}
+	if cfg.SandboxRuntimeClassName != "kata-shared" {
+		t.Fatalf("sandbox runtime class = %q, want kata-shared", cfg.SandboxRuntimeClassName)
+	}
+}
+
 func newManagerTestReconciler(t *testing.T) *Reconciler {
 	t.Helper()
 

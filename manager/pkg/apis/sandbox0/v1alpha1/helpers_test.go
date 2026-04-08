@@ -149,6 +149,21 @@ manager_image: sandbox0/manager:test
 	}
 }
 
+func TestBuildPodSpecAppliesConfiguredSandboxRuntimeClass(t *testing.T) {
+	configPath := writeManagerConfig(t, `
+manager_image: sandbox0/manager:test
+sandbox_runtime_class_name: kata-shared
+`)
+	t.Setenv("CONFIG_PATH", configPath)
+
+	template := newTestTemplate()
+
+	spec := BuildPodSpec(template, false)
+	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "kata-shared" {
+		t.Fatalf("expected sandbox runtime class kata-shared, got %#v", spec.RuntimeClassName)
+	}
+}
+
 func TestBuildPodSpecLeavesOrdinarySandboxNonPrivileged(t *testing.T) {
 	configPath := writeManagerConfig(t, `
 manager_image: sandbox0/manager:test
