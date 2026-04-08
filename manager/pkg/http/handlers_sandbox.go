@@ -345,7 +345,7 @@ func (s *Server) pauseSandbox(c *gin.Context) {
 		return
 	}
 
-	resp, err := s.sandboxService.PauseSandbox(c.Request.Context(), sandboxID)
+	resp, err := s.sandboxService.RequestPauseSandbox(c.Request.Context(), sandboxID)
 	if err != nil {
 		s.logger.Error("Failed to pause sandbox",
 			zap.String("sandboxID", sandboxID),
@@ -355,7 +355,7 @@ func (s *Server) pauseSandbox(c *gin.Context) {
 		return
 	}
 
-	spec.JSONSuccess(c, http.StatusOK, resp)
+	spec.JSONSuccess(c, http.StatusAccepted, resp)
 }
 
 // resumeSandbox resumes a sandbox
@@ -385,7 +385,7 @@ func (s *Server) resumeSandbox(c *gin.Context) {
 		return
 	}
 
-	resp, err := s.sandboxService.ResumeSandbox(c.Request.Context(), sandboxID)
+	resp, err := s.sandboxService.RequestResumeSandbox(c.Request.Context(), sandboxID)
 	if err != nil {
 		s.logger.Error("Failed to resume sandbox",
 			zap.String("sandboxID", sandboxID),
@@ -395,7 +395,7 @@ func (s *Server) resumeSandbox(c *gin.Context) {
 		return
 	}
 
-	spec.JSONSuccess(c, http.StatusOK, resp)
+	spec.JSONSuccess(c, http.StatusAccepted, resp)
 }
 
 // refreshSandbox refreshes sandbox TTL

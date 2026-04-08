@@ -13,7 +13,7 @@ Sandbox0 has two categories of templates:
 
 Builtin templates use curated public images and are ready to use immediately. Custom templates let you bring your own image, and fine-tune resources.
 
-Custom templates can also define sidecar containers. This is useful for template-owned warm processes, for example a long-running Codex agent or helper daemon. Pool capacity only counts pods that become Kubernetes-ready, so a sidecar readiness probe can gate whether a warm pod is claimable. See [Template Sidecars](/docs/template/sidecars) for the dedicated guide.
+Custom templates can also define sidecar containers. This is useful for template-owned warm processes, for example a long-running Codex agent or helper daemon. Pool capacity only counts pods that are ready for claiming, so a sidecar readiness probe can gate whether a warm pod is claimable. See [Template Sidecars](/docs/template/sidecars) for the dedicated guide.
 
 ---
 
@@ -67,12 +67,15 @@ spec:
             httpGet:
               path: /healthz
               port: 8081
+          startupProbe:
+            exec:
+              command: ["test", "-f", "/tmp/codex-started"]
     pool:
         minIdle: 2
         maxIdle: 10
 ```
 
-Use the sidecar readiness probe to express when the warm process is truly ready. A pod that is merely `Running` but not `Ready` is not counted as available pool capacity.
+Use `readinessProbe` when a sidecar must finish warming up before the pod should count as ready warm capacity. Use `startupProbe` for slow-starting sidecars that need extra time before regular readiness checks should matter.
 
 <Tabs
   tabs={[
@@ -99,10 +102,14 @@ Use the sidecar readiness probe to express when the warm process is truly ready.
                     Memory: apispec.NewOptString("2Gi"),
                 },
                 ReadinessProbe: apispec.NewOptProbe(apispec.Probe{
-                    HTTPGet:             apispec.NewOptHTTPGetAction(apispec.HTTPGetAction{Path: apispec.NewOptString("/healthz"), Port: intstr.FromInt32(8081)}),
-                    InitialDelaySeconds: apispec.NewOptInt32(1),
+                    HTTPGet:            apispec.NewOptHTTPGetAction(apispec.HTTPGetAction{Path: "/healthz", Port: 8081}),
+                    PeriodSeconds:      apispec.NewOptInt32(2),
+                    FailureThreshold:   apispec.NewOptInt32(1),
+                }),
+                StartupProbe: apispec.NewOptProbe(apispec.Probe{
+                    Exec:                apispec.NewOptExecAction(apispec.ExecAction{Command: []string{"test", "-f", "/tmp/codex-started"}}),
                     PeriodSeconds:       apispec.NewOptInt32(2),
-                    FailureThreshold:    apispec.NewOptInt32(1),
+                    FailureThreshold:    apispec.NewOptInt32(5),
                 }),
             },
         },
@@ -169,9 +176,13 @@ print(f"Template created: {tpl.template_id}")`
                 command: ["sh", "-lc", "/app/start-codex.sh"],
                 readinessProbe: {
                     httpGet: { path: "/healthz", port: 8081 },
-                    initialDelaySeconds: 1,
                     periodSeconds: 2,
                     failureThreshold: 1,
+                },
+                startupProbe: {
+                    exec: { command: ["test", "-f", "/tmp/codex-started"] },
+                    periodSeconds: 2,
+                    failureThreshold: 5,
                 },
             },
         ],
@@ -198,9 +209,9 @@ spec:
               httpGet:
                   path: /healthz
                   port: 8081
-              initialDelaySeconds: 1
-              periodSeconds: 2
-              failureThreshold: 1
+          startupProbe:
+              exec:
+                  command: ["test", "-f", "/tmp/codex-started"]
     pool:
         minIdle: 2
         maxIdle: 10

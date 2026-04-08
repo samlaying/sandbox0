@@ -33,13 +33,13 @@ flowchart TB
 ```
 
 When a sandbox is claimed:
-1. The manager first tries to claim a Kubernetes-ready idle pod (`claimIdlePod`)
+1. The manager first tries to claim a ready idle pod (`claimIdlePod`)
 2. If successful (hot claim), the pod is relabeled to `active` and returned immediately; pool replenishment happens asynchronously via ReplicaSet reconcile
 3. If no idle pod exists (cold claim), the manager directly creates a new active pod (`createNewPod`) and asynchronously triggers scale-up (`OnColdClaim`) to rebuild idle capacity
 
 As long as `minIdle` idle pods are available, every claim is a **zero-cold-start** operation.
 
-In practice, “available” means `Pod Ready`, not merely `Pod Running`.
+In practice, “available” means the pod is ready for claiming, not merely `Pod Running`.
 
 ---
 
@@ -70,13 +70,13 @@ spec:
 
 ## Readiness Gates Pool Capacity
 
-Warm-pool capacity is counted from idle pods that reach Kubernetes readiness.
+Warm-pool capacity is counted from idle pods that are ready for claiming.
 
 - An idle pod in `Running` phase but with `Ready=False` does not count toward `idleCount`
 - A hot claim only selects idle pods that are already `Ready`
-- This lets you use standard Kubernetes probes to model “warm process is ready”
+- Sidecar `readinessProbe` is allowed and can delay when a pod becomes claimable.
 
-This is especially useful when a template uses a sidecar to host a warm process:
+If a template uses a sidecar to host a warm process, use `readinessProbe` on the sidecar so the pod only becomes claimable after that sidecar is ready:
 
 ```yaml
 spec:
@@ -85,15 +85,14 @@ spec:
           image: ghcr.io/example/codex:latest
           command: ["sh", "-lc", "/app/start-codex.sh"]
           readinessProbe:
-              httpGet:
-                  path: /healthz
-                  port: 8081
+              exec:
+                  command: ["test", "-f", "/tmp/codex-ready"]
     pool:
         minIdle: 2
         maxIdle: 10
 ```
 
-In this example, the pod is only counted as warm-pool capacity after the sidecar starts serving `GET /healthz` on port `8081` and the readiness probe passes.
+In this model, the pod only counts as warm-pool capacity after the sidecar becomes ready.
 
 **Choosing `minIdle`:**
 

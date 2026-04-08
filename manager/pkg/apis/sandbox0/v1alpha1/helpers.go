@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,11 +22,16 @@ const (
 	netdMITMCACertPath = netdMITMCADir + "/mitm-ca.crt"
 )
 
+const ManagedReadinessProbesAnnotation = "sandbox0.ai/managed-readiness-probes"
+
 // buildPodSpec builds a pod spec from a template
 func BuildPodSpec(template *SandboxTemplate, restart bool) corev1.PodSpec {
 	spec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers:    buildContainers(template),
+		ReadinessGates: []corev1.PodReadinessGate{{
+			ConditionType: SandboxPodReadinessConditionType,
+		}},
 	}
 	if restart {
 		spec.RestartPolicy = corev1.RestartPolicyAlways
@@ -284,17 +290,44 @@ func buildSidecarContainer(spec *SidecarContainerSpec, template *SandboxTemplate
 		envVars = append(envVars, corev1.EnvVar{Name: ev.Name, Value: ev.Value})
 	}
 	container.Env = envVars
-	if spec.ReadinessProbe != nil {
-		container.ReadinessProbe = spec.ReadinessProbe.DeepCopy()
-	}
-	if spec.LivenessProbe != nil {
-		container.LivenessProbe = spec.LivenessProbe.DeepCopy()
-	}
 	if spec.StartupProbe != nil {
 		container.StartupProbe = spec.StartupProbe.DeepCopy()
 	}
 
 	return container
+}
+
+func BuildManagedReadinessProbes(template *SandboxTemplate) []ManagedSidecarReadinessProbe {
+	if template == nil || len(template.Spec.Sidecars) == 0 {
+		return nil
+	}
+
+	probes := make([]ManagedSidecarReadinessProbe, 0, len(template.Spec.Sidecars))
+	for _, sidecar := range template.Spec.Sidecars {
+		if sidecar.ReadinessProbe == nil {
+			continue
+		}
+		probes = append(probes, ManagedSidecarReadinessProbe{
+			Name:  sidecar.Name,
+			Probe: sidecar.ReadinessProbe.DeepCopy(),
+		})
+	}
+	if len(probes) == 0 {
+		return nil
+	}
+	return probes
+}
+
+func BuildManagedReadinessProbesAnnotation(template *SandboxTemplate) (string, error) {
+	probes := BuildManagedReadinessProbes(template)
+	if len(probes) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(probes)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func buildResourceRequirements(quota ResourceQuota) corev1.ResourceRequirements {

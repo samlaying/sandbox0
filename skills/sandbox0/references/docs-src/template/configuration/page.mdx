@@ -95,7 +95,7 @@ Warm pool configuration. See [Warm Pool](/docs/template/pool) for a detailed gui
 | `minIdle` | integer | — | Minimum idle pods to pre-warm. Required (`>= 0`). |
 | `maxIdle` | integer | — | Maximum idle pods allowed. Required (`>= minIdle`). |
 
-Only Kubernetes-ready idle pods count toward pool capacity. This matters when your template uses sidecars to host a warm process.
+Only ready idle pods count toward pool capacity. This matters when your template uses sidecars to host a warm process.
 
 ---
 
@@ -115,9 +115,9 @@ spec:
               httpGet:
                   path: /healthz
                   port: 8081
-              initialDelaySeconds: 1
-              periodSeconds: 2
-              failureThreshold: 1
+          startupProbe:
+              exec:
+                  command: ["test", "-f", "/tmp/codex-started"]
 ```
 
 Commonly used sidecar fields:
@@ -130,12 +130,15 @@ Commonly used sidecar fields:
 | `command` / `args` | Process startup command for the sidecar. |
 | `env` | Sidecar-specific environment variables. |
 | `mounts` | References to template `sharedVolumes` when the sidecar needs pod-shared storage. |
-| `readinessProbe` | Gates whether the sidecar is considered ready. Use this to express warm-process readiness. |
-| `livenessProbe` | Optional probe for restarting an unhealthy sidecar. |
-| `startupProbe` | Optional probe for slow-starting sidecars. |
+| `readinessProbe` | Optional readiness probe for sidecars. Use it when a sidecar must finish warming up before the pod should count toward warm-pool capacity. |
+| `startupProbe` | Optional startup probe for slow-starting sidecars. |
 
 <Callout variant="info">
-If a sidecar hosts your warm process, define readiness on the sidecar itself. A pod that is `Running` but not `Ready` does not count as available warm-pool capacity and will not be hot-claimed.
+A pod that is `Running` but not `Ready` does not count as available warm-pool capacity and will not be hot-claimed.
+</Callout>
+
+<Callout variant="warning">
+`livenessProbe` is not part of the public template surface. Whole-sandbox soft pause freezes the sandbox, so kubelet liveness semantics would conflict with pause/resume.
 </Callout>
 
 If a sidecar also needs shared storage, declare `spec.sharedVolumes` on the template and mount them from `sidecars[*].mounts`. For end-to-end examples in Go, Python, TypeScript, and CLI, see [Template Sidecars](/docs/template/sidecars).
@@ -200,7 +203,7 @@ The following fields require a system-level token. They are not available to reg
 Attempting to set privileged fields without a system identity returns `403 Forbidden`. Contact your platform administrator if you need access to these fields.
 </Callout>
 
-Regular team-owned templates can still use public sidecar fields such as `command`, `args`, `env`, `resources`, `mounts`, and Kubernetes probes such as `readinessProbe`.
+Regular team-owned templates can still use public sidecar fields such as `command`, `args`, `env`, `resources`, `mounts`, `readinessProbe`, and `startupProbe`.
 
 Operator-only Kubernetes-native sidecar fields that are not part of the public OpenAPI schema should not be relied on from the public SDKs.
 

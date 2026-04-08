@@ -60,7 +60,7 @@ func (r *Reconciler) ReconcileManagerRBAC(ctx context.Context, infra *infrav1alp
 		},
 		{
 			APIGroups: []string{""},
-			Resources: []string{"pods", "pods/exec", "pods/status", "services", "serviceaccounts", "configmaps", "secrets", "persistentvolumeclaims", "events", "nodes", "namespaces"},
+			Resources: []string{"pods", "pods/exec", "pods/resize", "pods/status", "services", "serviceaccounts", "configmaps", "secrets", "persistentvolumeclaims", "events", "nodes", "namespaces"},
 			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 		},
 		{
@@ -157,6 +157,32 @@ func (r *Reconciler) ReconcileStorageProxyRBAC(ctx context.Context, infra *infra
 			Verbs:     []string{"get", "list", "watch", "create", "patch"},
 		},
 	}
+
+	if err := r.reconcileClusterRole(ctx, name, labels, rules); err != nil {
+		return err
+	}
+
+	return r.reconcileClusterRoleBinding(ctx, infra, name, labels, name, name)
+}
+
+// ReconcileCtldRBAC reconciles RBAC for the ctld daemonset.
+func (r *Reconciler) ReconcileCtldRBAC(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra) error {
+	name := fmt.Sprintf("%s-ctld", infra.Name)
+	labels := map[string]string{
+		"app.kubernetes.io/name":       "ctld",
+		"app.kubernetes.io/instance":   infra.Name,
+		"app.kubernetes.io/managed-by": "sandbox0infra-operator",
+	}
+
+	if err := r.reconcileServiceAccount(ctx, infra, name, labels); err != nil {
+		return err
+	}
+
+	rules := []rbacv1.PolicyRule{{
+		APIGroups: []string{""},
+		Resources: []string{"pods"},
+		Verbs:     []string{"get", "list", "watch"},
+	}}
 
 	if err := r.reconcileClusterRole(ctx, name, labels, rules); err != nil {
 		return err

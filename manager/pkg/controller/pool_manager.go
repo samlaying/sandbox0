@@ -33,21 +33,26 @@ const (
 	PoolTypeActive = "active"
 
 	// Annotations
-	AnnotationTeamID                   = "sandbox0.ai/team-id"
-	AnnotationUserID                   = "sandbox0.ai/user-id"
-	AnnotationClaimedAt                = "sandbox0.ai/claimed-at"
-	AnnotationClaimType                = "sandbox0.ai/claim-type" // "hot" or "cold"
-	AnnotationExpiresAt                = "sandbox0.ai/expires-at"
-	AnnotationHardExpiresAt            = "sandbox0.ai/hard-expires-at"
-	AnnotationConfig                   = "sandbox0.ai/config"
-	AnnotationPaused                   = "sandbox0.ai/paused"
-	AnnotationPausedAt                 = "sandbox0.ai/paused-at"
-	AnnotationPausedState              = "sandbox0.ai/paused-state"
-	AnnotationNetworkPolicy            = "sandbox0.ai/network-policy" // JSON serialized network policy spec
-	AnnotationNetworkPolicyHash        = "sandbox0.ai/network-policy-hash"
-	AnnotationNetworkPolicyAppliedHash = "sandbox0.ai/network-policy-applied-hash"
-	AnnotationSandboxID                = "sandbox0.ai/sandbox-id"
-	AnnotationTemplateSpecHash         = "sandbox0.ai/template-spec-hash"
+	AnnotationTeamID                       = "sandbox0.ai/team-id"
+	AnnotationUserID                       = "sandbox0.ai/user-id"
+	AnnotationClaimedAt                    = "sandbox0.ai/claimed-at"
+	AnnotationClaimType                    = "sandbox0.ai/claim-type" // "hot" or "cold"
+	AnnotationExpiresAt                    = "sandbox0.ai/expires-at"
+	AnnotationHardExpiresAt                = "sandbox0.ai/hard-expires-at"
+	AnnotationConfig                       = "sandbox0.ai/config"
+	AnnotationPaused                       = "sandbox0.ai/paused"
+	AnnotationPausedAt                     = "sandbox0.ai/paused-at"
+	AnnotationPausedState                  = "sandbox0.ai/paused-state"
+	AnnotationPowerStateDesired            = "sandbox0.ai/power-state-desired"
+	AnnotationPowerStateDesiredGeneration  = "sandbox0.ai/power-state-desired-generation"
+	AnnotationPowerStateObserved           = "sandbox0.ai/power-state-observed"
+	AnnotationPowerStateObservedGeneration = "sandbox0.ai/power-state-observed-generation"
+	AnnotationPowerStatePhase              = "sandbox0.ai/power-state-phase"
+	AnnotationNetworkPolicy                = "sandbox0.ai/network-policy" // JSON serialized network policy spec
+	AnnotationNetworkPolicyHash            = "sandbox0.ai/network-policy-hash"
+	AnnotationNetworkPolicyAppliedHash     = "sandbox0.ai/network-policy-applied-hash"
+	AnnotationSandboxID                    = "sandbox0.ai/sandbox-id"
+	AnnotationTemplateSpecHash             = "sandbox0.ai/template-spec-hash"
 )
 
 // PoolManager manages the idle pool (ReplicaSet)
@@ -205,15 +210,23 @@ func (pm *PoolManager) getOrCreateReplicaSet(ctx context.Context, template *v1al
 // buildPodTemplate builds the pod template for a template
 func (pm *PoolManager) buildPodTemplate(template *v1alpha1.SandboxTemplate, restart bool, specHash string) (corev1.PodTemplateSpec, error) {
 	spec := v1alpha1.BuildPodSpec(template, restart)
+	managedReadiness, err := v1alpha1.BuildManagedReadinessProbesAnnotation(template)
+	if err != nil {
+		return corev1.PodTemplateSpec{}, fmt.Errorf("build managed readiness probes annotation: %w", err)
+	}
+	annotations := map[string]string{
+		AnnotationTemplateSpecHash: specHash,
+	}
+	if managedReadiness != "" {
+		annotations[v1alpha1.ManagedReadinessProbesAnnotation] = managedReadiness
+	}
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				LabelTemplateID: template.Name,
 				LabelPoolType:   PoolTypeIdle,
 			},
-			Annotations: map[string]string{
-				AnnotationTemplateSpecHash: specHash,
-			},
+			Annotations: annotations,
 		},
 		Spec: spec,
 	}, nil
@@ -325,7 +338,18 @@ func (pm *PoolManager) deleteStaleIdlePodWithRetry(ctx context.Context, namespac
 
 func templateSpecHash(template *v1alpha1.SandboxTemplate) (string, error) {
 	podSpec := v1alpha1.BuildPodSpec(template, true)
-	b, err := json.Marshal(podSpec)
+	managedReadiness, err := v1alpha1.BuildManagedReadinessProbesAnnotation(template)
+	if err != nil {
+		return "", err
+	}
+	payload := struct {
+		PodSpec          corev1.PodSpec `json:"podSpec"`
+		ManagedReadiness string         `json:"managedReadiness,omitempty"`
+	}{
+		PodSpec:          podSpec,
+		ManagedReadiness: managedReadiness,
+	}
+	b, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
