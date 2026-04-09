@@ -409,17 +409,60 @@ func TestDeploymentMatchesDesired(t *testing.T) {
 	}
 
 	current := desired.DeepCopy()
-	if !deploymentMatchesDesired(current, desired) {
+	if !deploymentMatchesDesired(nil, current, desired) {
 		t.Fatal("expected identical deployment to match desired state")
 	}
 
 	current.Spec.Template.Spec.Containers[0].Image = "demo:new"
-	if deploymentMatchesDesired(current, desired) {
+	if deploymentMatchesDesired(nil, current, desired) {
 		t.Fatal("expected deployment with changed pod template to require update")
 	}
 }
 
+func TestDeploymentMatchesDesiredWithDefaultedFields(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add appsv1 scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+
+	replicas := int32(1)
+	desired := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+			Labels:    map[string]string{"app": "demo"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "demo"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "demo", Image: "demo:latest"}}},
+			},
+		},
+	}
+
+	current := desired.DeepCopy()
+	current.Spec.Template.Spec.DNSPolicy = corev1.DNSClusterFirst
+	current.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
+
+	if !deploymentMatchesDesired(scheme, current, desired) {
+		t.Fatal("expected deployment with server-defaulted fields to match desired state")
+	}
+}
+
 func TestDaemonSetMatchesDesired(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add appsv1 scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+
 	desired := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "demo",
@@ -442,12 +485,45 @@ func TestDaemonSetMatchesDesired(t *testing.T) {
 	}
 
 	current := desired.DeepCopy()
-	if !daemonSetMatchesDesired(current, desired) {
+	if !daemonSetMatchesDesired(scheme, current, desired) {
 		t.Fatal("expected identical daemonset to match desired state")
 	}
 
 	current.Labels["config"] = "new"
-	if daemonSetMatchesDesired(current, desired) {
+	if daemonSetMatchesDesired(scheme, current, desired) {
 		t.Fatal("expected daemonset with changed labels to require update")
+	}
+}
+
+func TestDaemonSetMatchesDesiredWithDefaultedFields(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add appsv1 scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+
+	desired := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+			Labels:    map[string]string{"app": "demo"},
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "demo"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "demo", Image: "demo:latest"}}},
+			},
+		},
+	}
+
+	current := desired.DeepCopy()
+	current.Spec.Template.Spec.DNSPolicy = corev1.DNSClusterFirstWithHostNet
+	current.Spec.Template.Spec.Containers[0].ImagePullPolicy = corev1.PullIfNotPresent
+
+	if !daemonSetMatchesDesired(scheme, current, desired) {
+		t.Fatal("expected daemonset with server-defaulted fields to match desired state")
 	}
 }

@@ -172,7 +172,7 @@ func (r *ResourceManager) ApplyDeployment(ctx context.Context, infra *infrav1alp
 			return err
 		}
 
-		if deploymentMatchesDesired(current, desired) {
+		if deploymentMatchesDesired(r.Scheme, current, desired) {
 			return nil
 		}
 
@@ -296,7 +296,7 @@ func (r *ResourceManager) ApplyDaemonSet(ctx context.Context, infra *infrav1alph
 			return err
 		}
 
-		if daemonSetMatchesDesired(current, desired) {
+		if daemonSetMatchesDesired(r.Scheme, current, desired) {
 			return nil
 		}
 
@@ -474,17 +474,17 @@ func MergeLabels(base map[string]string, overrides map[string]string) map[string
 	return out
 }
 
-func deploymentMatchesDesired(current, desired *appsv1.Deployment) bool {
+func deploymentMatchesDesired(_ *runtime.Scheme, current, desired *appsv1.Deployment) bool {
 	return apiequality.Semantic.DeepEqual(current.Labels, desired.Labels) &&
 		apiequality.Semantic.DeepEqual(current.Annotations, desired.Annotations) &&
-		apiequality.Semantic.DeepEqual(current.Spec, desired.Spec) &&
+		apiequality.Semantic.DeepDerivative(desired.Spec, current.Spec) &&
 		apiequality.Semantic.DeepEqual(current.OwnerReferences, desired.OwnerReferences)
 }
 
-func daemonSetMatchesDesired(current, desired *appsv1.DaemonSet) bool {
+func daemonSetMatchesDesired(_ *runtime.Scheme, current, desired *appsv1.DaemonSet) bool {
 	return apiequality.Semantic.DeepEqual(current.Labels, desired.Labels) &&
 		apiequality.Semantic.DeepEqual(current.Annotations, desired.Annotations) &&
-		apiequality.Semantic.DeepEqual(current.Spec, desired.Spec) &&
+		apiequality.Semantic.DeepDerivative(desired.Spec, current.Spec) &&
 		apiequality.Semantic.DeepEqual(current.OwnerReferences, desired.OwnerReferences)
 }
 
