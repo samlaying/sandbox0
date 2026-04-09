@@ -278,3 +278,108 @@ func TestApplyDaemonSetUpdatesExistingObject(t *testing.T) {
 		t.Fatalf("expected daemonset owner reference, got %#v", got.OwnerReferences)
 	}
 }
+
+func TestApplyDeploymentUpdatesExistingObject(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := appsv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add appsv1 scheme: %v", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 scheme: %v", err)
+	}
+	if err := infrav1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add infra scheme: %v", err)
+	}
+
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+	}
+	replicas := int32(2)
+	existing := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo-storage-proxy",
+			Namespace: infra.Namespace,
+			Labels: map[string]string{
+				"old": "label",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "old"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "old"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "old",
+						Image: "old:tag",
+					}},
+				},
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(infra.DeepCopy(), existing).
+		Build()
+	manager := NewResourceManager(client, scheme, nil, LocalDevConfig{})
+
+	desiredReplicas := int32(1)
+	desired := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      existing.Name,
+			Namespace: existing.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "demo-storage-proxy",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &desiredReplicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "new"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "new"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "storage-proxy",
+						Image: "sandbox0ai/storage-proxy:0.2.0-rc.7",
+					}},
+				},
+			},
+		},
+	}
+
+	if err := manager.ApplyDeployment(context.Background(), infra, desired); err != nil {
+		t.Fatalf("apply deployment: %v", err)
+	}
+
+	got := &appsv1.Deployment{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: existing.Name, Namespace: existing.Namespace}, got); err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if got.Spec.Template.Spec.Containers[0].Image != "sandbox0ai/storage-proxy:0.2.0-rc.7" {
+		t.Fatalf("expected updated image, got %q", got.Spec.Template.Spec.Containers[0].Image)
+	}
+	if got.Spec.Template.Spec.Containers[0].Name != "storage-proxy" {
+		t.Fatalf("expected updated container, got %q", got.Spec.Template.Spec.Containers[0].Name)
+	}
+	if got.Spec.Replicas == nil || *got.Spec.Replicas != desiredReplicas {
+		t.Fatalf("expected updated replicas, got %#v", got.Spec.Replicas)
+	}
+	if got.Labels["app.kubernetes.io/name"] != "demo-storage-proxy" {
+		t.Fatalf("expected updated labels, got %#v", got.Labels)
+	}
+	if len(got.OwnerReferences) != 1 || got.OwnerReferences[0].Name != infra.Name {
+		t.Fatalf("expected deployment owner reference, got %#v", got.OwnerReferences)
+	}
+}

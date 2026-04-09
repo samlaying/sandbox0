@@ -91,12 +91,6 @@ type ServiceDefinition struct {
 
 // ReconcileDeployment creates or updates a deployment.
 func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, name string, labels map[string]string, replicas int32, def ServiceDefinition) error {
-	deploy := &appsv1.Deployment{}
-	err := r.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: infra.Namespace}, deploy)
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-
 	defaultResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -155,13 +149,34 @@ func (r *ResourceManager) ReconcileDeployment(ctx context.Context, infra *infrav
 		return err
 	}
 
-	if errors.IsNotFound(err) {
-		return r.Client.Create(ctx, desiredDeploy)
+	return r.ApplyDeployment(ctx, infra, desiredDeploy)
+}
+
+// ApplyDeployment creates or updates a deployment using fresh reads on each retry
+// so controller-driven status/resourceVersion updates do not cause reconcile
+// loops to fail on optimistic concurrency conflicts.
+func (r *ResourceManager) ApplyDeployment(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, desired *appsv1.Deployment) error {
+	if err := ctrl.SetControllerReference(infra, desired, r.Scheme); err != nil {
+		return err
 	}
 
-	deploy.Spec = desiredDeploy.Spec
-	deploy.Labels = desiredLabels
-	return r.Client.Update(ctx, deploy)
+	key := types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := &appsv1.Deployment{}
+		err := r.Client.Get(ctx, key, current)
+		if errors.IsNotFound(err) {
+			return r.Client.Create(ctx, desired.DeepCopy())
+		}
+		if err != nil {
+			return err
+		}
+
+		current.Labels = desired.Labels
+		current.Annotations = desired.Annotations
+		current.Spec = desired.Spec
+		current.OwnerReferences = desired.OwnerReferences
+		return r.Client.Update(ctx, current)
+	})
 }
 
 // EnsureDeploymentReady validates deployment readiness before reporting success.
