@@ -31,11 +31,15 @@ type ContextHandler struct {
 }
 
 // NewContextHandler creates a new context handler.
-func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger, metrics *obsmetrics.ProcdMetrics) *ContextHandler {
+func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger, metrics ...*obsmetrics.ProcdMetrics) *ContextHandler {
+	var procdMetrics *obsmetrics.ProcdMetrics
+	if len(metrics) > 0 {
+		procdMetrics = metrics[0]
+	}
 	return &ContextHandler{
 		manager: manager,
 		logger:  logger,
-		metrics: metrics,
+		metrics: procdMetrics,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,

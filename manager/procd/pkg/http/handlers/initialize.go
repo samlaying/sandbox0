@@ -33,14 +33,18 @@ type InitializeHandler struct {
 }
 
 // NewInitializeHandler creates a new initialize handler.
-func NewInitializeHandler(dispatcher *webhook.Dispatcher, fileManager *file.Manager, volumeManager *volume.Manager, httpPort int, logger *zap.Logger, metrics *obsmetrics.ProcdMetrics) *InitializeHandler {
+func NewInitializeHandler(dispatcher *webhook.Dispatcher, fileManager *file.Manager, volumeManager *volume.Manager, httpPort int, logger *zap.Logger, metrics ...*obsmetrics.ProcdMetrics) *InitializeHandler {
+	var procdMetrics *obsmetrics.ProcdMetrics
+	if len(metrics) > 0 {
+		procdMetrics = metrics[0]
+	}
 	return &InitializeHandler{
 		dispatcher:    dispatcher,
 		fileManager:   fileManager,
 		volumeManager: volumeManager,
 		httpPort:      httpPort,
 		logger:        logger,
-		metrics:       metrics,
+		metrics:       procdMetrics,
 	}
 }
 

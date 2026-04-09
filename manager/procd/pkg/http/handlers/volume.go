@@ -18,11 +18,15 @@ type VolumeHandler struct {
 }
 
 // NewVolumeHandler creates a new volume handler.
-func NewVolumeHandler(manager *volume.Manager, logger *zap.Logger, metrics *obsmetrics.ProcdMetrics) *VolumeHandler {
+func NewVolumeHandler(manager *volume.Manager, logger *zap.Logger, metrics ...*obsmetrics.ProcdMetrics) *VolumeHandler {
+	var procdMetrics *obsmetrics.ProcdMetrics
+	if len(metrics) > 0 {
+		procdMetrics = metrics[0]
+	}
 	return &VolumeHandler{
 		manager: manager,
 		logger:  logger,
-		metrics: metrics,
+		metrics: procdMetrics,
 	}
 }
 
