@@ -220,7 +220,8 @@ func (d *Daemon) runNetd(ctx context.Context, cancel context.CancelFunc, proxyEx
 		httpClient := (*http.Client)(nil)
 		if d.obsProvider != nil {
 			httpClient = d.obsProvider.HTTP.NewClient(httpobs.Config{
-				Timeout: d.cfg.EgressAuthResolverTimeout.Duration,
+				Timeout:       d.cfg.EgressAuthResolverTimeout.Duration,
+				BaseTransport: httpobs.InternalServiceTransport(),
 			})
 		}
 		proxyOpts = append(proxyOpts, proxy.WithEgressAuthResolver(proxy.NewHTTPEgressAuthResolverWithHTTPClient(

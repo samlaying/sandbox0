@@ -118,7 +118,8 @@ func NewServer(
 
 	// Create observable HTTP client for proxy
 	httpClient := obsProvider.HTTP.NewClient(httpobs.Config{
-		Timeout: cfg.ProxyTimeout.Duration,
+		Timeout:       cfg.ProxyTimeout.Duration,
+		BaseTransport: httpobs.InternalServiceTransport(),
 	})
 
 	// Create proxy router to cluster-gateway

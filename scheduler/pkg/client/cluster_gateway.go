@@ -27,7 +27,8 @@ type ClusterGatewayClient struct {
 // NewClusterGatewayClient creates a new cluster-gateway client
 func NewClusterGatewayClient(internalAuthGen *internalauth.Generator, logger *zap.Logger, obsProvider *observability.Provider) *ClusterGatewayClient {
 	httpClient := obsProvider.HTTP.NewClient(httpobs.Config{
-		Timeout: 30 * time.Second,
+		Timeout:       30 * time.Second,
+		BaseTransport: httpobs.InternalServiceTransport(),
 	})
 
 	return &ClusterGatewayClient{

@@ -299,10 +299,12 @@ func main() {
 		managerMetrics,
 	)
 	sandboxService.SetCtldClient(service.NewCtldClientWithHTTPClient(obsProvider.HTTP.NewClient(httpobs.Config{
-		Timeout: cfg.CtldClientTimeout.Duration,
+		Timeout:       cfg.CtldClientTimeout.Duration,
+		BaseTransport: httpobs.InternalServiceTransport(),
 	})))
 	sandboxService.SetProcdClient(service.NewProcdClientWithHTTPClient(obsProvider.HTTP.NewClient(httpobs.Config{
-		Timeout: cfg.ProcdClientTimeout.Duration,
+		Timeout:       cfg.ProcdClientTimeout.Duration,
+		BaseTransport: httpobs.InternalServiceTransport(),
 	})))
 	sandboxService.SetSandboxReadinessEvaluator(readinessEvaluator)
 	sandboxService.SetCredentialStore(credentialStore)

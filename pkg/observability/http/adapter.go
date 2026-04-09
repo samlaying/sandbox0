@@ -36,6 +36,18 @@ type Config struct {
 	IdleConnTimeout     time.Duration
 }
 
+// InternalServiceTransport returns a transport suitable for intra-cluster or
+// control-plane service-to-service calls. It intentionally bypasses
+// ProxyFromEnvironment so internal service DNS names are dialed directly.
+func InternalServiceTransport() http.RoundTripper {
+	return &http.Transport{
+		Proxy:               nil,
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+	}
+}
+
 // NewAdapter creates a new HTTP adapter
 func NewAdapter(cfg AdapterConfig) Adapter {
 	var m *metrics

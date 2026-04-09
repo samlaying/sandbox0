@@ -81,7 +81,8 @@ func NewServer(
 
 	// Create observable HTTP client for proxy
 	httpClient := obsProvider.HTTP.NewClient(httpobs.Config{
-		Timeout: proxyTimeout,
+		Timeout:       proxyTimeout,
+		BaseTransport: httpobs.InternalServiceTransport(),
 	})
 
 	var proxy2Mgr *proxy.Router
