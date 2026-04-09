@@ -117,6 +117,124 @@ func TestReconcileEnablesTLSForHTTPSBaseURL(t *testing.T) {
 	}
 }
 
+func TestReconcilePublicModeSkipsControlPlanePublicKeyMount(t *testing.T) {
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			Database: &infrav1alpha1.DatabaseConfig{
+				Type: infrav1alpha1.DatabaseTypeBuiltin,
+				Builtin: &infrav1alpha1.BuiltinDatabaseConfig{
+					Enabled:  true,
+					Port:     5432,
+					Username: "sandbox0",
+					Database: "sandbox0",
+					SSLMode:  "disable",
+				},
+			},
+			Services: &infrav1alpha1.ServicesConfig{
+				ClusterGateway: &infrav1alpha1.ClusterGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+					},
+					Config: &infrav1alpha1.ClusterGatewayConfig{
+						AuthMode: "public",
+					},
+				},
+			},
+		},
+	}
+
+	reconciler, client := newClusterGatewayTestReconciler(t,
+		infra.DeepCopy(),
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "demo-sandbox0-database-credentials",
+				Namespace: infra.Namespace,
+			},
+			Data: map[string][]byte{
+				"username": []byte("sandbox0"),
+				"password": []byte("db-password"),
+				"database": []byte("sandbox0"),
+				"port":     []byte("5432"),
+			},
+		},
+	)
+
+	if err := reconciler.Reconcile(context.Background(), infra, "sandbox0ai/infra", "latest", nil); err != nil && !strings.Contains(err.Error(), "not ready") {
+		t.Fatalf("reconcile returned unexpected error: %v", err)
+	}
+
+	deployment := &appsv1.Deployment{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: "demo-cluster-gateway", Namespace: infra.Namespace}, deployment); err != nil {
+		t.Fatalf("get cluster gateway deployment: %v", err)
+	}
+	if hasVolume(deployment.Spec.Template.Spec.Volumes, "internal-jwt-public-key") {
+		t.Fatal("expected public auth mode to skip internal-jwt-public-key volume")
+	}
+}
+
+func TestReconcileInternalModeMountsControlPlanePublicKey(t *testing.T) {
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			Database: &infrav1alpha1.DatabaseConfig{
+				Type: infrav1alpha1.DatabaseTypeBuiltin,
+				Builtin: &infrav1alpha1.BuiltinDatabaseConfig{
+					Enabled:  true,
+					Port:     5432,
+					Username: "sandbox0",
+					Database: "sandbox0",
+					SSLMode:  "disable",
+				},
+			},
+			Services: &infrav1alpha1.ServicesConfig{
+				ClusterGateway: &infrav1alpha1.ClusterGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+					},
+					Config: &infrav1alpha1.ClusterGatewayConfig{
+						AuthMode: "internal",
+					},
+				},
+			},
+		},
+	}
+
+	reconciler, client := newClusterGatewayTestReconciler(t,
+		infra.DeepCopy(),
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "demo-sandbox0-database-credentials",
+				Namespace: infra.Namespace,
+			},
+			Data: map[string][]byte{
+				"username": []byte("sandbox0"),
+				"password": []byte("db-password"),
+				"database": []byte("sandbox0"),
+				"port":     []byte("5432"),
+			},
+		},
+	)
+
+	if err := reconciler.Reconcile(context.Background(), infra, "sandbox0ai/infra", "latest", nil); err != nil && !strings.Contains(err.Error(), "not ready") {
+		t.Fatalf("reconcile returned unexpected error: %v", err)
+	}
+
+	deployment := &appsv1.Deployment{}
+	if err := client.Get(context.Background(), types.NamespacedName{Name: "demo-cluster-gateway", Namespace: infra.Namespace}, deployment); err != nil {
+		t.Fatalf("get cluster gateway deployment: %v", err)
+	}
+	if !hasVolume(deployment.Spec.Template.Spec.Volumes, "internal-jwt-public-key") {
+		t.Fatal("expected internal auth mode to mount internal-jwt-public-key volume")
+	}
+}
+
 func newClusterGatewayTestReconciler(t *testing.T, objects ...runtime.Object) (*Reconciler, ctrlclient.Client) {
 	t.Helper()
 
@@ -218,6 +336,86 @@ func TestBuildConfigUsesStorageProxyServicePortForDerivedURL(t *testing.T) {
 
 	if cfg.StorageProxyURL != "http://demo-storage-proxy:18083" {
 		t.Fatalf("expected storage proxy url to use service port, got %q", cfg.StorageProxyURL)
+	}
+}
+
+func TestBuildConfigPublishesSSHEndpoint(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := infrav1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add infra scheme: %v", err)
+	}
+
+	infra := &infrav1alpha1.Sandbox0Infra{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo",
+			Namespace: "sandbox0-system",
+		},
+		Spec: infrav1alpha1.Sandbox0InfraSpec{
+			PublicExposure: &infrav1alpha1.PublicExposureConfig{
+				RootDomain: "sandbox0.app",
+				RegionID:   "aws-us-east-1",
+			},
+			Database: &infrav1alpha1.DatabaseConfig{
+				Type: infrav1alpha1.DatabaseTypeBuiltin,
+				Builtin: &infrav1alpha1.BuiltinDatabaseConfig{
+					Enabled:  true,
+					Port:     5432,
+					Username: "sandbox0",
+					Database: "sandbox0",
+					SSLMode:  "disable",
+				},
+			},
+			Services: &infrav1alpha1.ServicesConfig{
+				SSHGateway: &infrav1alpha1.SSHGatewayServiceConfig{
+					WorkloadServiceConfig: infrav1alpha1.WorkloadServiceConfig{
+						EnabledServiceConfig: infrav1alpha1.EnabledServiceConfig{Enabled: true},
+					},
+					ServiceExposureConfig: infrav1alpha1.ServiceExposureConfig{
+						Service: &infrav1alpha1.ServiceNetworkConfig{
+							Type: corev1.ServiceTypeNodePort,
+							Port: 30222,
+						},
+					},
+					Config: &infrav1alpha1.SSHGatewayConfig{
+						SSHPort: 2222,
+					},
+				},
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(
+			infra.DeepCopy(),
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "demo-sandbox0-database-credentials",
+					Namespace: infra.Namespace,
+				},
+				Data: map[string][]byte{
+					"username": []byte("sandbox0"),
+					"password": []byte("db-password"),
+					"database": []byte("sandbox0"),
+					"port":     []byte("5432"),
+				},
+			},
+		).
+		Build()
+
+	reconciler := NewReconciler(common.NewResourceManager(client, scheme, nil, common.LocalDevConfig{}))
+	cfg, err := reconciler.buildConfig(context.Background(), infra)
+	if err != nil {
+		t.Fatalf("buildConfig returned error: %v", err)
+	}
+	if cfg.SSHEndpointHost != "ssh.aws-us-east-1.sandbox0.app" {
+		t.Fatalf("ssh endpoint host = %q, want %q", cfg.SSHEndpointHost, "ssh.aws-us-east-1.sandbox0.app")
+	}
+	if cfg.SSHEndpointPort != 30222 {
+		t.Fatalf("ssh endpoint port = %d, want %d", cfg.SSHEndpointPort, 30222)
 	}
 }
 

@@ -115,7 +115,8 @@ func NewServer(
 
 	publicAuthEnabled := authModeEnabled(cfg.AuthMode, authModePublic)
 
-	// Initialize internal auth keys
+	// Initialize internal auth keys when control-plane callers are enabled for
+	// this deployment mode.
 	var publicKey ed25519.PublicKey
 	if authModeEnabled(cfg.AuthMode, authModeInternal) {
 		var err error
@@ -472,9 +473,8 @@ func (s *Server) setupRoutes() {
 		}
 	}
 
-	// Internal API routes (for scheduler to call)
-	// These routes are authenticated but don't require specific permissions
-	// (scheduler uses *:* permissions)
+	// Internal API routes are only mounted when control-plane callers are
+	// enabled for this deployment mode.
 	if authModeEnabled(s.cfg.AuthMode, authModeInternal) {
 		s.setupInternalControlPlaneRoutes()
 	}
@@ -494,6 +494,10 @@ func (s *Server) setupInternalControlPlaneRoutes() {
 	{
 		// Cluster information (→ Manager)
 		internal.GET("/cluster/summary", s.getClusterSummary)
+
+		// Sandbox metadata and power control (→ Manager)
+		internal.GET("/sandboxes/:id", s.getInternalSandbox)
+		internal.POST("/sandboxes/:id/resume", s.resumeInternalSandbox)
 
 		// Template management (→ Manager)
 		internal.GET("/templates", s.proxyInternalTemplateRequest)
