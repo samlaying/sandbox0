@@ -12,6 +12,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/volume"
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/webhook"
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.uber.org/zap"
 )
 
@@ -24,6 +25,7 @@ type InitializeHandler struct {
 	volumeManager *volume.Manager
 	httpPort      int
 	logger        *zap.Logger
+	metrics       *obsmetrics.ProcdMetrics
 	readyOnce     sync.Once
 	watchMu       sync.Mutex
 	watchPath     string
@@ -31,13 +33,14 @@ type InitializeHandler struct {
 }
 
 // NewInitializeHandler creates a new initialize handler.
-func NewInitializeHandler(dispatcher *webhook.Dispatcher, fileManager *file.Manager, volumeManager *volume.Manager, httpPort int, logger *zap.Logger) *InitializeHandler {
+func NewInitializeHandler(dispatcher *webhook.Dispatcher, fileManager *file.Manager, volumeManager *volume.Manager, httpPort int, logger *zap.Logger, metrics *obsmetrics.ProcdMetrics) *InitializeHandler {
 	return &InitializeHandler{
 		dispatcher:    dispatcher,
 		fileManager:   fileManager,
 		volumeManager: volumeManager,
 		httpPort:      httpPort,
 		logger:        logger,
+		metrics:       metrics,
 	}
 }
 
@@ -73,18 +76,29 @@ type InitializeResponse struct {
 
 // Initialize sets sandbox identity and webhook settings.
 func (h *InitializeHandler) Initialize(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
+	record := func(status string) {
+		if h.metrics == nil {
+			return
+		}
+		h.metrics.InitializeTotal.WithLabelValues(status).Inc()
+		h.metrics.InitializeDuration.Observe(time.Since(started).Seconds())
+	}
 	if h.dispatcher == nil {
+		record("unavailable")
 		writeError(w, http.StatusServiceUnavailable, "webhook_unavailable", "webhook dispatcher not configured")
 		return
 	}
 
 	var req InitializeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		record("invalid_request")
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
 	if req.SandboxID == "" {
+		record("invalid_request")
 		writeError(w, http.StatusBadRequest, "invalid_request", "sandbox_id is required")
 		return
 	}
@@ -95,6 +109,7 @@ func (h *InitializeHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 		if teamID == "" {
 			teamID = claims.TeamID
 		} else if claims.TeamID != "" && teamID != claims.TeamID {
+			record("forbidden")
 			writeError(w, http.StatusForbidden, "forbidden", "team_id does not match token")
 			return
 		}
@@ -116,6 +131,11 @@ func (h *InitializeHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 
 	bootstrapMounts, err := h.bootstrapMounts(r.Context(), req)
 	if err != nil {
+		h.logger.Warn("Failed to bootstrap mounts during initialize",
+			zap.String("sandbox_id", req.SandboxID),
+			zap.Error(err),
+		)
+		record("invalid_mount_request")
 		writeError(w, http.StatusBadRequest, "invalid_mount_request", err.Error())
 		return
 	}
@@ -132,6 +152,13 @@ func (h *InitializeHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	h.logger.Info("Initialized sandbox",
+		zap.String("sandbox_id", req.SandboxID),
+		zap.String("team_id", teamID),
+		zap.Int("mount_count", len(req.Mounts)),
+		zap.Bool("wait_for_mounts", req.WaitForMounts),
+	)
+	record("success")
 	writeJSON(w, http.StatusOK, InitializeResponse{
 		SandboxID:       req.SandboxID,
 		TeamID:          teamID,

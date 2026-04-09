@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/sandbox0/manager/pkg/apis/sandbox0/v1alpha1"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +35,7 @@ type CleanupController struct {
 	sandboxPauser     SandboxPauser
 	sandboxTerminator SandboxTerminator
 	logger            *zap.Logger
+	metrics           *obsmetrics.ManagerMetrics
 	interval          time.Duration
 }
 
@@ -67,6 +69,7 @@ func NewCleanupController(
 	sandboxPauser SandboxPauser,
 	sandboxTerminator SandboxTerminator,
 	logger *zap.Logger,
+	metrics *obsmetrics.ManagerMetrics,
 	interval time.Duration,
 ) *CleanupController {
 	// Use system time as fallback if clock is nil
@@ -83,6 +86,7 @@ func NewCleanupController(
 		sandboxPauser:     sandboxPauser,
 		sandboxTerminator: sandboxTerminator,
 		logger:            logger,
+		metrics:           metrics,
 		interval:          interval,
 	}
 }
@@ -109,15 +113,26 @@ func (cc *CleanupController) Start(ctx context.Context) error {
 
 // runCleanup runs a cleanup cycle
 func (cc *CleanupController) runCleanup(ctx context.Context) error {
+	started := time.Now()
 	cc.logger.Debug("Running cleanup cycle")
+	status := "success"
+	defer func() {
+		if cc.metrics == nil {
+			return
+		}
+		cc.metrics.CleanupRunsTotal.WithLabelValues(status).Inc()
+		cc.metrics.CleanupRunDuration.Observe(time.Since(started).Seconds())
+	}()
 
 	templates, err := cc.templateLister.List()
 	if err != nil {
+		status = "error"
 		return err
 	}
 
 	for _, template := range templates {
 		if err := cc.cleanupExpired(ctx, template); err != nil {
+			status = "error"
 			cc.logger.Error("Failed to cleanup expired sandbox",
 				zap.String("template", template.Name),
 				zap.Error(err),
@@ -180,6 +195,9 @@ func (cc *CleanupController) cleanupExpired(ctx context.Context, template *v1alp
 				cc.recorder.Eventf(template, corev1.EventTypeNormal, "HardExpiredPodDeleted",
 					"Deleted hard-expired pod %s", pod.Name)
 				expiredCount++
+				if cc.metrics != nil {
+					cc.metrics.PodsCleanedTotal.WithLabelValues(template.Name, "hard_expired").Inc()
+				}
 				continue
 			}
 		}
@@ -225,6 +243,9 @@ func (cc *CleanupController) cleanupExpired(ctx context.Context, template *v1alp
 				cc.recorder.Eventf(template, corev1.EventTypeNormal, "ExpiredPodPaused",
 					"Paused expired pod %s", pod.Name)
 				expiredCount++
+				if cc.metrics != nil {
+					cc.metrics.PodsCleanedTotal.WithLabelValues(template.Name, "expired").Inc()
+				}
 			} else {
 				cc.logger.Warn("SandboxPauser not configured, skipping pause of expired pod",
 					zap.String("pod", pod.Name),

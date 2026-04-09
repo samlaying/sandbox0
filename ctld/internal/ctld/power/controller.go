@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/cgroup"
 	"github.com/sandbox0-ai/sandbox0/pkg/ctldapi"
@@ -35,6 +36,7 @@ type Controller struct {
 	Resolver      Resolver
 	FS            *cgroup.FS
 	StatsProvider SandboxStatsProvider
+	metrics       *Metrics
 }
 
 func NewController(resolver Resolver, fs *cgroup.FS) *Controller {
@@ -44,19 +46,32 @@ func NewController(resolver Resolver, fs *cgroup.FS) *Controller {
 	return &Controller{Resolver: resolver, FS: fs}
 }
 
+func (c *Controller) SetMetrics(metrics *Metrics) {
+	if c == nil {
+		return
+	}
+	c.metrics = metrics
+}
+
 func (c *Controller) Pause(r *http.Request, sandboxID string) (ctldapi.PauseResponse, int) {
+	start := time.Now()
 	target, status, errResp := c.resolveTarget(r, sandboxID)
 	if status != http.StatusOK {
+		c.metrics.observeOperation("pause", http.StatusText(status), time.Since(start))
 		return errResp, status
 	}
 	log.Printf("ctld pause start sandbox=%s runtime=%s cgroup=%s", sandboxID, target.Runtime, target.CgroupDir)
 	if err := c.FS.Freeze(target.CgroupDir); err != nil {
+		c.metrics.observeOperation("pause", "error", time.Since(start))
 		return ctldapi.PauseResponse{Paused: false, Error: fmt.Sprintf("freeze cgroup: %v", err)}, http.StatusInternalServerError
 	}
 	usage, err := c.pauseUsage(r.Context(), target)
 	if err != nil {
+		c.metrics.observeOperation("pause", "error", time.Since(start))
 		return ctldapi.PauseResponse{Paused: false, Error: err.Error()}, http.StatusInternalServerError
 	}
+	c.metrics.observeOperation("pause", "success", time.Since(start))
+	c.metrics.recordPauseUsage(usage.ContainerMemoryUsage, usage.ContainerMemoryWorkingSet, usage.TotalMemoryRSS)
 	log.Printf("ctld pause complete sandbox=%s runtime=%s working_set=%d usage=%d", sandboxID, target.Runtime, usage.ContainerMemoryWorkingSet, usage.ContainerMemoryUsage)
 	return ctldapi.PauseResponse{
 		Paused:        true,
@@ -65,14 +80,18 @@ func (c *Controller) Pause(r *http.Request, sandboxID string) (ctldapi.PauseResp
 }
 
 func (c *Controller) Resume(r *http.Request, sandboxID string) (ctldapi.ResumeResponse, int) {
+	start := time.Now()
 	target, status, pauseErr := c.resolveTarget(r, sandboxID)
 	if status != http.StatusOK {
+		c.metrics.observeOperation("resume", http.StatusText(status), time.Since(start))
 		return ctldapi.ResumeResponse{Resumed: false, Error: pauseErr.Error}, status
 	}
 	log.Printf("ctld resume start sandbox=%s runtime=%s cgroup=%s", sandboxID, target.Runtime, target.CgroupDir)
 	if err := c.FS.Thaw(target.CgroupDir); err != nil {
+		c.metrics.observeOperation("resume", "error", time.Since(start))
 		return ctldapi.ResumeResponse{Resumed: false, Error: fmt.Sprintf("thaw cgroup: %v", err)}, http.StatusInternalServerError
 	}
+	c.metrics.observeOperation("resume", "success", time.Since(start))
 	log.Printf("ctld resume complete sandbox=%s runtime=%s", sandboxID, target.Runtime)
 	return ctldapi.ResumeResponse{Resumed: true}, http.StatusOK
 }

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	"github.com/sandbox0-ai/sandbox0/manager/pkg/apis/sandbox0/v1alpha1"
 	"github.com/sandbox0-ai/sandbox0/manager/pkg/controller"
@@ -32,6 +31,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/pkg/metering"
 	"github.com/sandbox0-ai/sandbox0/pkg/migrate"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
 	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	templmigrations "github.com/sandbox0-ai/sandbox0/pkg/template/migrations"
 	templreconciler "github.com/sandbox0-ai/sandbox0/pkg/template/reconciler"
@@ -298,6 +298,12 @@ func main() {
 		logger,
 		managerMetrics,
 	)
+	sandboxService.SetCtldClient(service.NewCtldClientWithHTTPClient(obsProvider.HTTP.NewClient(httpobs.Config{
+		Timeout: cfg.CtldClientTimeout.Duration,
+	})))
+	sandboxService.SetProcdClient(service.NewProcdClientWithHTTPClient(obsProvider.HTTP.NewClient(httpobs.Config{
+		Timeout: cfg.ProcdClientTimeout.Duration,
+	})))
 	sandboxService.SetSandboxReadinessEvaluator(readinessEvaluator)
 	sandboxService.SetCredentialStore(credentialStore)
 	staticAuth := make([]egressauthruntime.StaticAuthConfig, 0, len(cfg.EgressAuthStaticAuth))
@@ -372,6 +378,7 @@ func main() {
 		sandboxService,
 		sandboxService,
 		logger,
+		managerMetrics,
 		cfg.CleanupInterval.Duration,
 	)
 
@@ -413,7 +420,7 @@ func main() {
 	)
 
 	// Start metrics server
-	go startMetricsServer(cfg.MetricsPort, logger)
+	go startMetricsServer(cfg.MetricsPort, logger, obsProvider)
 
 	// Start informers
 	logger.Info("Starting informers")
@@ -503,13 +510,19 @@ func buildKubeConfig(kubeconfig string) (*rest.Config, error) {
 }
 
 // startMetricsServer starts the Prometheus metrics server
-func startMetricsServer(port int, logger *zap.Logger) {
-	http.Handle("/metrics", promhttp.Handler())
-
+func startMetricsServer(port int, logger *zap.Logger, obsProvider *observability.Provider) {
 	addr := fmt.Sprintf(":%d", port)
+	mux := http.NewServeMux()
+	if obsProvider != nil {
+		mux.Handle("/metrics", obsProvider.MetricsHandler())
+	} else {
+		mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		})
+	}
 	logger.Info("Starting metrics server", zap.String("addr", addr))
 
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := http.ListenAndServe(addr, mux); err != nil {
 		logger.Error("Metrics server failed", zap.Error(err))
 	}
 }

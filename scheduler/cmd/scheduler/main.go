@@ -140,7 +140,7 @@ func main() {
 
 	// Start template idle listener
 	if cfg.DatabaseURL != "" {
-		schedpubsub.StartTemplateIdleListener(ctx, cfg.DatabaseURL, logger, func(event pubsub.TemplateIdleEvent) {
+		schedpubsub.StartTemplateIdleListener(ctx, cfg.DatabaseURL, logger, obsProvider.Tracer(), schedulerMetrics, func(event pubsub.TemplateIdleEvent) {
 			logger.Info("Received template idle event",
 				zap.String("cluster_id", event.ClusterID),
 				zap.String("template_id", event.TemplateID),

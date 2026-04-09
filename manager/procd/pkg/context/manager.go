@@ -10,6 +10,7 @@ import (
 
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/process"
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/process/repl"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 )
 
 // ContextResourceUsage represents resource usage for a single context.
@@ -54,6 +55,7 @@ type Manager struct {
 	onStart              process.StartHandler
 	defaultCleanupPolicy CleanupPolicy
 	cleanupOnce          sync.Once
+	metrics              *obsmetrics.ProcdMetrics
 }
 
 // NewManager creates a new context manager.
@@ -61,6 +63,14 @@ func NewManager() *Manager {
 	return &Manager{
 		contexts: make(map[string]*Context),
 	}
+}
+
+// SetMetrics sets procd metrics for context lifecycle tracking.
+func (m *Manager) SetMetrics(metrics *obsmetrics.ProcdMetrics) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.metrics = metrics
+	m.updateContextGaugesLocked()
 }
 
 // SetExitHandler sets a global exit handler for new contexts.
@@ -98,7 +108,15 @@ func (m *Manager) StartCleanup(ctx context.Context, interval time.Duration) {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					m.cleanupExpired()
+					if err := m.cleanupExpired(); err != nil {
+						if m.metrics != nil {
+							m.metrics.CleanupRunsTotal.WithLabelValues("error").Inc()
+						}
+						continue
+					}
+					if m.metrics != nil {
+						m.metrics.CleanupRunsTotal.WithLabelValues("success").Inc()
+					}
 				}
 			}
 		}()
@@ -134,6 +152,7 @@ func (m *Manager) CreateContextWithPolicyAndREPLConfig(config process.ProcessCon
 	ctx.SetCleanupPolicy(policy)
 
 	m.contexts[ctx.ID] = ctx
+	m.updateContextGaugesLocked()
 	m.mu.Unlock()
 	return ctx, nil
 }
@@ -177,6 +196,7 @@ func (m *Manager) DeleteContext(id string) error {
 	_ = ctx.Stop()
 
 	delete(m.contexts, id)
+	m.updateContextGaugesLocked()
 	return nil
 }
 
@@ -214,6 +234,7 @@ func (m *Manager) PauseAll() error {
 		}
 	}
 
+	m.updateContextGaugesLocked()
 	return errors.Join(errs...)
 }
 
@@ -231,7 +252,28 @@ func (m *Manager) ResumeAll() error {
 			}
 		}
 	}
+	m.updateContextGaugesLocked()
 	return errors.Join(errs...)
+}
+
+func (m *Manager) updateContextGaugesLocked() {
+	if m.metrics == nil {
+		return
+	}
+
+	active := 0
+	paused := 0
+	for _, ctx := range m.contexts {
+		if ctx.IsRunning() {
+			active++
+		}
+		if ctx.IsPaused() {
+			paused++
+		}
+	}
+
+	m.metrics.ContextsActive.Set(float64(active))
+	m.metrics.ContextsPaused.Set(float64(paused))
 }
 
 // WriteInput writes input to a context's main process.
@@ -295,9 +337,10 @@ func (m *Manager) Cleanup() {
 	}
 
 	m.contexts = make(map[string]*Context)
+	m.updateContextGaugesLocked()
 }
 
-func (m *Manager) cleanupExpired() {
+func (m *Manager) cleanupExpired() error {
 	now := time.Now()
 	expiredIDs := make([]string, 0)
 
@@ -312,6 +355,7 @@ func (m *Manager) cleanupExpired() {
 	for _, id := range expiredIDs {
 		_ = m.DeleteContext(id)
 	}
+	return nil
 }
 
 // GetResourceUsage returns resource usage for a specific context.

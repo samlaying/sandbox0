@@ -11,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sandbox0-ai/sandbox0/cluster-gateway/pkg/client"
 	"github.com/sandbox0-ai/sandbox0/cluster-gateway/pkg/middleware"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
@@ -291,7 +290,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) setupRoutes() {
 	// Global middleware (order matters)
 	s.router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
-		Tracer: s.obsProvider.Tracer(),
+		ServiceName: "cluster-gateway",
+		Tracer:      s.obsProvider.Tracer(),
+		Registry:    s.obsProvider.MetricsRegistryOrNil(),
 	}))
 	s.router.Use(middleware.Recovery(s.logger))
 	s.router.Use(s.requestLogger.Logger())
@@ -302,7 +303,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/metadata", gatewayhandlers.GatewayMetadata("cluster-gateway", gatewayhandlers.GatewayModeDirect))
 
 	// Metrics endpoint
-	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.router.GET("/metrics", gin.WrapH(s.obsProvider.MetricsHandler()))
 
 	if authModeEnabled(s.cfg.AuthMode, authModePublic) {
 		public.RegisterRoutes(s.router, public.Deps{

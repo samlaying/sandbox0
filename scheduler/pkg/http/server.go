@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	"github.com/sandbox0-ai/sandbox0/pkg/gateway/spec"
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
@@ -97,7 +96,9 @@ func NewServer(
 	// Create router
 	router := gin.New()
 	router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
-		Tracer: obsProvider.Tracer(),
+		ServiceName: "scheduler",
+		Tracer:      obsProvider.Tracer(),
+		Registry:    obsProvider.MetricsRegistryOrNil(),
 	}))
 	router.Use(gin.Recovery())
 	router.Use(requestLogger(logger))
@@ -155,7 +156,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/readyz", s.readinessCheck)
 
 	// Metrics endpoint
-	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.router.GET("/metrics", gin.WrapH(s.obsProvider.MetricsHandler()))
 
 	// API v1 routes
 	v1 := s.router.Group("/api/v1")

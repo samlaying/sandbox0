@@ -12,9 +12,13 @@ type ManagerMetrics struct {
 	ActivePodsTotal      *prometheus.GaugeVec
 	SandboxClaimsTotal   *prometheus.CounterVec
 	SandboxClaimDuration *prometheus.HistogramVec
+	SandboxPowerTotal    *prometheus.CounterVec
+	SandboxPowerDuration *prometheus.HistogramVec
 	PodsCleanedTotal     *prometheus.CounterVec
 	ReconcileTotal       *prometheus.CounterVec
 	ReconcileDuration    *prometheus.HistogramVec
+	CleanupRunsTotal     *prometheus.CounterVec
+	CleanupRunDuration   prometheus.Histogram
 	MeteringEventsTotal  *prometheus.CounterVec
 	MeteringWindowsTotal *prometheus.CounterVec
 	MeteringErrorsTotal  *prometheus.CounterVec
@@ -51,6 +55,15 @@ func NewManager(registry prometheus.Registerer) *ManagerMetrics {
 			Help:    "Duration of sandbox claim operations",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"template", "type"}), // type: "hot" (from pool) or "cold" (new pod)
+		SandboxPowerTotal: factory.NewCounterVec(prometheus.CounterOpts{
+			Name: "manager_sandbox_power_total",
+			Help: "Total number of sandbox power state operations",
+		}, []string{"operation", "status"}), // operation: pause, resume
+		SandboxPowerDuration: factory.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "manager_sandbox_power_duration_seconds",
+			Help:    "Duration of sandbox power state operations",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"operation"}),
 		PodsCleanedTotal: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "manager_pods_cleaned_total",
 			Help: "Total number of pods cleaned up",
@@ -64,6 +77,15 @@ func NewManager(registry prometheus.Registerer) *ManagerMetrics {
 			Help:    "Duration of reconciliation operations",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"template"}),
+		CleanupRunsTotal: factory.NewCounterVec(prometheus.CounterOpts{
+			Name: "manager_cleanup_runs_total",
+			Help: "Total number of cleanup controller runs",
+		}, []string{"status"}),
+		CleanupRunDuration: factory.NewHistogram(prometheus.HistogramOpts{
+			Name:    "manager_cleanup_run_duration_seconds",
+			Help:    "Duration of manager cleanup controller runs",
+			Buckets: prometheus.DefBuckets,
+		}),
 		MeteringEventsTotal: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "manager_metering_events_total",
 			Help: "Total number of manager metering lifecycle events attempted",

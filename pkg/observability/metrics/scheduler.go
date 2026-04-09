@@ -17,6 +17,8 @@ type SchedulerMetrics struct {
 	LastReconcileTimestamp prometheus.Gauge
 	CapacityClamps         *prometheus.CounterVec
 	RoutingDecisions       *prometheus.CounterVec
+	TemplateIdleEvents     *prometheus.CounterVec
+	TemplateIdleRestarts   prometheus.Counter
 }
 
 // NewScheduler registers and returns scheduler metrics.
@@ -97,6 +99,19 @@ func NewScheduler(registry prometheus.Registerer) *SchedulerMetrics {
 				Help: "Total number of scheduler shard routing decisions by reason",
 			},
 			[]string{"cluster_id", "reason"},
+		),
+		TemplateIdleEvents: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "scheduler_template_idle_events_total",
+				Help: "Total number of scheduler template idle listener events",
+			},
+			[]string{"status"},
+		),
+		TemplateIdleRestarts: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "scheduler_template_idle_listener_restarts_total",
+				Help: "Total number of scheduler template idle listener restarts",
+			},
 		),
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/webhook"
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -62,9 +63,11 @@ func main() {
 		logger.Fatal("Failed to initialize observability", zap.Error(err))
 	}
 	defer obsProvider.Shutdown(context.Background())
+	procdMetrics := obsmetrics.NewProcd(obsProvider.MetricsRegistryOrNil())
 
 	// Initialize managers
 	contextManager := ctxpkg.NewManager()
+	contextManager.SetMetrics(procdMetrics)
 	contextManager.SetDefaultCleanupPolicy(ctxpkg.CleanupPolicy{
 		IdleTimeout: cfg.ContextIdleTimeout.Duration,
 		MaxLifetime: cfg.ContextMaxLifetime.Duration,
@@ -175,6 +178,7 @@ func main() {
 		webhookDispatcher,
 		logger,
 		obsProvider,
+		procdMetrics,
 	)
 
 	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())

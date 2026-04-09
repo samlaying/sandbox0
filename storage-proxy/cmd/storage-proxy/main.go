@@ -303,15 +303,17 @@ func main() {
 	})
 
 	authenticator := auth.NewGRPCAuthenticator(validator, zapLogger)
+	authenticator.SetMetrics(storageProxyMetrics)
 	grpcInterceptor = authenticator.UnaryInterceptor()
 
 	httpAuthenticator = auth.NewHTTPAuthenticator(validator, zapLogger)
+	httpAuthenticator.SetMetrics(storageProxyMetrics)
 
 	zapLogger.Info("Using internalauth validator for gRPC and HTTP authentication")
 
 	// Create gRPC server
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(grpcInterceptor),
+		grpc.ChainUnaryInterceptor(grpcInterceptor, grpcserver.UnaryMetricsInterceptor(storageProxyMetrics)),
 	)
 
 	// Register FileSystem service
@@ -359,7 +361,7 @@ func main() {
 	}
 
 	// Create HTTP server
-	httpSrv := httpserver.NewServer(logrusLogger, cfg, k8sClient, repo, meteringRepo, cfg.RegionID, httpAuthenticator, snapshotMgr, syncSvc, volumeBarrier, volMgr, fsServer, eventHub)
+	httpSrv := httpserver.NewServer(logrusLogger, cfg, k8sClient, repo, meteringRepo, cfg.RegionID, httpAuthenticator, snapshotMgr, syncSvc, volumeBarrier, volMgr, fsServer, eventHub, obsProvider, storageProxyMetrics)
 	httpAddr := fmt.Sprintf("%s:%d", cfg.HTTPAddr, cfg.HTTPPort)
 
 	readTimeout, _ := time.ParseDuration(cfg.HTTPReadTimeout)

@@ -18,6 +18,10 @@ type Config struct {
 	// MetricsRegistry for Prometheus metrics (default: prometheus.DefaultRegisterer)
 	MetricsRegistry prometheus.Registerer
 
+	// MetricsGatherer is used to expose Prometheus metrics (default: derived from
+	// MetricsRegistry when possible, otherwise prometheus.DefaultGatherer).
+	MetricsGatherer prometheus.Gatherer
+
 	// TraceExporter configures where traces are sent
 	// If nil, traces are disabled
 	TraceExporter TraceExporterConfig
@@ -61,6 +65,13 @@ func (c *Config) Validate() error {
 func (c *Config) setDefaults() {
 	if c.MetricsRegistry == nil {
 		c.MetricsRegistry = prometheus.DefaultRegisterer
+	}
+	if c.MetricsGatherer == nil {
+		if gatherer, ok := c.MetricsRegistry.(prometheus.Gatherer); ok {
+			c.MetricsGatherer = gatherer
+		} else {
+			c.MetricsGatherer = prometheus.DefaultGatherer
+		}
 	}
 	if c.TraceSampleRate == 0 {
 		c.TraceSampleRate = 1.0

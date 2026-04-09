@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,6 +16,7 @@ import (
 type GRPCAuthenticator struct {
 	validator *internalauth.Validator
 	logger    *zap.Logger
+	metrics   *obsmetrics.StorageProxyMetrics
 }
 
 // NewGRPCAuthenticator creates a new gRPC authenticator.
@@ -23,6 +25,13 @@ func NewGRPCAuthenticator(validator *internalauth.Validator, logger *zap.Logger)
 		validator: validator,
 		logger:    logger,
 	}
+}
+
+func (a *GRPCAuthenticator) SetMetrics(metrics *obsmetrics.StorageProxyMetrics) {
+	if a == nil {
+		return
+	}
+	a.metrics = metrics
 }
 
 // UnaryInterceptor returns a gRPC unary interceptor for authentication.
@@ -47,6 +56,7 @@ func (a *GRPCAuthenticator) UnaryInterceptor() grpc.UnaryServerInterceptor {
 			)
 			return nil, status.Error(codes.Unauthenticated, err.Error())
 		}
+		a.recordAuth("grpc", "", true)
 
 		// Add claims to context for downstream handlers
 		ctx = internalauth.WithClaims(ctx, claims)
@@ -66,6 +76,7 @@ func (a *GRPCAuthenticator) authenticate(ctx context.Context) (*internalauth.Cla
 	// Extract metadata from context
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
+		a.recordAuth("grpc", "missing_metadata", false)
 		return nil, status.Error(codes.Unauthenticated, "missing metadata")
 	}
 
@@ -75,12 +86,14 @@ func (a *GRPCAuthenticator) authenticate(ctx context.Context) (*internalauth.Cla
 		tokenString = tokenHeaders[0]
 	}
 	if tokenString == "" {
+		a.recordAuth("grpc", "missing_token", false)
 		return nil, status.Error(codes.Unauthenticated, "missing authentication token")
 	}
 
 	// Validate token using internalauth
 	claims, err := a.validator.Validate(tokenString)
 	if err != nil {
+		a.recordAuth("grpc", "invalid_token", false)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
 	}
 
@@ -104,8 +117,10 @@ func (a *GRPCAuthenticator) StreamInterceptor() grpc.StreamServerInterceptor {
 		// Extract and validate token
 		claims, err := a.authenticate(ss.Context())
 		if err != nil {
+			a.recordAuth("grpc_stream", "invalid_token", false)
 			return status.Error(codes.Unauthenticated, err.Error())
 		}
+		a.recordAuth("grpc_stream", "", true)
 
 		a.logger.Info("Stream request authenticated",
 			zap.String("method", info.FullMethod),
@@ -132,4 +147,16 @@ type authenticatedStream struct {
 // Context returns the authenticated context.
 func (s *authenticatedStream) Context() context.Context {
 	return s.ctx
+}
+
+func (a *GRPCAuthenticator) recordAuth(protocol, errorType string, success bool) {
+	if a == nil || a.metrics == nil {
+		return
+	}
+	status := "success"
+	if !success {
+		status = "error"
+		a.metrics.AuthenticationErrors.WithLabelValues(errorType).Inc()
+	}
+	a.metrics.AuthenticationTotal.WithLabelValues(protocol, status).Inc()
 }

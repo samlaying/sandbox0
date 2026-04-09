@@ -18,6 +18,7 @@ import (
 	ctxpkg "github.com/sandbox0-ai/sandbox0/manager/procd/pkg/context"
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/process"
 	"github.com/sandbox0-ai/sandbox0/manager/procd/pkg/process/repl"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.uber.org/zap"
 )
 
@@ -25,14 +26,16 @@ import (
 type ContextHandler struct {
 	manager  *ctxpkg.Manager
 	logger   *zap.Logger
+	metrics  *obsmetrics.ProcdMetrics
 	upgrader websocket.Upgrader
 }
 
 // NewContextHandler creates a new context handler.
-func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger) *ContextHandler {
+func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger, metrics *obsmetrics.ProcdMetrics) *ContextHandler {
 	return &ContextHandler{
 		manager: manager,
 		logger:  logger,
+		metrics: metrics,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -41,6 +44,14 @@ func NewContextHandler(manager *ctxpkg.Manager, logger *zap.Logger) *ContextHand
 			},
 		},
 	}
+}
+
+func (h *ContextHandler) observeContextOperation(operation, processType, status string, started time.Time) {
+	if h.metrics == nil {
+		return
+	}
+	h.metrics.ContextOperationsTotal.WithLabelValues(operation, status, processType).Inc()
+	h.metrics.ContextOperationDuration.WithLabelValues(operation, processType).Observe(time.Since(started).Seconds())
 }
 
 // CreateContextRequest is the request body for creating a context.
@@ -228,13 +239,16 @@ func (h *ContextHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create creates a new context.
 func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	var req CreateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.observeContextOperation("create", "unknown", "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
 	if req.IdleTimeoutSec < 0 || req.TTLSec < 0 {
+		h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", "idle_timeout_sec and ttl_sec must be >= 0")
 		return
 	}
@@ -245,10 +259,12 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 		input      string
 	)
 	if req.Repl != nil && req.Type != process.ProcessTypeREPL {
+		h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", "repl is only valid for repl contexts")
 		return
 	}
 	if req.Cmd != nil && req.Type != process.ProcessTypeCMD {
+		h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", "cmd is only valid for cmd contexts")
 		return
 	}
@@ -265,16 +281,19 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 			replConfig.Name = alias
 		}
 		if replConfig.Name == "" {
+			h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 			writeError(w, http.StatusBadRequest, "invalid_request", "repl.repl_config.name is required")
 			return
 		}
 		if alias == "" {
 			alias = replConfig.Name
 		} else if alias != replConfig.Name {
+			h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 			writeError(w, http.StatusBadRequest, "invalid_request", "repl.alias must match repl.repl_config.name")
 			return
 		}
 		if err := replConfig.Validate(); err != nil {
+			h.observeContextOperation("create", string(req.Type), "invalid_request", started)
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
@@ -297,6 +316,12 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 		PTYSize: req.PTYSize,
 	}, replConfig, policy)
 	if err != nil {
+		h.logger.Warn("Failed to create context",
+			zap.String("type", string(req.Type)),
+			zap.String("alias", alias),
+			zap.Error(err),
+		)
+		h.observeContextOperation("create", string(req.Type), "error", started)
 		writeError(w, http.StatusInternalServerError, "create_failed", err.Error())
 		return
 	}
@@ -304,108 +329,157 @@ func (h *ContextHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WaitUntilDone {
 		output, execErr, aborted := h.execInputSync(ctx, input, r.Context())
 		if aborted {
+			h.observeContextOperation("create", string(req.Type), "canceled", started)
 			return
 		}
 		if execErr != nil {
+			h.observeContextOperation("create", string(req.Type), execErr.code, started)
 			writeError(w, execErr.status, execErr.code, execErr.message)
 			return
 		}
+		h.logger.Info("Created context with synchronous execution",
+			zap.String("context_id", ctx.ID),
+			zap.String("type", string(req.Type)),
+			zap.String("alias", alias),
+		)
+		h.observeContextOperation("create", string(req.Type), "success", started)
 		writeJSON(w, http.StatusCreated, newContextResponse(ctx, output))
 		return
 	}
 
+	h.logger.Info("Created context",
+		zap.String("context_id", ctx.ID),
+		zap.String("type", string(req.Type)),
+		zap.String("alias", alias),
+	)
+	h.observeContextOperation("create", string(req.Type), "success", started)
 	writeJSON(w, http.StatusCreated, newContextResponse(ctx, ""))
 }
 
 // Get gets a context by ID.
 func (h *ContextHandler) Get(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	ctx, err := h.manager.GetContext(id)
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
+			h.observeContextOperation("get", "unknown", "not_found", started)
 			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
 			return
 		}
+		h.observeContextOperation("get", "unknown", "error", started)
 		writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
 		return
 	}
 
+	h.observeContextOperation("get", string(ctx.Type), "success", started)
 	writeJSON(w, http.StatusOK, newContextResponse(ctx, ""))
 }
 
 // Delete deletes a context.
 func (h *ContextHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	processType := "unknown"
+	if ctx, err := h.manager.GetContext(id); err == nil {
+		processType = string(ctx.Type)
+	}
 	err := h.manager.DeleteContext(id)
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
+			h.observeContextOperation("delete", processType, "not_found", started)
 			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
 			return
 		}
+		h.observeContextOperation("delete", processType, "error", started)
 		writeError(w, http.StatusInternalServerError, "delete_failed", err.Error())
 		return
 	}
 
+	h.logger.Info("Deleted context", zap.String("context_id", id), zap.String("type", processType))
+	h.observeContextOperation("delete", processType, "success", started)
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
 // Restart restarts a context.
 func (h *ContextHandler) Restart(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	vars := mux.Vars(r)
 	id := vars["id"]
 
+	processType := "unknown"
+	if existing, err := h.manager.GetContext(id); err == nil {
+		processType = string(existing.Type)
+	}
 	ctx, err := h.manager.RestartContext(id)
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
+			h.observeContextOperation("restart", processType, "not_found", started)
 			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
 			return
 		}
+		h.logger.Warn("Failed to restart context", zap.String("context_id", id), zap.Error(err))
+		h.observeContextOperation("restart", processType, "error", started)
 		writeError(w, http.StatusInternalServerError, "restart_failed", err.Error())
 		return
 	}
 
+	h.logger.Info("Restarted context", zap.String("context_id", id), zap.String("type", string(ctx.Type)))
+	h.observeContextOperation("restart", string(ctx.Type), "success", started)
 	writeJSON(w, http.StatusOK, newContextResponse(ctx, ""))
 }
 
 // WriteInput writes input to a context's process.
 func (h *ContextHandler) WriteInput(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	var req ContextInputRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.observeContextOperation("input", "unknown", "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
+	processType := "unknown"
+	if ctx, err := h.manager.GetContext(id); err == nil {
+		processType = string(ctx.Type)
+	}
 	err := h.manager.WriteInput(id, []byte(req.Data))
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
+			h.observeContextOperation("input", processType, "not_found", started)
 			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
 			return
 		}
+		h.observeContextOperation("input", processType, "error", started)
 		writeError(w, http.StatusInternalServerError, "write_failed", err.Error())
 		return
 	}
 
+	h.observeContextOperation("input", processType, "success", started)
 	writeJSON(w, http.StatusOK, map[string]bool{"written": true})
 }
 
 // Exec executes input synchronously and returns output when complete.
 func (h *ContextHandler) Exec(w http.ResponseWriter, r *http.Request) {
+	started := time.Now()
 	vars := mux.Vars(r)
 	id := vars["id"]
 
 	var req ContextInputRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.observeContextOperation("exec", "unknown", "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	if req.Data == "" {
+		h.observeContextOperation("exec", "unknown", "invalid_request", started)
 		writeError(w, http.StatusBadRequest, "invalid_request", "data is required")
 		return
 	}
@@ -413,26 +487,32 @@ func (h *ContextHandler) Exec(w http.ResponseWriter, r *http.Request) {
 	ctx, err := h.manager.GetContext(id)
 	if err != nil {
 		if err == ctxpkg.ErrContextNotFound {
+			h.observeContextOperation("exec", "unknown", "not_found", started)
 			writeError(w, http.StatusNotFound, "context_not_found", err.Error())
 			return
 		}
+		h.observeContextOperation("exec", "unknown", "error", started)
 		writeError(w, http.StatusInternalServerError, "get_failed", err.Error())
 		return
 	}
 	if ctx.MainProcess == nil {
+		h.observeContextOperation("exec", string(ctx.Type), "process_not_running", started)
 		writeError(w, http.StatusConflict, "process_not_running", process.ErrProcessNotRunning.Error())
 		return
 	}
 
 	output, execErr, aborted := h.execInputSync(ctx, req.Data, r.Context())
 	if aborted {
+		h.observeContextOperation("exec", string(ctx.Type), "canceled", started)
 		return
 	}
 	if execErr != nil {
+		h.observeContextOperation("exec", string(ctx.Type), execErr.code, started)
 		writeError(w, execErr.status, execErr.code, execErr.message)
 		return
 	}
 
+	h.observeContextOperation("exec", string(ctx.Type), "success", started)
 	writeJSON(w, http.StatusOK, ContextExecResponse{OutputRaw: output})
 }
 

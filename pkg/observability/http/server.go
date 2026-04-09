@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -18,13 +20,54 @@ import (
 
 // ServerConfig configures HTTP server observability middleware.
 type ServerConfig struct {
-	Tracer   trace.Tracer
-	Logger   *zap.Logger
-	Disabled bool
+	ServiceName string
+	Tracer      trace.Tracer
+	Logger      *zap.Logger
+	Registry    prometheus.Registerer
+	Disabled    bool
+}
+
+type serverMetrics struct {
+	requestsTotal   *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
+	activeRequests  *prometheus.GaugeVec
+}
+
+func newServerMetrics(serviceName string, registry prometheus.Registerer) *serverMetrics {
+	if serviceName == "" || registry == nil {
+		return nil
+	}
+
+	factory := promauto.With(registry)
+	return &serverMetrics{
+		requestsTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: serviceName + "_http_server_requests_total",
+				Help: "Total number of HTTP server requests",
+			},
+			[]string{"method", "route", "status"},
+		),
+		requestDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    serviceName + "_http_server_request_duration_seconds",
+				Help:    "HTTP server request duration in seconds",
+				Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60},
+			},
+			[]string{"method", "route"},
+		),
+		activeRequests: factory.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: serviceName + "_http_server_active_requests",
+				Help: "Number of in-flight HTTP server requests",
+			},
+			[]string{"method", "route"},
+		),
+	}
 }
 
 // ServerMiddleware returns net/http middleware with tracing and optional logging.
 func ServerMiddleware(cfg ServerConfig) func(http.Handler) http.Handler {
+	metrics := newServerMetrics(cfg.ServiceName, cfg.Registry)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.Disabled {
@@ -39,6 +82,11 @@ func ServerMiddleware(cfg ServerConfig) func(http.Handler) http.Handler {
 
 			ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 			start := time.Now()
+			route := r.URL.Path
+			if metrics != nil {
+				metrics.activeRequests.WithLabelValues(r.Method, route).Inc()
+				defer metrics.activeRequests.WithLabelValues(r.Method, route).Dec()
+			}
 
 			spanName := fmt.Sprintf("HTTP %s %s", r.Method, r.URL.Path)
 			ctx, span := tracer.Start(ctx, spanName,
@@ -60,6 +108,11 @@ func ServerMiddleware(cfg ServerConfig) func(http.Handler) http.Handler {
 			span.SetAttributes(attribute.Int("http.status_code", status))
 			if status >= 400 {
 				span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
+			}
+			if metrics != nil {
+				statusLabel := fmt.Sprintf("%d", status)
+				metrics.requestsTotal.WithLabelValues(r.Method, route, statusLabel).Inc()
+				metrics.requestDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
 			}
 
 			if cfg.Logger != nil {
@@ -85,6 +138,7 @@ func ServerMiddleware(cfg ServerConfig) func(http.Handler) http.Handler {
 
 // GinMiddleware returns gin middleware with tracing and optional logging.
 func GinMiddleware(cfg ServerConfig) gin.HandlerFunc {
+	metrics := newServerMetrics(cfg.ServiceName, cfg.Registry)
 	return func(c *gin.Context) {
 		if cfg.Disabled {
 			c.Next()
@@ -98,6 +152,11 @@ func GinMiddleware(cfg ServerConfig) gin.HandlerFunc {
 
 		ctx := otel.GetTextMapPropagator().Extract(c.Request.Context(), propagation.HeaderCarrier(c.Request.Header))
 		start := time.Now()
+		route := c.Request.URL.Path
+		if metrics != nil {
+			metrics.activeRequests.WithLabelValues(c.Request.Method, route).Inc()
+			defer metrics.activeRequests.WithLabelValues(c.Request.Method, route).Dec()
+		}
 
 		spanName := fmt.Sprintf("HTTP %s %s", c.Request.Method, c.Request.URL.Path)
 		ctx, span := tracer.Start(ctx, spanName,
@@ -116,15 +175,20 @@ func GinMiddleware(cfg ServerConfig) gin.HandlerFunc {
 		c.Next()
 
 		status := c.Writer.Status()
-		route := c.FullPath()
-		if route != "" {
-			span.SetAttributes(attribute.String("http.route", route))
-			span.SetName(fmt.Sprintf("HTTP %s %s", c.Request.Method, route))
+		if matchedRoute := c.FullPath(); matchedRoute != "" {
+			route = matchedRoute
+			span.SetAttributes(attribute.String("http.route", matchedRoute))
+			span.SetName(fmt.Sprintf("HTTP %s %s", c.Request.Method, matchedRoute))
 		}
 
 		span.SetAttributes(attribute.Int("http.status_code", status))
 		if status >= 400 {
 			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
+		}
+		if metrics != nil {
+			statusLabel := fmt.Sprintf("%d", status)
+			metrics.requestsTotal.WithLabelValues(c.Request.Method, route, statusLabel).Inc()
+			metrics.requestDuration.WithLabelValues(c.Request.Method, route).Observe(time.Since(start).Seconds())
 		}
 
 		if cfg.Logger != nil {

@@ -86,7 +86,9 @@ func NewServer(
 
 	router := gin.New()
 	router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
-		Tracer: obsProvider.Tracer(),
+		ServiceName: "manager",
+		Tracer:      obsProvider.Tracer(),
+		Registry:    obsProvider.MetricsRegistryOrNil(),
 	}))
 	router.Use(gin.Recovery())
 	router.Use(requestLogger(logger))

@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"github.com/sandbox0-ai/sandbox0/pkg/ctldapi"
+	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
+	"go.uber.org/zap"
 )
 
 type Controller interface {
@@ -24,6 +27,10 @@ func (NotImplementedController) Resume(_ *http.Request, _ string) (ctldapi.Resum
 }
 
 func NewMux(controller Controller) http.Handler {
+	return NewMuxWithObservability(controller, nil, nil)
+}
+
+func NewMuxWithObservability(controller Controller, logger *zap.Logger, obsProvider *observability.Provider) http.Handler {
 	if controller == nil {
 		controller = NotImplementedController{}
 	}
@@ -36,6 +43,9 @@ func NewMux(controller Controller) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	if obsProvider != nil {
+		mux.Handle("/metrics", obsProvider.MetricsHandler())
+	}
 	mux.HandleFunc("/api/v1/sandboxes/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -64,5 +74,13 @@ func NewMux(controller Controller) http.Handler {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
-	return mux
+	if obsProvider == nil {
+		return mux
+	}
+	return httpobs.ServerMiddleware(httpobs.ServerConfig{
+		ServiceName: "ctld",
+		Tracer:      obsProvider.Tracer(),
+		Logger:      logger,
+		Registry:    obsProvider.MetricsRegistryOrNil(),
+	})(mux)
 }

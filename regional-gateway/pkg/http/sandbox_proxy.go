@@ -14,6 +14,9 @@ import (
 
 func (s *Server) proxySandbox(c *gin.Context) {
 	if s.schedulerRouter == nil {
+		if s.metrics != nil {
+			s.metrics.SandboxRouteTotal.WithLabelValues("cluster-gateway", "default").Inc()
+		}
 		s.proxyToDefaultClusterGateway(c)
 		return
 	}
@@ -38,6 +41,10 @@ func (s *Server) proxySandbox(c *gin.Context) {
 
 	targetURL, err := s.getClusterGatewayURLForCluster(c.Request.Context(), parsed.ClusterID, authCtx)
 	if err != nil || targetURL == "" {
+		if s.metrics != nil {
+			s.metrics.FallbacksTotal.WithLabelValues("cluster-gateway", "scheduler", "resolve_cluster").Inc()
+			s.metrics.SandboxRouteTotal.WithLabelValues("scheduler", "fallback").Inc()
+		}
 		s.logger.Warn("Failed to resolve sandbox cluster, falling back to scheduler",
 			zap.String("sandbox_id", sandboxID),
 			zap.String("cluster_id", parsed.ClusterID),
@@ -49,6 +56,10 @@ func (s *Server) proxySandbox(c *gin.Context) {
 
 	router, err := s.getClusterGatewayProxy(targetURL)
 	if err != nil {
+		if s.metrics != nil {
+			s.metrics.FallbacksTotal.WithLabelValues("cluster-gateway", "scheduler", "build_proxy").Inc()
+			s.metrics.SandboxRouteTotal.WithLabelValues("scheduler", "fallback").Inc()
+		}
 		s.logger.Warn("Failed to create cluster-gateway proxy, falling back to scheduler",
 			zap.String("sandbox_id", sandboxID),
 			zap.String("cluster_id", parsed.ClusterID),
@@ -60,6 +71,9 @@ func (s *Server) proxySandbox(c *gin.Context) {
 	}
 
 	token, err := s.generateInternalToken(authCtx, "cluster-gateway")
+	if s.metrics != nil {
+		s.metrics.SandboxRouteTotal.WithLabelValues("cluster-gateway", "direct").Inc()
+	}
 	if err != nil {
 		s.logger.Error("Failed to generate internal token for cluster-gateway", zap.Error(err))
 		spec.JSONError(c, http.StatusInternalServerError, spec.CodeInternal, "internal authentication failed")
@@ -93,6 +107,9 @@ func (s *Server) proxyToDefaultClusterGateway(c *gin.Context) {
 	if authCtx == nil {
 		spec.JSONError(c, http.StatusUnauthorized, spec.CodeUnauthorized, "missing authentication")
 		return
+	}
+	if s.metrics != nil {
+		s.metrics.SandboxRouteTotal.WithLabelValues("cluster-gateway", "single_cluster").Inc()
 	}
 
 	token, err := s.generateInternalToken(authCtx, "cluster-gateway")

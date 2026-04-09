@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"syscall"
@@ -15,6 +15,10 @@ import (
 	ctldpower "github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/power"
 	ctldserver "github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/server"
 	"github.com/sandbox0-ai/sandbox0/pkg/k8s"
+	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"k8s.io/client-go/kubernetes"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
@@ -38,25 +42,45 @@ func main() {
 	flag.StringVar(&nodeName, "node-name", os.Getenv("NODE_NAME"), "current node name used to validate local sandbox ownership")
 	flag.Parse()
 
-	log.Println("Starting ctld")
-	defer func() { log.Println("Stopped ctld") }()
+	logger, err := initLogger()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
 
-	httpServer := newHTTPServer(httpAddr, buildPowerController())
+	obsProvider, err := observability.New(observability.Config{
+		ServiceName: "ctld",
+		Logger:      logger,
+		TraceExporter: observability.TraceExporterConfig{
+			Type:     os.Getenv("OTEL_EXPORTER_TYPE"),
+			Endpoint: os.Getenv("OTEL_EXPORTER_ENDPOINT"),
+		},
+	})
+	if err != nil {
+		logger.Fatal("Failed to initialize observability", zap.Error(err))
+	}
+	defer obsProvider.Shutdown(context.Background())
+
+	logger.Info("Starting ctld")
+	defer func() { logger.Info("Stopped ctld") }()
+
+	httpServer := newHTTPServerWithObservability(httpAddr, buildPowerController(obsProvider), logger, obsProvider)
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("ctld http server failed: %v", err)
+			logger.Fatal("ctld http server failed", zap.Error(err))
 		}
 	}()
 
-	log.Println("Starting FS watcher.")
+	logger.Info("Starting FS watcher")
 	watcher, err := ctldfuseplugin.NewFSWatcher(pluginapi.DevicePluginPath)
 	if err != nil {
-		log.Println("Failed to created FS watcher.")
+		logger.Error("Failed to create FS watcher", zap.Error(err))
 		os.Exit(1)
 	}
 	defer watcher.Close()
 
-	log.Println("Starting OS watcher.")
+	logger.Info("Starting OS watcher")
 	sigs := ctldfuseplugin.NewOSWatcher(syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	restart := true
@@ -71,7 +95,7 @@ L:
 
 			devicePlugin = ctldfuseplugin.NewDevicePlugin(mountsAllowed)
 			if err := devicePlugin.Serve(); err != nil {
-				log.Println("Could not contact Kubelet, retrying. Did you enable the device plugin feature gate?")
+				logger.Warn("Could not contact Kubelet, retrying")
 			} else {
 				restart = false
 			}
@@ -80,20 +104,20 @@ L:
 		select {
 		case event := <-watcher.Events:
 			if event.Name == pluginapi.KubeletSocket && event.Op&fsnotify.Create == fsnotify.Create {
-				log.Printf("inotify: %s created, restarting.", pluginapi.KubeletSocket)
+				logger.Info("Kubelet socket created, restarting", zap.String("socket", pluginapi.KubeletSocket))
 				restart = true
 			}
 
 		case err := <-watcher.Errors:
-			log.Printf("inotify: %s", err)
+			logger.Warn("FS watcher error", zap.Error(err))
 
 		case s := <-sigs:
 			switch s {
 			case syscall.SIGHUP:
-				log.Println("Received SIGHUP, restarting.")
+				logger.Info("Received SIGHUP, restarting")
 				restart = true
 			default:
-				log.Printf("Received signal \"%v\", shutting down.", s)
+				logger.Info("Received shutdown signal", zap.String("signal", s.String()))
 				if devicePlugin != nil {
 					devicePlugin.Stop()
 				}
@@ -107,18 +131,56 @@ L:
 }
 
 func newHTTPServer(addr string, controller ctldserver.Controller) *http.Server {
-	return &http.Server{Addr: addr, Handler: ctldserver.NewMux(controller)}
+	return newHTTPServerWithObservability(addr, controller, nil, nil)
 }
 
-func buildPowerController() ctldserver.Controller {
-	k8sClient, err := k8s.NewClient(kubeconfig)
+func newHTTPServerWithObservability(addr string, controller ctldserver.Controller, logger *zap.Logger, obsProvider *observability.Provider) *http.Server {
+	return &http.Server{Addr: addr, Handler: ctldserver.NewMuxWithObservability(controller, logger, obsProvider)}
+}
+
+func buildPowerController(obsProvider *observability.Provider) ctldserver.Controller {
+	var (
+		k8sClient kubernetes.Interface
+		err       error
+	)
+	if obsProvider != nil {
+		k8sClient, err = k8s.NewClientWithObservability(kubeconfig, obsProvider)
+	} else {
+		k8sClient, err = k8s.NewClient(kubeconfig)
+	}
 	if err != nil {
-		log.Printf("ctld power control disabled: build kubernetes client: %v", err)
+		fmt.Printf("ctld power control disabled: build kubernetes client: %v\n", err)
 		return ctldserver.NotImplementedController{}
 	}
 	resolver := ctldpower.NewPodResolver(k8sClient, nodeName, cgroupRoot)
 	resolver.ProcRoot = procRoot
 	controller := ctldpower.NewController(resolver, nil)
 	controller.StatsProvider = ctldpower.NewCRIStatsProvider(criEndpoint)
+	if obsProvider != nil {
+		controller.SetMetrics(ctldpower.NewMetrics(obsProvider.MetricsRegistryOrNil()))
+	}
 	return controller
+}
+
+func initLogger() (*zap.Logger, error) {
+	cfg := zap.Config{
+		Level:       zap.NewAtomicLevelAt(zapcore.InfoLevel),
+		Development: false,
+		Encoding:    "json",
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:        "ts",
+			LevelKey:       "level",
+			CallerKey:      "caller",
+			MessageKey:     "msg",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.ISO8601TimeEncoder,
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+	return cfg.Build()
 }

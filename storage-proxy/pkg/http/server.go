@@ -14,6 +14,8 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	"github.com/sandbox0-ai/sandbox0/pkg/gateway/spec"
 	meteringpkg "github.com/sandbox0-ai/sandbox0/pkg/metering"
+	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/auth"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/db"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/notify"
@@ -117,10 +119,12 @@ type Server struct {
 	podResolver   volumeFilePodResolver
 	selfPodID     string
 	selfClusterID string
+	obsProvider   *observability.Provider
+	metrics       *obsmetrics.StorageProxyMetrics
 }
 
 // NewServer creates a new HTTP server
-func NewServer(logger *logrus.Logger, cfg *config.StorageProxyConfig, k8sClient kubernetes.Interface, repo volumeRepository, meteringRepo meteringWriter, regionID string, authenticator *auth.HTTPAuthenticator, snapshotMgr snapshotManager, syncMgr syncManager, barrier volumeMutationBarrier, volMgr volumeMountManager, fileRPC volumeFileRPC, eventHub *notify.Hub) *Server {
+func NewServer(logger *logrus.Logger, cfg *config.StorageProxyConfig, k8sClient kubernetes.Interface, repo volumeRepository, meteringRepo meteringWriter, regionID string, authenticator *auth.HTTPAuthenticator, snapshotMgr snapshotManager, syncMgr syncManager, barrier volumeMutationBarrier, volMgr volumeMountManager, fileRPC volumeFileRPC, eventHub *notify.Hub, obsProvider *observability.Provider, metrics *obsmetrics.StorageProxyMetrics) *Server {
 	selfPodID, err := os.Hostname()
 	if err != nil {
 		selfPodID = ""
@@ -142,6 +146,8 @@ func NewServer(logger *logrus.Logger, cfg *config.StorageProxyConfig, k8sClient 
 		eventHub:      eventHub,
 		podResolver:   newKubernetesVolumeFilePodResolver(logger, k8sClient, cfg),
 		selfPodID:     selfPodID,
+		obsProvider:   obsProvider,
+		metrics:       metrics,
 	}
 	if cfg != nil {
 		s.selfClusterID = cfg.DefaultClusterId
@@ -150,7 +156,11 @@ func NewServer(logger *logrus.Logger, cfg *config.StorageProxyConfig, k8sClient 
 	// Register handlers
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.HandleFunc("/readyz", s.handleReady)
-	s.mux.Handle("/metrics", promhttp.Handler())
+	if obsProvider != nil {
+		s.mux.Handle("/metrics", obsProvider.MetricsHandler())
+	} else {
+		s.mux.Handle("/metrics", promhttp.Handler())
+	}
 
 	// Sandbox Volume handlers
 	s.mux.HandleFunc("POST /sandboxvolumes", s.createSandboxVolume)
@@ -208,6 +218,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"duration": time.Since(start),
 		"remote":   r.RemoteAddr,
 	}
+	if s.metrics != nil {
+		s.metrics.HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, statusLabel(wrapped.statusCode)).Inc()
+		s.metrics.HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(time.Since(start).Seconds())
+		if r.ContentLength > 0 {
+			s.metrics.HTTPRequestSize.WithLabelValues(r.Method, r.URL.Path).Observe(float64(r.ContentLength))
+		}
+		if wrapped.bytesWritten > 0 {
+			s.metrics.HTTPResponseSize.WithLabelValues(r.Method, r.URL.Path).Observe(float64(wrapped.bytesWritten))
+		}
+	}
 
 	spanCtx := trace.SpanFromContext(r.Context()).SpanContext()
 	if spanCtx.IsValid() {
@@ -228,12 +248,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 type responseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode   int
+	bytesWritten int
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(data []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(data)
+	rw.bytesWritten += n
+	return n, err
 }
 
 func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
@@ -255,6 +282,13 @@ func (rw *responseWriter) Push(target string, opts *http.PushOptions) error {
 		return pusher.Push(target, opts)
 	}
 	return http.ErrNotSupported
+}
+
+func statusLabel(code int) string {
+	if code == 0 {
+		return "unknown"
+	}
+	return http.StatusText(code)
 }
 
 // handleHealth handles health check requests

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -38,6 +40,7 @@ type Provider struct {
 
 	// MetricsRegistry is the Prometheus metrics registry
 	MetricsRegistry prometheus.Registerer
+	metricsGatherer prometheus.Gatherer
 
 	// Client-specific adapters
 	HTTP httpobs.Adapter
@@ -57,6 +60,7 @@ func New(cfg Config) (*Provider, error) {
 		config:          cfg,
 		logger:          cfg.Logger,
 		MetricsRegistry: cfg.MetricsRegistry,
+		metricsGatherer: cfg.MetricsGatherer,
 	}
 
 	// Initialize tracing if not disabled
@@ -138,6 +142,25 @@ func (p *Provider) MetricsRegistryOrNil() prometheus.Registerer {
 		return nil
 	}
 	return p.MetricsRegistry
+}
+
+// MetricsGathererOrNil returns the Prometheus gatherer when metrics are enabled.
+func (p *Provider) MetricsGathererOrNil() prometheus.Gatherer {
+	if p == nil || p.config.DisableMetrics {
+		return nil
+	}
+	return p.metricsGatherer
+}
+
+// MetricsHandler returns an HTTP handler for scraping the provider's registry.
+func (p *Provider) MetricsHandler() http.Handler {
+	gatherer := prometheus.Gatherer(prometheus.DefaultGatherer)
+	if p != nil {
+		if configured := p.MetricsGathererOrNil(); configured != nil {
+			gatherer = configured
+		}
+	}
+	return promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{})
 }
 
 // initTracing initializes OpenTelemetry tracing with the configured exporter

@@ -2440,7 +2440,20 @@ type expectedSandboxPowerState struct {
 
 // PauseSandbox delegates sandbox pause execution to the configured power executor.
 func (s *SandboxService) PauseSandbox(ctx context.Context, sandboxID string) (*PauseSandboxResponse, error) {
-	return s.sandboxPowerExecutor().Pause(ctx, sandboxID)
+	started := time.Now()
+	resp, err := s.sandboxPowerExecutor().Pause(ctx, sandboxID)
+	if s.metrics != nil {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		s.metrics.SandboxPowerTotal.WithLabelValues("pause", status).Inc()
+		s.metrics.SandboxPowerDuration.WithLabelValues("pause").Observe(time.Since(started).Seconds())
+	}
+	if err != nil {
+		s.logger.Warn("Pause sandbox failed", zap.String("sandboxID", sandboxID), zap.Error(err))
+	}
+	return resp, err
 }
 
 // pauseSandboxLocal pauses a sandbox and reduces pod resources based on actual usage.
@@ -2513,7 +2526,20 @@ func (s *SandboxService) RequestPauseSandbox(ctx context.Context, sandboxID stri
 
 // ResumeSandbox delegates sandbox resume execution to the configured power executor.
 func (s *SandboxService) ResumeSandbox(ctx context.Context, sandboxID string) (*ResumeSandboxResponse, error) {
-	return s.sandboxPowerExecutor().Resume(ctx, sandboxID)
+	started := time.Now()
+	resp, err := s.sandboxPowerExecutor().Resume(ctx, sandboxID)
+	if s.metrics != nil {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		s.metrics.SandboxPowerTotal.WithLabelValues("resume", status).Inc()
+		s.metrics.SandboxPowerDuration.WithLabelValues("resume").Observe(time.Since(started).Seconds())
+	}
+	if err != nil {
+		s.logger.Warn("Resume sandbox failed", zap.String("sandboxID", sandboxID), zap.Error(err))
+	}
+	return resp, err
 }
 
 // resumeSandboxLocal resumes a paused sandbox and restores original pod resources.

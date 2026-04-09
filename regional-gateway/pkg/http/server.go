@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	internalmiddleware "github.com/sandbox0-ai/sandbox0/cluster-gateway/pkg/middleware"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	registryprovider "github.com/sandbox0-ai/sandbox0/manager/pkg/registry"
@@ -28,6 +27,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/pkg/metering"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
 	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"github.com/sandbox0-ai/sandbox0/pkg/proxy"
 	"go.uber.org/zap"
 )
@@ -46,6 +46,7 @@ type Server struct {
 	rateLimiter          *middleware.RateLimiter
 	requestLogger        *middleware.RequestLogger
 	logger               *zap.Logger
+	metrics              *obsmetrics.RegionalGatewayMetrics
 	internalAuthGen      *internalauth.Generator
 	meteringHandler      *gatewayhandlers.MeteringHandler
 	obsProvider          *observability.Provider
@@ -234,6 +235,7 @@ func NewServer(
 		rateLimiter:           rateLimiter,
 		requestLogger:         requestLogger,
 		logger:                logger,
+		metrics:               obsmetrics.NewRegionalGateway(obsProvider.MetricsRegistryOrNil()),
 		internalAuthGen:       internalAuthGen,
 		meteringHandler:       gatewayhandlers.NewMeteringHandler(meteringRepo, cfg.RegionID, logger),
 		obsProvider:           obsProvider,
@@ -257,7 +259,9 @@ func NewServer(
 func (s *Server) setupRoutes() {
 	// Global middleware (order matters)
 	s.router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
-		Tracer: s.obsProvider.Tracer(),
+		ServiceName: "regional-gateway",
+		Tracer:      s.obsProvider.Tracer(),
+		Registry:    s.obsProvider.MetricsRegistryOrNil(),
 	}))
 	s.router.Use(middleware.Recovery(s.logger))
 	s.router.Use(s.requestLogger.Logger())
@@ -268,7 +272,7 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/metadata", gatewayhandlers.GatewayMetadata("regional-gateway", gatewayhandlers.GatewayModeDirect))
 
 	// Metrics endpoint
-	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.router.GET("/metrics", gin.WrapH(s.obsProvider.MetricsHandler()))
 
 	s.setupPublicRoutes()
 	s.setupMeteringRoutes()

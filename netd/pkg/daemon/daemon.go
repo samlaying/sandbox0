@@ -22,6 +22,8 @@ import (
 	"github.com/sandbox0-ai/sandbox0/pkg/dbpool"
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 	meteringpkg "github.com/sandbox0-ai/sandbox0/pkg/metering"
+	"github.com/sandbox0-ai/sandbox0/pkg/observability"
+	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -33,16 +35,24 @@ type Daemon struct {
 	healthServer  *http.Server
 	metricsServer *http.Server
 	proxyServer   *proxy.Server
+	obsProvider   *observability.Provider
+	metrics       *daemonMetrics
 	ready         atomic.Bool
 }
 
-func New(cfg *config.NetdConfig, logger *zap.Logger) *Daemon {
+func New(cfg *config.NetdConfig, logger *zap.Logger, obsProvider *observability.Provider) *Daemon {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	var metrics *daemonMetrics
+	if obsProvider != nil {
+		metrics = newDaemonMetrics(obsProvider.MetricsRegistryOrNil())
+	}
 	return &Daemon{
-		cfg:    cfg,
-		logger: logger,
+		cfg:         cfg,
+		logger:      logger,
+		obsProvider: obsProvider,
+		metrics:     metrics,
 	}
 }
 
@@ -92,6 +102,9 @@ func (d *Daemon) runNetd(ctx context.Context, cancel context.CancelFunc, proxyEx
 	k8sConfig, err := rest.InClusterConfig()
 	if err != nil {
 		return err
+	}
+	if d.obsProvider != nil {
+		d.obsProvider.K8s.WrapConfig(k8sConfig)
 	}
 	client, err := kubernetes.NewForConfig(k8sConfig)
 	if err != nil {
@@ -204,9 +217,15 @@ func (d *Daemon) runNetd(ctx context.Context, cancel context.CancelFunc, proxyEx
 			PrivateKey: privateKey,
 			TTL:        30 * time.Second,
 		})
-		proxyOpts = append(proxyOpts, proxy.WithEgressAuthResolver(proxy.NewHTTPEgressAuthResolver(
+		httpClient := (*http.Client)(nil)
+		if d.obsProvider != nil {
+			httpClient = d.obsProvider.HTTP.NewClient(httpobs.Config{
+				Timeout: d.cfg.EgressAuthResolverTimeout.Duration,
+			})
+		}
+		proxyOpts = append(proxyOpts, proxy.WithEgressAuthResolver(proxy.NewHTTPEgressAuthResolverWithHTTPClient(
 			d.cfg.EgressAuthResolverURL,
-			d.cfg.EgressAuthResolverTimeout.Duration,
+			httpClient,
 			netdEgressAuthTokenProvider{generator: tokenGenerator},
 		)))
 	}
@@ -248,13 +267,18 @@ func (d *Daemon) runNetd(ctx context.Context, cancel context.CancelFunc, proxyEx
 			case <-ticker.C:
 			case <-syncTrigger:
 			}
+			started := time.Now()
 			if err := d.syncRedirect(ctx, netdWatcher, policyStore, redirectManager, patcher); err != nil {
+				d.metrics.observeRedirectSync("error", time.Since(started))
 				d.logger.Error("Failed to sync redirect rules", zap.Error(err))
 				if d.cfg.FailClosed {
 					d.ready.Store(false)
+					d.metrics.setReady(false)
 				}
 			} else {
 				d.ready.Store(true)
+				d.metrics.observeRedirectSync("success", time.Since(started))
+				d.metrics.setReady(true)
 			}
 			select {
 			case syncOnce <- struct{}{}:
@@ -298,12 +322,18 @@ func (d *Daemon) runMeteringFlushLoop(ctx context.Context, aggregator *netdmeter
 		select {
 		case <-ctx.Done():
 			if err := aggregator.Flush(context.Background()); err != nil {
+				d.metrics.observeMeteringFlush("error")
 				d.logger.Error("Failed to flush netd metering windows during shutdown", zap.Error(err))
+			} else {
+				d.metrics.observeMeteringFlush("success")
 			}
 			return
 		case <-ticker.C:
 			if err := aggregator.Flush(ctx); err != nil {
+				d.metrics.observeMeteringFlush("error")
 				d.logger.Error("Failed to flush netd metering windows", zap.Error(err))
+			} else {
+				d.metrics.observeMeteringFlush("success")
 			}
 		}
 	}
@@ -396,7 +426,11 @@ func (d *Daemon) startServers() error {
 	}
 
 	metricsMux := http.NewServeMux()
-	metricsMux.Handle("/metrics", promhttp.Handler())
+	if d.obsProvider != nil {
+		metricsMux.Handle("/metrics", d.obsProvider.MetricsHandler())
+	} else {
+		metricsMux.Handle("/metrics", promhttp.Handler())
+	}
 	d.metricsServer = &http.Server{
 		Addr:              net.JoinHostPort("", fmt.Sprintf("%d", d.cfg.MetricsPort)),
 		Handler:           metricsMux,
@@ -467,10 +501,12 @@ func (d *Daemon) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (d *Daemon) handleReady(w http.ResponseWriter, _ *http.Request) {
 	if !d.ready.Load() {
+		d.metrics.setReady(false)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte("not ready"))
 		return
 	}
+	d.metrics.setReady(true)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ready"))
 }

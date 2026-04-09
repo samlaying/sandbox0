@@ -22,6 +22,7 @@ import (
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
 	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
+	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -59,6 +60,7 @@ type Server struct {
 	logger      *zap.Logger
 	cfg         *config.ProcdConfig
 	obsProvider *observability.Provider
+	metrics     *obsmetrics.ProcdMetrics
 
 	// Managers
 	contextManager *ctxpkg.Manager
@@ -86,6 +88,7 @@ func NewServer(
 	webhookDispatcher *webhook.Dispatcher,
 	logger *zap.Logger,
 	obsProvider *observability.Provider,
+	metrics *obsmetrics.ProcdMetrics,
 ) *Server {
 	s := &Server{
 		router:            mux.NewRouter(),
@@ -98,6 +101,7 @@ func NewServer(
 		webhookDispatcher: webhookDispatcher,
 		logger:            logger,
 		obsProvider:       obsProvider,
+		metrics:           metrics,
 	}
 
 	s.setupRoutes()
@@ -107,7 +111,9 @@ func NewServer(
 func (s *Server) setupRoutes() {
 	// Global middleware (applied to all routes)
 	s.router.Use(httpobs.ServerMiddleware(httpobs.ServerConfig{
-		Tracer: s.obsProvider.Tracer(),
+		ServiceName: "procd",
+		Tracer:      s.obsProvider.Tracer(),
+		Registry:    s.obsProvider.MetricsRegistryOrNil(),
 	}))
 	s.router.Use(s.loggingMiddleware)
 	s.router.Use(s.recoveryMiddleware)
@@ -115,6 +121,7 @@ func (s *Server) setupRoutes() {
 	// Health check endpoints (no auth required)
 	s.router.HandleFunc("/healthz", s.healthHandler).Methods("GET")
 	s.router.HandleFunc("/readyz", s.readyHandler).Methods("GET")
+	s.router.Path("/metrics").Handler(s.obsProvider.MetricsHandler()).Methods("GET")
 
 	// Local-only API (localhost access only, no auth)
 	local := s.router.PathPrefix("/api/v1").Subrouter()
@@ -137,7 +144,7 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/sandbox/stats", sandboxHandler.Stats).Methods("GET")
 
 	// Context/Process handlers
-	contextHandler := handlers.NewContextHandler(s.contextManager, s.logger)
+	contextHandler := handlers.NewContextHandler(s.contextManager, s.logger, s.metrics)
 	api.HandleFunc("/contexts", contextHandler.List).Methods("GET")
 	api.HandleFunc("/contexts", contextHandler.Create).Methods("POST")
 	api.HandleFunc("/contexts/{id}", contextHandler.Get).Methods("GET")
@@ -151,11 +158,11 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/contexts/{id}/ws", contextHandler.WebSocket).Methods("GET")
 
 	// Initialize handler
-	initializeHandler := handlers.NewInitializeHandler(s.webhookDispatcher, s.fileManager, s.volumeManager, s.cfg.HTTPPort, s.logger)
+	initializeHandler := handlers.NewInitializeHandler(s.webhookDispatcher, s.fileManager, s.volumeManager, s.cfg.HTTPPort, s.logger, s.metrics)
 	api.HandleFunc("/initialize", initializeHandler.Initialize).Methods("POST")
 
 	// SandboxVolume handlers
-	volumeHandler := handlers.NewVolumeHandler(s.volumeManager, s.logger)
+	volumeHandler := handlers.NewVolumeHandler(s.volumeManager, s.logger, s.metrics)
 	volumeRouter := api.PathPrefix("/sandboxvolumes").Subrouter()
 	volumeRouter.Use(s.storageProxyUpstreamMiddleware)
 	volumeRouter.HandleFunc("/mount", volumeHandler.Mount).Methods("POST")

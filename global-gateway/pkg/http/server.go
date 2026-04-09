@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	cachepkg "github.com/sandbox0-ai/sandbox0/pkg/cache"
 	"github.com/sandbox0-ai/sandbox0/pkg/gateway/apikey"
 	gatewaybuiltin "github.com/sandbox0-ai/sandbox0/pkg/gateway/auth/builtin"
@@ -150,14 +149,16 @@ func (s *Server) Handler() stdhttp.Handler {
 
 func (s *Server) setupRoutes() {
 	s.router.Use(httpobs.GinMiddleware(httpobs.ServerConfig{
-		Tracer: s.obsProvider.Tracer(),
+		ServiceName: "global-gateway",
+		Tracer:      s.obsProvider.Tracer(),
+		Registry:    s.obsProvider.MetricsRegistryOrNil(),
 	}))
 	s.router.Use(gatewaymiddleware.Recovery(s.logger))
 	s.router.Use(s.requestLogger.Logger())
 
 	s.router.GET("/healthz", s.healthCheck)
 	s.router.GET("/readyz", s.readinessCheck)
-	s.router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	s.router.GET("/metrics", gin.WrapH(s.obsProvider.MetricsHandler()))
 	s.router.GET("/metadata", handlers.GatewayMetadata("global-gateway", handlers.GatewayModeGlobal))
 
 	public.RegisterIdentityRoutes(s.router, public.Deps{
