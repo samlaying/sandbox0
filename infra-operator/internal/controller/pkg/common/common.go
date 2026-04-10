@@ -476,16 +476,46 @@ func MergeLabels(base map[string]string, overrides map[string]string) map[string
 
 func deploymentMatchesDesired(_ *runtime.Scheme, current, desired *appsv1.Deployment) bool {
 	return apiequality.Semantic.DeepEqual(current.Labels, desired.Labels) &&
-		apiequality.Semantic.DeepEqual(current.Annotations, desired.Annotations) &&
+		annotationsMatchDesired(current.Annotations, desired.Annotations, deploymentManagedAnnotations) &&
 		apiequality.Semantic.DeepDerivative(desired.Spec, current.Spec) &&
 		apiequality.Semantic.DeepEqual(current.OwnerReferences, desired.OwnerReferences)
 }
 
 func daemonSetMatchesDesired(_ *runtime.Scheme, current, desired *appsv1.DaemonSet) bool {
 	return apiequality.Semantic.DeepEqual(current.Labels, desired.Labels) &&
-		apiequality.Semantic.DeepEqual(current.Annotations, desired.Annotations) &&
+		annotationsMatchDesired(current.Annotations, desired.Annotations, daemonSetManagedAnnotations) &&
 		apiequality.Semantic.DeepDerivative(desired.Spec, current.Spec) &&
 		apiequality.Semantic.DeepEqual(current.OwnerReferences, desired.OwnerReferences)
+}
+
+var deploymentManagedAnnotations = map[string]struct{}{
+	"deployment.kubernetes.io/revision": {},
+}
+
+var daemonSetManagedAnnotations = map[string]struct{}{
+	"deprecated.daemonset.template.generation": {},
+}
+
+func annotationsMatchDesired(current, desired map[string]string, ignored map[string]struct{}) bool {
+	return apiequality.Semantic.DeepDerivative(filterAnnotations(desired, ignored), filterAnnotations(current, ignored))
+}
+
+func filterAnnotations(in map[string]string, ignored map[string]struct{}) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if _, skip := ignored[k]; skip {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func CloneStringMap(src map[string]string) map[string]string {

@@ -454,6 +454,33 @@ func TestDeploymentMatchesDesiredWithDefaultedFields(t *testing.T) {
 	}
 }
 
+func TestDeploymentMatchesDesiredWithControllerManagedAnnotations(t *testing.T) {
+	replicas := int32(1)
+	desired := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "demo",
+			Namespace:   "sandbox0-system",
+			Labels:      map[string]string{"app": "demo"},
+			Annotations: map[string]string{"config": "abc"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "demo"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "demo", Image: "demo:latest"}}},
+			},
+		},
+	}
+
+	current := desired.DeepCopy()
+	current.Annotations["deployment.kubernetes.io/revision"] = "7"
+
+	if !deploymentMatchesDesired(nil, current, desired) {
+		t.Fatal("expected deployment with controller-managed annotations to match desired state")
+	}
+}
+
 func TestDaemonSetMatchesDesired(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := appsv1.AddToScheme(scheme); err != nil {
@@ -525,5 +552,30 @@ func TestDaemonSetMatchesDesiredWithDefaultedFields(t *testing.T) {
 
 	if !daemonSetMatchesDesired(scheme, current, desired) {
 		t.Fatal("expected daemonset with server-defaulted fields to match desired state")
+	}
+}
+
+func TestDaemonSetMatchesDesiredWithControllerManagedAnnotations(t *testing.T) {
+	desired := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "demo",
+			Namespace:   "sandbox0-system",
+			Labels:      map[string]string{"app": "demo"},
+			Annotations: map[string]string{"config": "abc"},
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "demo"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "demo", Image: "demo:latest"}}},
+			},
+		},
+	}
+
+	current := desired.DeepCopy()
+	current.Annotations["deprecated.daemonset.template.generation"] = "3"
+
+	if !daemonSetMatchesDesired(nil, current, desired) {
+		t.Fatal("expected daemonset with controller-managed annotations to match desired state")
 	}
 }
