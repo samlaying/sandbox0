@@ -25,7 +25,8 @@ Sandbox0 Managed Agents follows the Claude Managed Agents API shape where practi
 | SDK ownership | Sandbox0 does not ship a Managed Agents SDK. Use the official Anthropic SDK. |
 | API token | SDK `apiKey` is a Sandbox0 API key, not the Anthropic LLM token. |
 | LLM token | Stored in an LLM vault and attached to the session. |
-| Runtime claim | Session creation is lazy. The backend claims a Sandbox0 runtime on first execution event. |
+| Sandbox claim | Session creation eagerly claims a sandbox, bootstraps wrapper state, and pauses the sandbox to reduce first-run latency. |
+| Sandbox hard TTL | Configurable at session creation through `metadata["sandbox0.managed_agents.hard_ttl_seconds"]`; defaults to 3600 seconds and accepts `"0"` to disable the hard cap. |
 | Engine support | Claude engine only. The LLM endpoint must be Anthropic-compatible. |
 | OpenAI-compatible providers | Not supported by the Claude engine. Use a future separate engine. |
 | Anthropic pre-built skills | Not supported. Use Sandbox0 custom skills. |
@@ -67,12 +68,12 @@ Package managers supported in environment config:
 
 ## Session Lifecycle Notes
 
-Sandbox0 stores the session and event log outside the sandbox. Runtime state is attached through a runtime record that points at a Sandbox0 sandbox and volumes.
+Sandbox0 stores the session and event log outside the sandbox. Sandbox attachment state is stored outside the sandbox and points at the sandbox and volumes.
 
 | Action | Behavior |
 |--------|----------|
-| Create session | Stores durable session truth. Does not have to claim a runtime immediately. |
-| Send user message | Ensures runtime, bootstraps wrapper state, starts a run, and appends status events. |
+| Create session | Stores durable session truth, claims a sandbox, bootstraps wrapper state, then pauses the sandbox until work starts. |
+| Send user message | Ensures a sandbox is ready, bootstraps wrapper state, starts a run, and appends status events. |
 | Interrupt | Interrupts the active wrapper run and moves local session truth back toward idle. |
 | Delete | Rejects active running sessions. Delete after interrupting and reaching idle. |
 | Archive | Makes the session read-only for new input events. |
@@ -91,7 +92,7 @@ For application code, prefer SDK methods over hardcoded endpoint paths.
     href="/docs/managed-agents"
     cta="Read"
   >
-    Understand how Managed Agents map onto Sandbox0 runtime primitives
+    Understand how Managed Agents map onto Sandbox0 primitives
   </LinkCard>
 
   <LinkCard

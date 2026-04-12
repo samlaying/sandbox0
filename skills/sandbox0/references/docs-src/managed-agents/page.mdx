@@ -45,7 +45,7 @@ The key boundary is that session truth lives outside the sandbox. The sandbox is
 2. Create a session that references the agent and environment.
 3. Attach an LLM vault and optional resource or MCP vaults.
 4. Send `user.message` events.
-5. The backend claims or resumes a Sandbox0 runtime, mounts volumes, syncs resources, applies network policy, and starts the wrapper run.
+5. The backend claims or resumes a sandbox, mounts volumes, syncs resources, applies network policy, and starts the wrapper run.
 6. The wrapper emits signed callbacks. The gateway appends those events to the session log.
 7. The client lists or streams events until the session becomes idle, requires action, terminates, or is deleted.
 

@@ -59,6 +59,9 @@ const session = await client.beta.sessions.create({
     agent: agent.id,
     environment_id: environment.id,
     title: `Sandbox0 demo ${suffix}`,
+    metadata: {
+        "sandbox0.managed_agents.hard_ttl_seconds": "3600",
+    },
     vault_ids: [llmVault.id],
 });
 
@@ -91,6 +94,31 @@ for await (const event of client.beta.sessions.events.list(session.id, { limit: 
 <Callout variant="warning">
 Do not set the SDK client's `apiKey` to the Anthropic model token when calling Sandbox0 Managed Agents. The SDK authenticates to the Sandbox0 API. The LLM token belongs in the vault attached to the session.
 </Callout>
+
+## Session Hard TTL
+
+Sandbox0 Managed Agents claims a sandbox when the session is created, then pauses and resumes it around agent work. The sandbox uses a hard TTL as a cost cap. The default hard TTL is 3600 seconds.
+
+Use the official session `metadata` field to override the hard TTL at session creation:
+
+```typescript
+const session = await client.beta.sessions.create({
+    agent: agent.id,
+    environment_id: environment.id,
+    metadata: {
+        "sandbox0.managed_agents.hard_ttl_seconds": "7200",
+    },
+    vault_ids: [llmVault.id],
+});
+```
+
+| Metadata key | Value |
+|--------------|-------|
+| `sandbox0.managed_agents.hard_ttl_seconds` | Non-negative integer string, in seconds |
+
+Omit the key to use the deployment default. Set it to `"0"` only when the session should have no hard cost cap. The key is read when the session is created; updating session metadata later does not change the sandbox hard TTL.
+
+This controls the sandbox hard TTL. It does not change event retention, SDK request timeouts, or LLM provider limits. Managed Agents disables the sandbox soft TTL because the backend controls pause and resume directly.
 
 ## Event Handling
 
