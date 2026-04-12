@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,7 @@ sandbox_pod_placement:
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	spec := BuildPodSpec(newTestTemplate(), true)
+	spec := BuildPodSpec(newTestTemplate())
 
 	if got := spec.NodeSelector["sandbox0.ai/node-role"]; got != "sandbox" {
 		t.Fatalf("expected injected node selector, got %q", got)
@@ -75,7 +76,7 @@ sandbox_pod_placement:
 		},
 	}
 
-	spec := BuildPodSpec(template, false)
+	spec := BuildPodSpec(template)
 
 	if got := spec.NodeSelector["sandbox0.ai/node-role"]; got != "sandbox" {
 		t.Fatalf("expected manager placement to win conflicting node selector, got %q", got)
@@ -91,64 +92,6 @@ sandbox_pod_placement:
 	}
 }
 
-func TestBuildPodSpecMountsSharedTemplateVolumes(t *testing.T) {
-	configPath := writeManagerConfig(t, `
-manager_image: sandbox0/manager:test
-`)
-	t.Setenv("CONFIG_PATH", configPath)
-
-	template := newTestTemplate()
-	template.Spec.SharedVolumes = []SharedVolumeSpec{
-		{
-			Name:            "workspace",
-			SandboxVolumeID: "vol-1",
-			MountPath:       "/workspace",
-		},
-	}
-	template.Spec.Sidecars = []SidecarContainerSpec{
-		{
-			Name:      "sidecar",
-			Image:     "busybox:latest",
-			Resources: ResourceQuota{CPU: resource.MustParse("500m"), Memory: resource.MustParse("2Gi")},
-			Mounts: []ContainerMountSpec{{
-				Name:      "workspace",
-				MountPath: "/mnt/workspace",
-			}},
-		},
-	}
-
-	spec := BuildPodSpec(template, false)
-	if len(spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(spec.Containers))
-	}
-
-	volume := findVolume(spec.Volumes, sharedTemplateVolumeName(0))
-	if volume == nil || volume.EmptyDir == nil {
-		t.Fatalf("expected shared template emptyDir volume, got %#v", volume)
-	}
-
-	main := spec.Containers[0]
-	mainMount := findVolumeMount(main.VolumeMounts, sharedTemplateVolumeName(0))
-	if mainMount == nil || mainMount.MountPath != "/workspace" {
-		t.Fatalf("expected main shared mount at /workspace, got %#v", mainMount)
-	}
-	if main.SecurityContext == nil || main.SecurityContext.Privileged == nil || !*main.SecurityContext.Privileged {
-		t.Fatalf("expected shared-volume main container to be privileged, got %#v", main.SecurityContext)
-	}
-	if mainMount.MountPropagation == nil || *mainMount.MountPropagation != corev1.MountPropagationBidirectional {
-		t.Fatalf("expected main mount propagation bidirectional, got %#v", mainMount.MountPropagation)
-	}
-
-	sidecar := spec.Containers[1]
-	sidecarMount := findVolumeMount(sidecar.VolumeMounts, sharedTemplateVolumeName(0))
-	if sidecarMount == nil || sidecarMount.MountPath != "/mnt/workspace" {
-		t.Fatalf("expected sidecar shared mount at /mnt/workspace, got %#v", sidecarMount)
-	}
-	if sidecarMount.MountPropagation == nil || *sidecarMount.MountPropagation != corev1.MountPropagationHostToContainer {
-		t.Fatalf("expected sidecar mount propagation host-to-container, got %#v", sidecarMount.MountPropagation)
-	}
-}
-
 func TestBuildPodSpecAppliesConfiguredSandboxRuntimeClass(t *testing.T) {
 	configPath := writeManagerConfig(t, `
 manager_image: sandbox0/manager:test
@@ -158,7 +101,7 @@ sandbox_runtime_class_name: kata-shared
 
 	template := newTestTemplate()
 
-	spec := BuildPodSpec(template, false)
+	spec := BuildPodSpec(template)
 	if spec.RuntimeClassName == nil || *spec.RuntimeClassName != "kata-shared" {
 		t.Fatalf("expected sandbox runtime class kata-shared, got %#v", spec.RuntimeClassName)
 	}
@@ -170,7 +113,7 @@ manager_image: sandbox0/manager:test
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	spec := BuildPodSpec(newTestTemplate(), false)
+	spec := BuildPodSpec(newTestTemplate())
 	if len(spec.Containers) == 0 {
 		t.Fatal("expected at least one container")
 	}
@@ -187,7 +130,7 @@ manager_image: sandbox0/manager:test
 	}
 }
 
-func TestBuildPodSpecAddsProcdReadinessProbe(t *testing.T) {
+func TestBuildPodSpecAddsProcdProbes(t *testing.T) {
 	configPath := writeManagerConfig(t, `
 manager_image: sandbox0/manager:test
 procd_config:
@@ -195,12 +138,30 @@ procd_config:
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	spec := BuildPodSpec(newTestTemplate(), false)
+	spec := BuildPodSpec(newTestTemplate())
 	if len(spec.Containers) == 0 {
 		t.Fatal("expected at least one container")
 	}
 
 	main := spec.Containers[0]
+	if main.StartupProbe == nil || main.StartupProbe.HTTPGet == nil {
+		t.Fatalf("expected procd startup probe, got %#v", main.StartupProbe)
+	}
+	if main.StartupProbe.HTTPGet.Path != "/healthz" {
+		t.Fatalf("startup path = %q, want /healthz", main.StartupProbe.HTTPGet.Path)
+	}
+	if main.StartupProbe.HTTPGet.Port.StrVal != "http" {
+		t.Fatalf("startup port = %#v, want named http port", main.StartupProbe.HTTPGet.Port)
+	}
+	if main.LivenessProbe == nil || main.LivenessProbe.HTTPGet == nil {
+		t.Fatalf("expected procd liveness probe, got %#v", main.LivenessProbe)
+	}
+	if main.LivenessProbe.HTTPGet.Path != "/healthz" {
+		t.Fatalf("liveness path = %q, want /healthz", main.LivenessProbe.HTTPGet.Path)
+	}
+	if main.LivenessProbe.HTTPGet.Port.StrVal != "http" {
+		t.Fatalf("liveness port = %#v, want named http port", main.LivenessProbe.HTTPGet.Port)
+	}
 	if main.ReadinessProbe == nil || main.ReadinessProbe.HTTPGet == nil {
 		t.Fatalf("expected procd readiness probe, got %#v", main.ReadinessProbe)
 	}
@@ -216,78 +177,75 @@ procd_config:
 	}
 }
 
-func TestBuildPodSpecPreservesSidecarCommandAndProbes(t *testing.T) {
+func TestBuildPodSpecInjectsWarmProcessesEnv(t *testing.T) {
 	configPath := writeManagerConfig(t, `
 manager_image: sandbox0/manager:test
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
 	template := newTestTemplate()
-	template.Spec.Sidecars = []SidecarContainerSpec{
-		{
-			Name:      "codex",
-			Image:     "busybox:latest",
-			Command:   []string{"sh", "-lc", "sleep 30; touch /tmp/ready; tail -f /dev/null"},
-			Args:      []string{"--verbose"},
-			Resources: ResourceQuota{CPU: resource.MustParse("500m"), Memory: resource.MustParse("2Gi")},
-			ReadinessProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					Exec: &corev1.ExecAction{Command: []string{"test", "-f", "/tmp/ready"}},
-				},
-				PeriodSeconds: 5,
-			},
-			StartupProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					Exec: &corev1.ExecAction{Command: []string{"test", "-f", "/tmp/started"}},
-				},
-				FailureThreshold: 30,
-			},
-		},
-	}
+	template.Spec.WarmProcesses = []WarmProcessSpec{{
+		Type:    WarmProcessTypeCMD,
+		Command: []string{"/bin/sh", "-lc", "sleep 3600"},
+		CWD:     "/workspace",
+		EnvVars: map[string]string{"MODE": "warm"},
+	}}
 
-	spec := BuildPodSpec(template, false)
-	if len(spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(spec.Containers))
+	spec := BuildPodSpec(template)
+	if len(spec.Containers) != 1 {
+		t.Fatalf("expected procd-only pod, got %d containers", len(spec.Containers))
 	}
 
 	main := spec.Containers[0]
 	if main.Name != "procd" {
 		t.Fatalf("expected main container to remain procd, got %q", main.Name)
 	}
+	env := findEnvVar(main.Env, WarmProcessesEnvVar)
+	if env == nil || env.Value == "" {
+		t.Fatalf("expected %s env var, got %#v", WarmProcessesEnvVar, env)
+	}
+	var decoded []WarmProcessSpec
+	if err := json.Unmarshal([]byte(env.Value), &decoded); err != nil {
+		t.Fatalf("warm process env is invalid JSON: %v", err)
+	}
+	if len(decoded) != 1 || decoded[0].Type != WarmProcessTypeCMD {
+		t.Fatalf("unexpected warm processes: %#v", decoded)
+	}
+	if len(decoded[0].Command) != 3 || decoded[0].Command[2] != "sleep 3600" {
+		t.Fatalf("unexpected warm command: %#v", decoded[0].Command)
+	}
+}
 
-	sidecar := spec.Containers[1]
-	if sidecar.Name != "codex" {
-		t.Fatalf("expected sidecar name codex, got %q", sidecar.Name)
-	}
-	if len(sidecar.Command) != 3 || sidecar.Command[0] != "sh" || sidecar.Command[1] != "-lc" {
-		t.Fatalf("unexpected sidecar command: %v", sidecar.Command)
-	}
-	if len(sidecar.Args) != 1 || sidecar.Args[0] != "--verbose" {
-		t.Fatalf("unexpected sidecar args: %v", sidecar.Args)
-	}
-	if sidecar.StartupProbe == nil || sidecar.StartupProbe.Exec == nil {
-		t.Fatal("expected startup probe to be preserved")
-	}
-	if sidecar.ReadinessProbe != nil {
-		t.Fatal("expected kubelet readiness probe to be omitted from rendered sidecar")
-	}
-	if sidecar.StartupProbe.FailureThreshold != 30 {
-		t.Fatalf("startup failureThreshold = %d, want 30", sidecar.StartupProbe.FailureThreshold)
+func TestBuildPodSpecSkipsLivenessProbeWhenCtldEnabled(t *testing.T) {
+	configPath := writeManagerConfig(t, `
+manager_image: sandbox0/manager:test
+ctld_enabled: true
+`)
+	t.Setenv("CONFIG_PATH", configPath)
+
+	spec := BuildPodSpec(newTestTemplate())
+	if len(spec.Containers) == 0 {
+		t.Fatal("expected at least one container")
 	}
 
-	annotation, err := BuildManagedReadinessProbesAnnotation(template)
-	if err != nil {
-		t.Fatalf("BuildManagedReadinessProbesAnnotation() error = %v", err)
+	main := spec.Containers[0]
+	if main.StartupProbe == nil || main.ReadinessProbe == nil {
+		t.Fatalf("expected startup and readiness probes, got startup=%#v readiness=%#v", main.StartupProbe, main.ReadinessProbe)
 	}
-	if annotation == "" {
-		t.Fatal("expected managed readiness annotation to be emitted")
+	if main.LivenessProbe != nil {
+		t.Fatalf("liveness probe = %#v, want nil when ctld is enabled", main.LivenessProbe)
 	}
-	probes := BuildManagedReadinessProbes(template)
-	if len(probes) != 1 || probes[0].Probe == nil || probes[0].Probe.Exec == nil {
-		t.Fatalf("expected one managed readiness probe, got %#v", probes)
-	}
-	if probes[0].Probe.PeriodSeconds != 5 {
-		t.Fatalf("managed readiness periodSeconds = %d, want 5", probes[0].Probe.PeriodSeconds)
+}
+
+func TestBuildPodSpecUsesRestartPolicyAlways(t *testing.T) {
+	configPath := writeManagerConfig(t, `
+manager_image: sandbox0/manager:test
+`)
+	t.Setenv("CONFIG_PATH", configPath)
+
+	spec := BuildPodSpec(newTestTemplate())
+	if spec.RestartPolicy != corev1.RestartPolicyAlways {
+		t.Fatalf("restartPolicy = %q, want %q", spec.RestartPolicy, corev1.RestartPolicyAlways)
 	}
 }
 
@@ -297,7 +255,7 @@ manager_image: sandbox0/manager:test
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	spec := BuildPodSpec(newTestTemplate(), false)
+	spec := BuildPodSpec(newTestTemplate())
 	if len(spec.ReadinessGates) != 1 {
 		t.Fatalf("readiness gate count = %d, want 1", len(spec.ReadinessGates))
 	}
@@ -306,26 +264,14 @@ manager_image: sandbox0/manager:test
 	}
 }
 
-func TestBuildPodSpecInjectsNetdMITMCATrustMaterialIntoAllContainers(t *testing.T) {
+func TestBuildPodSpecInjectsNetdMITMCATrustMaterialIntoProcdContainer(t *testing.T) {
 	configPath := writeManagerConfig(t, `
 manager_image: sandbox0/manager:test
 netd_mitm_ca_secret_name: fullmode-netd-mitm-ca
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	template := newTestTemplate()
-	template.Spec.Sidecars = []SidecarContainerSpec{
-		{
-			Name:      "sidecar",
-			Image:     "busybox:latest",
-			Resources: ResourceQuota{CPU: resource.MustParse("500m"), Memory: resource.MustParse("2Gi")},
-			Env: []EnvVar{
-				{Name: netdMITMCAEnvVar, Value: "/tmp/ignored.crt"},
-			},
-		},
-	}
-
-	spec := BuildPodSpec(template, false)
+	spec := BuildPodSpec(newTestTemplate())
 
 	volume := findVolume(spec.Volumes, netdMITMCAVolume)
 	if volume == nil || volume.Secret == nil {
@@ -338,7 +284,7 @@ netd_mitm_ca_secret_name: fullmode-netd-mitm-ca
 		t.Fatalf("unexpected secret items: %#v", volume.Secret.Items)
 	}
 
-	for _, name := range []string{"procd", "sidecar"} {
+	for _, name := range []string{"procd"} {
 		container := findContainer(spec.Containers, name)
 		if container == nil {
 			t.Fatalf("expected container %q", name)
@@ -365,7 +311,7 @@ manager_image: sandbox0/manager:test
 `)
 	t.Setenv("CONFIG_PATH", configPath)
 
-	spec := BuildPodSpec(newTestTemplate(), false)
+	spec := BuildPodSpec(newTestTemplate())
 
 	if volume := findVolume(spec.Volumes, netdMITMCAVolume); volume != nil {
 		t.Fatalf("expected %s volume to be absent, got %#v", netdMITMCAVolume, volume)
@@ -474,7 +420,7 @@ procd_config:
 		"node_name":              "tenant-node",
 	}
 
-	spec := BuildPodSpec(template, false)
+	spec := BuildPodSpec(template)
 	envByName := map[string]corev1.EnvVar{}
 	for _, env := range spec.Containers[0].Env {
 		envByName[env.Name] = env
@@ -510,7 +456,7 @@ manager_image: sandbox0/manager:test
 		"node_name":              "tenant-node",
 	}
 
-	spec := BuildPodSpec(template, false)
+	spec := BuildPodSpec(template)
 	envByName := map[string]corev1.EnvVar{}
 	for _, env := range spec.Containers[0].Env {
 		envByName[env.Name] = env

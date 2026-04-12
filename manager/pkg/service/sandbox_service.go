@@ -131,7 +131,6 @@ type SandboxService struct {
 	autoScaler             AutoScalerInterface
 	credentialStore        egressauth.BindingStore
 	powerExecutor          SandboxPowerExecutor
-	readinessEvaluator     controller.SandboxReadinessEvaluator
 	powerStateLocks        sync.Map
 	powerStateReconcilers  sync.Map
 }
@@ -239,11 +238,6 @@ func (s *SandboxService) SetCtldClient(client *CtldClient) {
 // SetAutoScaler injects the auto scaler for automatic pool scaling.
 func (s *SandboxService) SetAutoScaler(scaler AutoScalerInterface) {
 	s.autoScaler = scaler
-}
-
-// SetSandboxReadinessEvaluator overrides sandbox0-managed readiness evaluation.
-func (s *SandboxService) SetSandboxReadinessEvaluator(evaluator controller.SandboxReadinessEvaluator) {
-	s.readinessEvaluator = evaluator
 }
 
 // SetCredentialStore injects the sandbox credential binding store.
@@ -426,104 +420,6 @@ func normalizeClaimMounts(mounts []ClaimMount) ([]ClaimMount, error) {
 	return normalized, nil
 }
 
-func mergeTemplateSharedVolumeMounts(claimMounts []ClaimMount, sharedVolumes []v1alpha1.SharedVolumeSpec) ([]ClaimMount, error) {
-	merged := append([]ClaimMount(nil), claimMounts...)
-	claimMountIndexByPoint := make(map[string]int, len(merged))
-	for i, mount := range merged {
-		claimMountIndexByPoint[mount.MountPoint] = i
-	}
-	for _, volume := range sharedVolumes {
-		mountPath := filepath.Clean(strings.TrimSpace(volume.MountPath))
-		defaultConfig := sharedVolumeConfigToClaimMountConfig(volume)
-		if templateVolumeID := strings.TrimSpace(volume.SandboxVolumeID); templateVolumeID != "" {
-			if _, exists := claimMountIndexByPoint[mountPath]; exists {
-				return nil, fmt.Errorf("%w: claim mount %q conflicts with template shared volume %q", ErrInvalidClaimRequest, mountPath, volume.Name)
-			}
-			merged = append(merged, ClaimMount{
-				SandboxVolumeID: templateVolumeID,
-				MountPoint:      mountPath,
-				VolumeConfig:    defaultConfig,
-			})
-			claimMountIndexByPoint[mountPath] = len(merged) - 1
-			continue
-		}
-
-		idx, exists := claimMountIndexByPoint[mountPath]
-		if !exists {
-			return nil, fmt.Errorf("%w: shared volume %q requires a claim mount for %q", ErrInvalidClaimRequest, volume.Name, mountPath)
-		}
-		merged[idx].VolumeConfig = mergeMountVolumeConfig(defaultConfig, merged[idx].VolumeConfig)
-	}
-	return normalizeClaimMounts(merged)
-}
-
-func mergeMountVolumeConfig(defaults, claim *MountVolumeConfig) *MountVolumeConfig {
-	if defaults == nil && claim == nil {
-		return nil
-	}
-	if defaults == nil {
-		return cloneMountVolumeConfig(claim)
-	}
-	if claim == nil {
-		return cloneMountVolumeConfig(defaults)
-	}
-
-	merged := cloneMountVolumeConfig(defaults)
-	if strings.TrimSpace(claim.CacheSize) != "" {
-		merged.CacheSize = claim.CacheSize
-	}
-	if claim.Prefetch != nil {
-		merged.Prefetch = cloneInt32Pointer(claim.Prefetch)
-	}
-	if strings.TrimSpace(claim.BufferSize) != "" {
-		merged.BufferSize = claim.BufferSize
-	}
-	if claim.Writeback != nil {
-		merged.Writeback = cloneBoolPointer(claim.Writeback)
-	}
-	return merged
-}
-
-func cloneMountVolumeConfig(src *MountVolumeConfig) *MountVolumeConfig {
-	if src == nil {
-		return nil
-	}
-	return &MountVolumeConfig{
-		CacheSize:  src.CacheSize,
-		Prefetch:   cloneInt32Pointer(src.Prefetch),
-		BufferSize: src.BufferSize,
-		Writeback:  cloneBoolPointer(src.Writeback),
-	}
-}
-
-func sharedVolumeConfigToClaimMountConfig(volume v1alpha1.SharedVolumeSpec) *MountVolumeConfig {
-	if strings.TrimSpace(volume.CacheSize) == "" && volume.Prefetch == nil && strings.TrimSpace(volume.BufferSize) == "" && volume.Writeback == nil {
-		return nil
-	}
-	return &MountVolumeConfig{
-		CacheSize:  volume.CacheSize,
-		Prefetch:   cloneInt32Pointer(volume.Prefetch),
-		BufferSize: volume.BufferSize,
-		Writeback:  cloneBoolPointer(volume.Writeback),
-	}
-}
-
-func cloneInt32Pointer(src *int32) *int32 {
-	if src == nil {
-		return nil
-	}
-	value := *src
-	return &value
-}
-
-func cloneBoolPointer(src *bool) *bool {
-	if src == nil {
-		return nil
-	}
-	value := *src
-	return &value
-}
-
 func claimMountWaitTimeout(req *ClaimRequest) time.Duration {
 	if req == nil || !req.WaitForMounts {
 		return 0
@@ -633,12 +529,6 @@ func (s *SandboxService) ClaimSandbox(ctx context.Context, req *ClaimRequest) (*
 	}
 
 	_ = resolvedName // reserved for audit/debugging (name used is template.ObjectMeta.Name)
-
-	effectiveMounts, err := mergeTemplateSharedVolumeMounts(req.Mounts, template.Spec.SharedVolumes)
-	if err != nil {
-		return nil, err
-	}
-	req.Mounts = effectiveMounts
 
 	// Try to claim an idle pod first
 	pod, err := s.claimIdlePod(ctx, template, req)
@@ -850,20 +740,13 @@ func (s *SandboxService) createNewPod(ctx context.Context, template *v1alpha1.Sa
 	}
 
 	// Build pod spec from template
-	spec := v1alpha1.BuildPodSpec(template, false)
-	managedReadiness, err := v1alpha1.BuildManagedReadinessProbesAnnotation(template)
-	if err != nil {
-		return nil, fmt.Errorf("build managed readiness probes annotation: %w", err)
-	}
+	spec := v1alpha1.BuildPodSpec(template)
 	annotations := map[string]string{
 		controller.AnnotationSandboxID: podName,
 		controller.AnnotationTeamID:    req.TeamID,
 		controller.AnnotationUserID:    req.UserID,
 		controller.AnnotationClaimedAt: s.clock.Now().Format(time.RFC3339),
 		controller.AnnotationClaimType: "cold",
-	}
-	if managedReadiness != "" {
-		annotations[v1alpha1.ManagedReadinessProbesAnnotation] = managedReadiness
 	}
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2338,7 +2221,7 @@ func (s *SandboxService) waitForPodReady(ctx context.Context, namespace, name st
 			}
 			return nil, fmt.Errorf("get pod for readiness: %w", err)
 		}
-		pod, err = controller.EnsureSandboxPodReadinessCondition(readyCtx, s.k8sClient, pod, s.readinessEvaluator)
+		pod, err = controller.EnsureSandboxPodReadinessCondition(readyCtx, s.k8sClient, pod)
 		if err != nil {
 			return nil, fmt.Errorf("ensure pod readiness condition: %w", err)
 		}
@@ -2495,7 +2378,7 @@ func (s *SandboxService) pauseSandboxLocal(ctx context.Context, sandboxID string
 		return nil, fmt.Errorf("procd pause failed: %s", pauseResp.Error)
 	}
 
-	return s.completePausedSandbox(ctx, pod, sandboxID, pauseResp.ResourceUsage, false, expected)
+	return s.completePausedSandbox(ctx, pod, sandboxID, pauseResp.ResourceUsage, expected)
 }
 
 // RequestPauseSandbox records a desired paused state and reconciles it asynchronously.
@@ -2585,7 +2468,7 @@ func (s *SandboxService) resumeSandboxLocal(ctx context.Context, sandboxID strin
 	}, nil
 }
 
-func (s *SandboxService) completePausedSandbox(ctx context.Context, pod *corev1.Pod, sandboxID string, usage *SandboxResourceUsage, resizeAllContainers bool, expected expectedSandboxPowerState) (*PauseSandboxResponse, error) {
+func (s *SandboxService) completePausedSandbox(ctx context.Context, pod *corev1.Pod, sandboxID string, usage *SandboxResourceUsage, expected expectedSandboxPowerState) (*PauseSandboxResponse, error) {
 	if pod.Annotations[controller.AnnotationPaused] == "true" {
 		return &PauseSandboxResponse{
 			SandboxID:  sandboxID,
@@ -2674,7 +2557,7 @@ func (s *SandboxService) completePausedSandbox(ctx context.Context, pod *corev1.
 
 	if !newLimitMemory.IsZero() || !minCPU.IsZero() {
 		resizePod := pod.DeepCopy()
-		found := s.applyPausedResourceTargets(resizePod, pausedState.Resources, newRequestMemory, newLimitMemory, minCPU, resizeAllContainers)
+		found := s.applyPausedResourceTargets(resizePod, newRequestMemory, newLimitMemory, minCPU)
 		if !found {
 			s.logger.Warn("Main container 'procd' not found during pause resource update", zap.String("sandboxID", sandboxID))
 		} else if _, err = s.k8sClient.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, resizePod, metav1.UpdateOptions{}); err != nil {
@@ -2706,152 +2589,32 @@ func (s *SandboxService) completePausedSandbox(ctx context.Context, pod *corev1.
 	}, nil
 }
 
-func (s *SandboxService) applyPausedResourceTargets(resizePod *corev1.Pod, originals map[string]ContainerResources, newRequestMemory, newLimitMemory, minCPU resource.Quantity, resizeAllContainers bool) bool {
+func (s *SandboxService) applyPausedResourceTargets(resizePod *corev1.Pod, newRequestMemory, newLimitMemory, minCPU resource.Quantity) bool {
 	if resizePod == nil {
-		return false
-	}
-	if !resizeAllContainers {
-		for i := range resizePod.Spec.Containers {
-			container := &resizePod.Spec.Containers[i]
-			if container.Name != "procd" {
-				continue
-			}
-			if container.Resources.Requests == nil {
-				container.Resources.Requests = make(corev1.ResourceList)
-			}
-			if !newRequestMemory.IsZero() {
-				container.Resources.Requests[corev1.ResourceMemory] = newRequestMemory
-			}
-			container.Resources.Requests[corev1.ResourceCPU] = minCPU
-			if container.Resources.Limits == nil {
-				container.Resources.Limits = make(corev1.ResourceList)
-			}
-			if !newLimitMemory.IsZero() {
-				container.Resources.Limits[corev1.ResourceMemory] = newLimitMemory
-			}
-			container.Resources.Limits[corev1.ResourceCPU] = minCPU
-			return true
-		}
-		return false
-	}
-
-	requestMemoryTargets := distributePauseResourceByContainer(resizePod.Spec.Containers, originals, newRequestMemory.Value(), corev1.ResourceMemory, false)
-	limitMemoryTargets := distributePauseResourceByContainer(resizePod.Spec.Containers, originals, newLimitMemory.Value(), corev1.ResourceMemory, true)
-	cpuTargets := distributePauseResourceByContainer(resizePod.Spec.Containers, originals, minCPU.MilliValue(), corev1.ResourceCPU, true)
-
-	if len(resizePod.Spec.Containers) == 0 {
 		return false
 	}
 	for i := range resizePod.Spec.Containers {
 		container := &resizePod.Spec.Containers[i]
+		if container.Name != "procd" {
+			continue
+		}
 		if container.Resources.Requests == nil {
 			container.Resources.Requests = make(corev1.ResourceList)
 		}
 		if !newRequestMemory.IsZero() {
-			container.Resources.Requests[corev1.ResourceMemory] = *resource.NewQuantity(requestMemoryTargets[container.Name], resource.BinarySI)
+			container.Resources.Requests[corev1.ResourceMemory] = newRequestMemory
 		}
-		container.Resources.Requests[corev1.ResourceCPU] = *resource.NewMilliQuantity(cpuTargets[container.Name], resource.DecimalSI)
+		container.Resources.Requests[corev1.ResourceCPU] = minCPU
 		if container.Resources.Limits == nil {
 			container.Resources.Limits = make(corev1.ResourceList)
 		}
 		if !newLimitMemory.IsZero() {
-			container.Resources.Limits[corev1.ResourceMemory] = *resource.NewQuantity(limitMemoryTargets[container.Name], resource.BinarySI)
+			container.Resources.Limits[corev1.ResourceMemory] = newLimitMemory
 		}
-		container.Resources.Limits[corev1.ResourceCPU] = *resource.NewMilliQuantity(cpuTargets[container.Name], resource.DecimalSI)
+		container.Resources.Limits[corev1.ResourceCPU] = minCPU
+		return true
 	}
-	return true
-}
-
-func distributePauseResourceByContainer(containers []corev1.Container, originals map[string]ContainerResources, total int64, resourceName corev1.ResourceName, useLimits bool) map[string]int64 {
-	allocations := make(map[string]int64, len(containers))
-	if len(containers) == 0 {
-		return allocations
-	}
-	if total <= 0 {
-		for _, container := range containers {
-			allocations[container.Name] = 0
-		}
-		return allocations
-	}
-
-	weights := make([]int64, len(containers))
-	var totalWeight int64
-	for i, container := range containers {
-		weight := pauseResourceWeight(container, originals, resourceName, useLimits)
-		weights[i] = weight
-		totalWeight += weight
-	}
-	if totalWeight <= 0 {
-		for i := range weights {
-			weights[i] = 1
-		}
-		totalWeight = int64(len(weights))
-	}
-
-	remaining := total
-	remainingWeight := totalWeight
-	for i, container := range containers {
-		share := int64(0)
-		if i == len(containers)-1 || remainingWeight <= 0 {
-			share = remaining
-		} else {
-			share = total * weights[i] / totalWeight
-			if share > remaining {
-				share = remaining
-			}
-		}
-		allocations[container.Name] = share
-		remaining -= share
-		remainingWeight -= weights[i]
-	}
-	return allocations
-}
-
-func pauseResourceWeight(container corev1.Container, originals map[string]ContainerResources, resourceName corev1.ResourceName, useLimits bool) int64 {
-	if orig, ok := originals[container.Name]; ok {
-		if quantity, ok := pauseResourceQuantity(orig, resourceName, useLimits); ok {
-			return quantity
-		}
-		if quantity, ok := pauseResourceQuantity(orig, resourceName, !useLimits); ok {
-			return quantity
-		}
-	}
-	if useLimits {
-		if quantity, ok := container.Resources.Limits[resourceName]; ok {
-			if value := pauseQuantityValue(quantity, resourceName); value > 0 {
-				return value
-			}
-		}
-	}
-	if quantity, ok := container.Resources.Requests[resourceName]; ok {
-		if value := pauseQuantityValue(quantity, resourceName); value > 0 {
-			return value
-		}
-	}
-	return 1
-}
-
-func pauseResourceQuantity(resources ContainerResources, resourceName corev1.ResourceName, useLimits bool) (int64, bool) {
-	resourceList := resources.Requests
-	if useLimits {
-		resourceList = resources.Limits
-	}
-	quantity, ok := resourceList[resourceName]
-	if !ok {
-		return 0, false
-	}
-	value := pauseQuantityValue(quantity, resourceName)
-	if value <= 0 {
-		return 0, false
-	}
-	return value, true
-}
-
-func pauseQuantityValue(quantity resource.Quantity, resourceName corev1.ResourceName) int64 {
-	if resourceName == corev1.ResourceCPU {
-		return quantity.MilliValue()
-	}
-	return quantity.Value()
+	return false
 }
 
 func (s *SandboxService) prepareSandboxResume(ctx context.Context, pod *corev1.Pod, sandboxID string, expected expectedSandboxPowerState) (*resumeSandboxPreparation, *ResumeSandboxResponse, error) {
