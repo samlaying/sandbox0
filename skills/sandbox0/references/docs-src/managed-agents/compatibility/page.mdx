@@ -1,0 +1,104 @@
+# Compatibility
+
+Sandbox0 Managed Agents follows the Claude Managed Agents API shape where practical, while using Sandbox0 as the execution backend. This page documents the important compatibility boundaries.
+
+## Supported Surface
+
+| Area | Status |
+|------|--------|
+| Official Anthropic SDK | Supported by setting `baseURL` to the Sandbox0 Managed Agents API endpoint |
+| Managed Agents beta header | Required for direct HTTP calls. SDKs set it automatically. |
+| Agents | Supported, including versioned agent definitions |
+| Environments | Supported for `type: cloud` with package and networking configuration |
+| Sessions | Supported with durable status, metadata, agent snapshot, resources, vault ids, usage, and stats |
+| Events | Supported for list, send, and event streaming |
+| Files | Supported for upload, metadata, download, delete, and file-backed message content |
+| Vaults and credentials | Supported for LLM credentials and MCP credentials |
+| Custom skills | Supported through uploaded skill versions |
+| MCP servers | Supported for URL MCP servers and vault-backed credentials |
+| GitHub repository resources | Supported at session creation |
+
+## Current Differences
+
+| Difference | Sandbox0 behavior |
+|------------|-------------------|
+| SDK ownership | Sandbox0 does not ship a Managed Agents SDK. Use the official Anthropic SDK. |
+| API token | SDK `apiKey` is a Sandbox0 API key, not the Anthropic LLM token. |
+| LLM token | Stored in an LLM vault and attached to the session. |
+| Runtime claim | Session creation is lazy. The backend claims a Sandbox0 runtime on first execution event. |
+| Engine support | Claude engine only. The LLM endpoint must be Anthropic-compatible. |
+| OpenAI-compatible providers | Not supported by the Claude engine. Use a future separate engine. |
+| Anthropic pre-built skills | Not supported. Use Sandbox0 custom skills. |
+| Multi-agent threads | Not implemented in the current backend surface. |
+| Outcomes and memory research preview | Not implemented in the current backend surface. |
+| Rate limits | Deployment-specific. Do not assume Anthropic-hosted organization limits apply. |
+
+## Tool Support
+
+The Claude wrapper maps Managed Agents tool definitions to Claude Agent SDK options.
+
+| Tool type | Status | Notes |
+|-----------|--------|-------|
+| `agent_toolset_20260401` | Supported | Enables built-in tools such as bash, file operations, grep/glob, web fetch, and web search through the Claude wrapper |
+| `mcp_toolset` | Supported | Requires matching `mcp_servers` entries and vault credentials when the server needs auth |
+| Custom tools | Supported | The wrapper emits `agent.custom_tool_use` and waits for `user.custom_tool_result` |
+
+Tool confirmation events are supported. When a tool policy requires confirmation, the session emits `session.status_idle` with `stop_reason.type = "requires_action"` and the relevant event ids.
+
+## Environment Support
+
+Only `type: cloud` environments are accepted today.
+
+Networking options:
+
+| Networking type | Behavior |
+|-----------------|----------|
+| `unrestricted` | Sandbox network mode is `allow-all` |
+| `limited` | Sandbox network mode is `block-all` with allowed hosts derived from environment settings, package managers, MCP servers, and session credential bindings |
+
+Package managers supported in environment config:
+
+- `apt`
+- `cargo`
+- `gem`
+- `go`
+- `npm`
+- `pip`
+
+## Session Lifecycle Notes
+
+Sandbox0 stores the session and event log outside the sandbox. Runtime state is attached through a runtime record that points at a Sandbox0 sandbox and volumes.
+
+| Action | Behavior |
+|--------|----------|
+| Create session | Stores durable session truth. Does not have to claim a runtime immediately. |
+| Send user message | Ensures runtime, bootstraps wrapper state, starts a run, and appends status events. |
+| Interrupt | Interrupts the active wrapper run and moves local session truth back toward idle. |
+| Delete | Rejects active running sessions. Delete after interrupting and reaching idle. |
+| Archive | Makes the session read-only for new input events. |
+
+## Version Drift
+
+The Managed Agents API is a beta surface. Sandbox0 tracks the official OpenAPI shape, but behavior can differ where Sandbox0 intentionally uses its own runtime, credential, and deployment model.
+
+For application code, prefer SDK methods over hardcoded endpoint paths.
+
+## Next Steps
+
+<CardGrid>
+  <LinkCard
+    title="Overview"
+    href="/docs/managed-agents"
+    cta="Read"
+  >
+    Understand how Managed Agents map onto Sandbox0 runtime primitives
+  </LinkCard>
+
+  <LinkCard
+    title="Claude SDK"
+    href="/docs/managed-agents/claude-sdk"
+    cta="Connect"
+  >
+    Use the official Anthropic SDK with the Sandbox0 Managed Agents endpoint
+  </LinkCard>
+</CardGrid>

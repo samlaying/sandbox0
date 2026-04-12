@@ -50,6 +50,28 @@
       ]
     },
     {
+      "label": "MANAGED AGENTS",
+      "slug": "managed-agents",
+      "pages": [
+        {
+          "slug": "",
+          "title": "Overview"
+        },
+        {
+          "slug": "claude-sdk",
+          "title": "Claude SDK"
+        },
+        {
+          "slug": "llm-credentials",
+          "title": "LLM Credentials"
+        },
+        {
+          "slug": "compatibility",
+          "title": "Compatibility"
+        }
+      ]
+    },
+    {
       "label": "CREDENTIAL",
       "slug": "credential",
       "pages": [

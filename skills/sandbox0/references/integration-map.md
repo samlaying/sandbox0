@@ -21,6 +21,11 @@ references/docs-src/
 │   ├── network/page.mdx
 │   ├── ports/page.mdx
 │   └── webhooks/page.mdx
+├── managed-agents/
+│   ├── page.mdx
+│   ├── claude-sdk/page.mdx
+│   ├── llm-credentials/page.mdx
+│   └── compatibility/page.mdx
 ├── template/
 │   ├── page.mdx
 │   ├── configuration/page.mdx
@@ -58,6 +63,8 @@ Use `references/docs-src/manifest.json` as the table of contents when you need t
   Sandbox + Network Policy
 - Agent that publishes events outward:
   Sandbox + Webhooks
+- Claude Managed Agents-compatible backend:
+  Managed Agents + Sandbox + Volume + Network Policy + Credential
 
 ## Response style
 
