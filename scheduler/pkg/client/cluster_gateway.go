@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sandbox0-ai/sandbox0/manager/pkg/apis/sandbox0/v1alpha1"
+	"github.com/sandbox0-ai/sandbox0/pkg/apispec"
 	"github.com/sandbox0-ai/sandbox0/pkg/gateway/spec"
 	"github.com/sandbox0-ai/sandbox0/pkg/internalauth"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
@@ -300,14 +301,15 @@ func (c *ClusterGatewayClient) DeleteTemplate(ctx context.Context, baseURL strin
 
 // SandboxSummary represents a summary of a sandbox for listing
 type SandboxSummary struct {
-	ID            string `json:"id"`
-	TemplateID    string `json:"template_id"`
-	Status        string `json:"status"`
-	Paused        bool   `json:"paused"`
-	ClusterID     string `json:"cluster_id,omitempty"`
-	CreatedAt     string `json:"created_at"`
-	ExpiresAt     string `json:"expires_at"`
-	HardExpiresAt string `json:"hard_expires_at"`
+	ID            string                    `json:"id"`
+	TemplateID    string                    `json:"template_id"`
+	Status        string                    `json:"status"`
+	Paused        bool                      `json:"paused"`
+	PowerState    apispec.SandboxPowerState `json:"power_state"`
+	ClusterID     string                    `json:"cluster_id,omitempty"`
+	CreatedAt     string                    `json:"created_at"`
+	ExpiresAt     string                    `json:"expires_at"`
+	HardExpiresAt string                    `json:"hard_expires_at"`
 }
 
 // ListSandboxesResponse represents the response from listing sandboxes
