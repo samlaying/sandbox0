@@ -168,7 +168,14 @@ func (s *Server) setupRoutes() {
 	volumeRouter.HandleFunc("/status", volumeHandler.Status).Methods("GET")
 
 	// File handlers
-	fileHandler := handlers.NewFileHandler(s.fileManager, s.logger)
+	fileHandler := handlers.NewFileHandler(
+		s.fileManager,
+		s.volumeManager,
+		s.cfg.StorageProxyBaseURL,
+		s.cfg.StorageProxyPort,
+		s.tokenProvider,
+		s.logger,
+	)
 	api.HandleFunc("/files/watch", fileHandler.Watch).Methods("GET")
 	api.HandleFunc("/files/move", fileHandler.Move).Methods("POST")
 	api.HandleFunc("/files", fileHandler.Handle).Methods("GET", "POST", "DELETE")

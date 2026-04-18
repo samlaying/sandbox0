@@ -45,6 +45,13 @@ type MountResponse struct {
 	MountSessionID  string `json:"mount_session_id"`
 }
 
+// MountedPath describes a sandbox path owned by a mounted SandboxVolume.
+type MountedPath struct {
+	SandboxVolumeID string
+	MountPoint      string
+	RelativePath    string
+}
+
 // UnmountRequest represents a request to unmount a sandbox volume.
 type UnmountRequest struct {
 	SandboxVolumeID string `json:"sandboxvolume_id"`

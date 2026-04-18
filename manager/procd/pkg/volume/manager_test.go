@@ -87,6 +87,50 @@ func TestJoinMountPath(t *testing.T) {
 	}
 }
 
+func TestResolveMountedPath(t *testing.T) {
+	manager := NewManager(&Config{}, nil, nil)
+	manager.mounts["vol-1"] = &mountInfo{
+		volumeID:   "vol-1",
+		mountPoint: "/workspace/data",
+	}
+	manager.mounts["vol-2"] = &mountInfo{
+		volumeID:   "vol-2",
+		mountPoint: "/workspace/data/cache",
+	}
+
+	t.Run("nested path chooses longest matching mount", func(t *testing.T) {
+		resolved, ok := manager.ResolveMountedPath("/workspace/data/cache/index.db")
+		if !ok {
+			t.Fatal("expected mounted path")
+		}
+		if resolved.SandboxVolumeID != "vol-2" {
+			t.Fatalf("SandboxVolumeID = %q, want %q", resolved.SandboxVolumeID, "vol-2")
+		}
+		if resolved.RelativePath != "/index.db" {
+			t.Fatalf("RelativePath = %q, want %q", resolved.RelativePath, "/index.db")
+		}
+	})
+
+	t.Run("exact mount root resolves to slash", func(t *testing.T) {
+		resolved, ok := manager.ResolveMountedPath("/workspace/data")
+		if !ok {
+			t.Fatal("expected mounted path")
+		}
+		if resolved.SandboxVolumeID != "vol-1" {
+			t.Fatalf("SandboxVolumeID = %q, want %q", resolved.SandboxVolumeID, "vol-1")
+		}
+		if resolved.RelativePath != "/" {
+			t.Fatalf("RelativePath = %q, want %q", resolved.RelativePath, "/")
+		}
+	})
+
+	t.Run("prefix sibling does not match mount", func(t *testing.T) {
+		if resolved, ok := manager.ResolveMountedPath("/workspace/database/file.txt"); ok {
+			t.Fatalf("unexpected mounted path: %+v", resolved)
+		}
+	})
+}
+
 func TestStatusDuration(t *testing.T) {
 	manager := NewManager(&Config{}, nil, nil)
 	now := time.Now()

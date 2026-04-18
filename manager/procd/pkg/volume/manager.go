@@ -331,6 +331,48 @@ func (m *Manager) GetStatus() []MountStatus {
 	return status
 }
 
+// ResolveMountedPath returns mount metadata for an absolute sandbox path when
+// the path belongs to a mounted SandboxVolume.
+func (m *Manager) ResolveMountedPath(path string) (*MountedPath, bool) {
+	if m == nil || path == "" {
+		return nil, false
+	}
+
+	cleanPath := filepath.Clean(path)
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var matched *mountInfo
+	for _, info := range m.mounts {
+		if info == nil || info.mountPoint == "" {
+			continue
+		}
+		if !mountedPathContains(info.mountPoint, cleanPath) {
+			continue
+		}
+		if matched == nil || len(info.mountPoint) > len(matched.mountPoint) {
+			matched = info
+		}
+	}
+	if matched == nil {
+		return nil, false
+	}
+
+	relativePath := "/"
+	if cleanPath != matched.mountPoint {
+		suffix := strings.TrimPrefix(cleanPath, matched.mountPoint)
+		suffix = strings.TrimPrefix(suffix, string(filepath.Separator))
+		relativePath = "/" + filepath.ToSlash(suffix)
+	}
+
+	return &MountedPath{
+		SandboxVolumeID: matched.volumeID,
+		MountPoint:      matched.mountPoint,
+		RelativePath:    relativePath,
+	}, true
+}
+
 func (m *Manager) runBootstrapMount(req MountRequest) {
 	if _, err := m.mount(context.Background(), &req, true); err != nil {
 		return
@@ -403,6 +445,15 @@ func mountErrorCode(err error) string {
 	default:
 		return "mount_failed"
 	}
+}
+
+func mountedPathContains(mountPoint, path string) bool {
+	cleanMount := filepath.Clean(mountPoint)
+	cleanPath := filepath.Clean(path)
+	if cleanMount == cleanPath {
+		return true
+	}
+	return strings.HasPrefix(cleanPath, cleanMount+string(filepath.Separator))
 }
 
 func (m *Manager) waitForMounts(ctx context.Context, reqs []MountRequest, waitTimeout time.Duration) []MountStatus {
