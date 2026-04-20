@@ -22,7 +22,7 @@ await client.beta.vaults.credentials.create(llmVault.id, {
     display_name: "Anthropic API key",
     auth: {
         type: "static_bearer",
-        token: process.env.ANTHROPIC_API_KEY,
+        token: process.env.MODEL_API_KEY,
     },
 });
 ```
