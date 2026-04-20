@@ -3,9 +3,14 @@ package objectstore
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
+	"golang.org/x/oauth2/google"
 )
 
 const (
@@ -112,7 +118,11 @@ func Create(cfg Config) (Store, error) {
 		}
 		return newObservedStore(store, storageType, cfg.Bucket, cfg.Metrics), nil
 	case TypeGCS:
-		return nil, fmt.Errorf("gcs object storage is not implemented")
+		store, err := newGCSStore(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return newObservedStore(store, storageType, cfg.Bucket, cfg.Metrics), nil
 	default:
 		return nil, fmt.Errorf("unsupported object storage type: %s", storageType)
 	}
@@ -291,6 +301,290 @@ func emptyStringPtr(value string) *string {
 		return nil
 	}
 	return aws.String(value)
+}
+
+type gcsStore struct {
+	client    *http.Client
+	bucket    string
+	projectID string
+	baseURL   string
+}
+
+func newGCSStore(cfg Config) (Store, error) {
+	bucket := strings.TrimSpace(cfg.Bucket)
+	if bucket == "" {
+		return nil, fmt.Errorf("object storage bucket is required")
+	}
+	client, err := google.DefaultClient(context.Background(), "https://www.googleapis.com/auth/devstorage.full_control")
+	if err != nil {
+		return nil, fmt.Errorf("create gcs client: %w", err)
+	}
+	return &gcsStore{
+		client:    client,
+		bucket:    bucket,
+		projectID: gcsProjectID(cfg),
+		baseURL:   gcsBaseURL(cfg),
+	}, nil
+}
+
+func gcsBaseURL(cfg Config) string {
+	if endpoint := strings.TrimRight(strings.TrimSpace(cfg.Endpoint), "/"); endpoint != "" {
+		return endpoint
+	}
+	return "https://storage.googleapis.com"
+}
+
+func gcsProjectID(cfg Config) string {
+	for _, value := range []string{
+		cfg.Region,
+		os.Getenv("GOOGLE_CLOUD_PROJECT"),
+		os.Getenv("GCLOUD_PROJECT"),
+		os.Getenv("GCP_PROJECT"),
+	} {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func (s *gcsStore) String() string {
+	return fmt.Sprintf("gs://%s", s.bucket)
+}
+
+func (s *gcsStore) Create() error {
+	if s.projectID == "" {
+		return fmt.Errorf("gcs project id is required to create bucket %q; pre-create the bucket or set GOOGLE_CLOUD_PROJECT", s.bucket)
+	}
+	body, err := json.Marshal(map[string]string{"name": s.bucket})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.bucketCollectionURL("project", s.projectID), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return s.doNoContent(req)
+}
+
+func (s *gcsStore) Get(key string, off, limit int64) (io.ReadCloser, error) {
+	if limit == 0 {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, s.objectURL(gcsObjectName(key), "alt", "media"), nil)
+	if err != nil {
+		return nil, err
+	}
+	if off > 0 || limit >= 0 {
+		switch {
+		case limit < 0:
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
+		default:
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", off, off+limit-1))
+		}
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		return nil, gcsHTTPError(resp)
+	}
+	return resp.Body, nil
+}
+
+func (s *gcsStore) Put(key string, in io.Reader) error {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, s.uploadURL(gcsObjectName(key)), in)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	return s.doNoContent(req)
+}
+
+func (s *gcsStore) Delete(key string) error {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, s.objectURL(gcsObjectName(key)), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return gcsHTTPError(resp)
+	}
+	return nil
+}
+
+func (s *gcsStore) Head(key string) (Info, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, s.bucketURL(), nil)
+		if err != nil {
+			return Info{}, err
+		}
+		return Info{}, s.doNoContent(req)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, s.objectURL(gcsObjectName(key)), nil)
+	if err != nil {
+		return Info{}, err
+	}
+	var attrs gcsObjectAttrs
+	err = s.doJSON(req, &attrs)
+	if err != nil {
+		return Info{}, err
+	}
+	size, err := strconv.ParseInt(attrs.Size, 10, 64)
+	if err != nil {
+		return Info{}, fmt.Errorf("parse gcs object size %q: %w", attrs.Size, err)
+	}
+	return Info{
+		Key:      gcsObjectName(attrs.Name),
+		Size:     size,
+		Modified: attrs.Updated,
+	}, nil
+}
+
+func (s *gcsStore) List(prefix, startAfter, token, delimiter string, limit int64) ([]Info, bool, string, error) {
+	pageSize := int(limit)
+	if pageSize <= 0 || pageSize > 1000 {
+		pageSize = 1000
+	}
+	values := url.Values{}
+	values.Set("maxResults", strconv.Itoa(pageSize))
+	values.Set("prefix", strings.TrimLeft(prefix, "/"))
+	if delimiter = strings.TrimSpace(delimiter); delimiter != "" {
+		values.Set("delimiter", delimiter)
+	}
+	if startAfter = strings.TrimLeft(startAfter, "/"); startAfter != "" {
+		values.Set("startOffset", startAfter+"\x00")
+	}
+	if token = strings.TrimSpace(token); token != "" {
+		values.Set("pageToken", token)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, s.bucketObjectsURL(values), nil)
+	if err != nil {
+		return nil, false, "", err
+	}
+	var result gcsListResult
+	err = s.doJSON(req, &result)
+	if err != nil {
+		return nil, false, "", err
+	}
+	objects := make([]Info, 0, len(result.Items))
+	for _, item := range result.Items {
+		if item.Name == "" {
+			continue
+		}
+		size, err := strconv.ParseInt(item.Size, 10, 64)
+		if err != nil {
+			return nil, false, "", fmt.Errorf("parse gcs object size %q: %w", item.Size, err)
+		}
+		objects = append(objects, Info{
+			Key:      gcsObjectName(item.Name),
+			Size:     size,
+			Modified: item.Updated,
+		})
+	}
+	return objects, result.NextPageToken != "", result.NextPageToken, nil
+}
+
+func gcsObjectName(key string) string {
+	return strings.TrimLeft(key, "/")
+}
+
+type gcsObjectAttrs struct {
+	Name    string    `json:"name"`
+	Size    string    `json:"size"`
+	Updated time.Time `json:"updated"`
+}
+
+type gcsListResult struct {
+	Items         []gcsObjectAttrs `json:"items"`
+	NextPageToken string           `json:"nextPageToken"`
+}
+
+func (s *gcsStore) bucketURL() string {
+	return strings.TrimRight(s.baseURL, "/") + "/storage/v1/b/" + url.PathEscape(s.bucket)
+}
+
+func (s *gcsStore) bucketCollectionURL(keyValues ...string) string {
+	values := url.Values{}
+	for i := 0; i+1 < len(keyValues); i += 2 {
+		if value := strings.TrimSpace(keyValues[i+1]); value != "" {
+			values.Set(keyValues[i], value)
+		}
+	}
+	raw := strings.TrimRight(s.baseURL, "/") + "/storage/v1/b"
+	if encoded := values.Encode(); encoded != "" {
+		raw += "?" + encoded
+	}
+	return raw
+}
+
+func (s *gcsStore) bucketObjectsURL(values url.Values) string {
+	raw := s.bucketURL() + "/o"
+	if encoded := values.Encode(); encoded != "" {
+		raw += "?" + encoded
+	}
+	return raw
+}
+
+func (s *gcsStore) objectURL(name string, keyValues ...string) string {
+	values := url.Values{}
+	for i := 0; i+1 < len(keyValues); i += 2 {
+		if value := strings.TrimSpace(keyValues[i+1]); value != "" {
+			values.Set(keyValues[i], value)
+		}
+	}
+	raw := s.bucketURL() + "/o/" + url.PathEscape(name)
+	if encoded := values.Encode(); encoded != "" {
+		raw += "?" + encoded
+	}
+	return raw
+}
+
+func (s *gcsStore) uploadURL(name string) string {
+	values := url.Values{}
+	values.Set("uploadType", "media")
+	values.Set("name", name)
+	return strings.TrimRight(s.baseURL, "/") + "/upload/storage/v1/b/" + url.PathEscape(s.bucket) + "/o?" + values.Encode()
+}
+
+func (s *gcsStore) doNoContent(req *http.Request) error {
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return gcsHTTPError(resp)
+	}
+	return nil
+}
+
+func (s *gcsStore) doJSON(req *http.Request, out any) error {
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return gcsHTTPError(resp)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func gcsHTTPError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("gcs request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
 type prefixedStore struct {
