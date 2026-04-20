@@ -38,6 +38,16 @@ func (fs *FileSystem) String() string {
 	return "sandbox0-volume"
 }
 
+// Kernel cache notifications are intentionally not issued from request
+// handlers. go-fuse notify/store-cache calls can block behind the in-flight
+// kernel request on some runtimes; correctness here relies on the kernel's
+// normal write-through cache plus the mount TTL instead.
+func (fs *FileSystem) Init(server *fuse.Server) {
+}
+
+func (fs *FileSystem) OnUnmount() {
+}
+
 func (fs *FileSystem) SetSession(session Session) {
 	if fs == nil {
 		return
@@ -58,6 +68,23 @@ func (fs *FileSystem) requireSession() (Session, fuse.Status) {
 		return nil, fuse.EIO
 	}
 	return session, fuse.OK
+}
+
+func (fs *FileSystem) invalidateKernelData(inode uint64, off int64, length int64) {
+}
+
+func (fs *FileSystem) invalidateKernelInode(inode uint64) {
+	fs.invalidateKernelData(inode, 0, 0)
+}
+
+func (fs *FileSystem) invalidateKernelAttr(inode uint64) {
+	fs.invalidateKernelData(inode, -1, 0)
+}
+
+func (fs *FileSystem) invalidateKernelEntry(parent uint64, name string) {
+}
+
+func (fs *FileSystem) storeKernelCache(inode uint64, off int64, data []byte) {
 }
 
 func actorFromCaller(caller fuse.Caller) *pb.PosixActor {
@@ -153,9 +180,18 @@ func (fs *FileSystem) SetAttr(cancel <-chan struct{}, input *fuse.SetAttrIn, out
 	if st != fuse.OK {
 		return st
 	}
+	sizeChanged := input.Valid&fuse.FATTR_SIZE != 0
+	if sizeChanged {
+		fs.invalidateKernelInode(input.NodeId)
+	}
 	resp, err := session.SetAttr(context.Background(), req)
 	if err != nil {
 		return statusToFuse(err)
+	}
+	if sizeChanged {
+		fs.invalidateKernelInode(input.NodeId)
+	} else {
+		fs.invalidateKernelAttr(input.NodeId)
 	}
 	setAttrOut(out, resp.Attr, fs.cacheTTL)
 	return fuse.OK
@@ -181,6 +217,8 @@ func (fs *FileSystem) Mkdir(cancel <-chan struct{}, input *fuse.MkdirIn, name st
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(input.NodeId, name)
+	fs.invalidateKernelAttr(input.NodeId)
 	setEntryOut(out, resp.Inode, resp.Attr, fs.cacheTTL)
 	return fuse.OK
 }
@@ -199,10 +237,13 @@ func (fs *FileSystem) Unlink(cancel <-chan struct{}, header *fuse.InHeader, name
 	if st != fuse.OK {
 		return st
 	}
+	fs.invalidateKernelEntry(header.NodeId, name)
 	_, err := session.Unlink(context.Background(), req)
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(header.NodeId, name)
+	fs.invalidateKernelAttr(header.NodeId)
 	return fuse.OK
 }
 
@@ -220,10 +261,13 @@ func (fs *FileSystem) Rmdir(cancel <-chan struct{}, header *fuse.InHeader, name 
 	if st != fuse.OK {
 		return st
 	}
+	fs.invalidateKernelEntry(header.NodeId, name)
 	_, err := session.Rmdir(context.Background(), req)
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(header.NodeId, name)
+	fs.invalidateKernelAttr(header.NodeId)
 	return fuse.OK
 }
 
@@ -244,9 +288,17 @@ func (fs *FileSystem) Rename(cancel <-chan struct{}, input *fuse.RenameIn, oldNa
 	if st != fuse.OK {
 		return st
 	}
+	fs.invalidateKernelEntry(input.NodeId, oldName)
+	fs.invalidateKernelEntry(input.Newdir, newName)
 	_, err := session.Rename(context.Background(), req)
 	if err != nil {
 		return statusToFuse(err)
+	}
+	fs.invalidateKernelEntry(input.NodeId, oldName)
+	fs.invalidateKernelEntry(input.Newdir, newName)
+	fs.invalidateKernelAttr(input.NodeId)
+	if input.Newdir != input.NodeId {
+		fs.invalidateKernelAttr(input.Newdir)
 	}
 	return fuse.OK
 }
@@ -269,6 +321,8 @@ func (fs *FileSystem) Link(cancel <-chan struct{}, input *fuse.LinkIn, filename 
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(input.NodeId, filename)
+	fs.invalidateKernelAttr(input.NodeId)
 	setEntryOut(out, resp.Inode, resp.Attr, fs.cacheTTL)
 	return fuse.OK
 }
@@ -292,6 +346,8 @@ func (fs *FileSystem) Symlink(cancel <-chan struct{}, header *fuse.InHeader, poi
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(header.NodeId, linkName)
+	fs.invalidateKernelAttr(header.NodeId)
 	setEntryOut(out, resp.Inode, resp.Attr, fs.cacheTTL)
 	return fuse.OK
 }
@@ -360,6 +416,8 @@ func (fs *FileSystem) Create(cancel <-chan struct{}, input *fuse.CreateIn, name 
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(input.NodeId, name)
+	fs.invalidateKernelAttr(input.NodeId)
 	setEntryOut(&out.EntryOut, resp.Inode, resp.Attr, fs.cacheTTL)
 	out.Fh = resp.HandleId
 	out.OpenFlags = fileOpenFlags
@@ -405,6 +463,20 @@ func (fs *FileSystem) Read(cancel <-chan struct{}, input *fuse.ReadIn, buf []byt
 	if st != fuse.OK {
 		return nil, st
 	}
+	readBuf := buf
+	if input.Size < uint32(len(readBuf)) {
+		readBuf = readBuf[:input.Size]
+	}
+	if len(readBuf) == 0 {
+		return fuse.ReadResultData(nil), fuse.OK
+	}
+	if reader, ok := session.(ReadIntoSession); ok && len(readBuf) > 0 {
+		n, _, err := reader.ReadInto(context.Background(), req, readBuf)
+		if err != nil {
+			return nil, statusToFuse(err)
+		}
+		return fuse.ReadResultData(readBuf[:n]), fuse.OK
+	}
 	resp, err := session.Read(context.Background(), req)
 	if err != nil {
 		return nil, statusToFuse(err)
@@ -428,9 +500,18 @@ func (fs *FileSystem) Write(cancel <-chan struct{}, input *fuse.WriteIn, data []
 	if st != fuse.OK {
 		return 0, st
 	}
+	fs.invalidateKernelData(input.NodeId, int64(input.Offset), int64(len(data)))
 	resp, err := session.Write(context.Background(), req)
 	if err != nil {
 		return 0, statusToFuse(err)
+	}
+	written := int(resp.BytesWritten)
+	if written > len(data) {
+		written = len(data)
+	}
+	if written > 0 {
+		fs.invalidateKernelAttr(input.NodeId)
+		fs.storeKernelCache(input.NodeId, int64(input.Offset), data[:written])
 	}
 	return uint32(resp.BytesWritten), fuse.OK
 }
@@ -498,6 +579,7 @@ func (fs *FileSystem) Fallocate(cancel <-chan struct{}, input *fuse.FallocateIn)
 	if st != fuse.OK {
 		return st
 	}
+	fs.invalidateKernelInode(input.NodeId)
 	_, err := session.Fallocate(context.Background(), &pb.FallocateRequest{
 		VolumeId: fs.volumeID,
 		Inode:    input.NodeId,
@@ -510,6 +592,7 @@ func (fs *FileSystem) Fallocate(cancel <-chan struct{}, input *fuse.FallocateIn)
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelInode(input.NodeId)
 	return fuse.OK
 }
 
@@ -771,6 +854,8 @@ func (fs *FileSystem) Mknod(cancel <-chan struct{}, input *fuse.MknodIn, name st
 	if err != nil {
 		return statusToFuse(err)
 	}
+	fs.invalidateKernelEntry(input.NodeId, name)
+	fs.invalidateKernelAttr(input.NodeId)
 	setEntryOut(out, resp.Inode, resp.Attr, fs.cacheTTL)
 	return fuse.OK
 }
@@ -821,6 +906,7 @@ func (fs *FileSystem) CopyFileRange(cancel <-chan struct{}, input *fuse.CopyFile
 	if st != fuse.OK {
 		return 0, st
 	}
+	fs.invalidateKernelInode(input.NodeIdOut)
 	resp, err := session.CopyFileRange(context.Background(), &pb.CopyFileRangeRequest{
 		VolumeId:  fs.volumeID,
 		InodeIn:   input.NodeId,
@@ -838,6 +924,9 @@ func (fs *FileSystem) CopyFileRange(cancel <-chan struct{}, input *fuse.CopyFile
 	}
 	if resp == nil {
 		return 0, fuse.EIO
+	}
+	if resp.BytesCopied > 0 {
+		fs.invalidateKernelInode(input.NodeIdOut)
 	}
 	return uint32(resp.BytesCopied), fuse.OK
 }

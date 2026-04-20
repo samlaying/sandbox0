@@ -246,6 +246,19 @@ func (e *Engine) Read(inode uint64, offset uint64, size uint64) ([]byte, error) 
 	return e.readFileLocked(node, inode, offset, size)
 }
 
+func (e *Engine) ReadInto(inode uint64, offset uint64, dest []byte) (int, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if err := e.checkOpen(); err != nil {
+		return 0, err
+	}
+	node, err := e.fileNodeLocked(inode)
+	if err != nil {
+		return 0, err
+	}
+	return e.readFileIntoLocked(node, inode, offset, dest)
+}
+
 func (e *Engine) Rename(oldParent uint64, oldName string, newParent uint64, newName string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -277,30 +290,36 @@ func (e *Engine) Rename(oldParent uint64, oldName string, newParent uint64, newN
 }
 
 func (e *Engine) Unlink(parent uint64, name string) error {
+	_, err := e.UnlinkWithInode(parent, name)
+	return err
+}
+
+// UnlinkWithInode removes a file entry and returns the inode that was unlinked.
+func (e *Engine) UnlinkWithInode(parent uint64, name string) (uint64, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := e.checkOpen(); err != nil {
-		return err
+		return 0, err
 	}
 	inode, err := e.lookupLocked(parent, name)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	node := e.nodes[inode]
 	if node.Type == TypeDirectory {
-		return ErrIsDir
+		return 0, ErrIsDir
 	}
 	record := e.newRecord("unlink")
 	record.Parent = parent
 	record.Name = name
 	if err := e.wal.append(record); err != nil {
-		return err
+		return 0, err
 	}
 	if err := e.apply(record); err != nil {
-		return err
+		return 0, err
 	}
 	e.markDirtyLocked()
-	return nil
+	return inode, nil
 }
 
 func (e *Engine) Forget(inode uint64) error {
@@ -933,6 +952,30 @@ func (e *Engine) readFileLocked(node *Node, inode uint64, offset uint64, size ui
 		return slices.Clone(payload[offset:end]), nil
 	}
 	return e.readColdRangeLocked(inode, offset, size)
+}
+
+func (e *Engine) readFileIntoLocked(node *Node, inode uint64, offset uint64, dest []byte) (int, error) {
+	if node == nil {
+		return 0, ErrNotFound
+	}
+	if len(dest) == 0 || offset >= node.Size {
+		return 0, nil
+	}
+	if payload := e.data[inode]; len(payload) > 0 || len(e.coldFiles[inode]) == 0 {
+		if offset >= uint64(len(payload)) {
+			return 0, nil
+		}
+		end := offset + uint64(len(dest))
+		if end > uint64(len(payload)) {
+			end = uint64(len(payload))
+		}
+		return copy(dest, payload[offset:end]), nil
+	}
+	payload, err := e.readColdRangeLocked(inode, offset, uint64(len(dest)))
+	if err != nil {
+		return 0, err
+	}
+	return copy(dest, payload), nil
 }
 
 func (e *Engine) mutableFileDataLocked(inode uint64) ([]byte, error) {

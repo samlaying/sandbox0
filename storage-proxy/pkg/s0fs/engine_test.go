@@ -71,6 +71,37 @@ func TestEngineWriteExtendsWithZeros(t *testing.T) {
 	}
 }
 
+func TestEngineReadIntoSmallFile(t *testing.T) {
+	engine, err := Open(context.Background(), Config{VolumeID: "vol-1", WALPath: filepath.Join(t.TempDir(), "volume.wal")})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer engine.Close()
+
+	node, err := engine.CreateFile(RootInode, "data.txt", 0o644)
+	if err != nil {
+		t.Fatalf("CreateFile() error = %v", err)
+	}
+	if _, err := engine.Write(node.Inode, 0, []byte("abcdef")); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	buf := bytes.Repeat([]byte{0xff}, 8)
+	n, err := engine.ReadInto(node.Inode, 2, buf[:3])
+	if err != nil {
+		t.Fatalf("ReadInto() error = %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("ReadInto() n = %d, want 3", n)
+	}
+	if !bytes.Equal(buf[:3], []byte("cde")) {
+		t.Fatalf("ReadInto() data = %q, want cde", buf[:3])
+	}
+	if !bytes.Equal(buf[3:], bytes.Repeat([]byte{0xff}, 5)) {
+		t.Fatalf("ReadInto() modified bytes past destination: %#v", buf)
+	}
+}
+
 func TestEngineRenameAndUnlinkReplay(t *testing.T) {
 	walPath := filepath.Join(t.TempDir(), "volume.wal")
 	engine, err := Open(context.Background(), Config{VolumeID: "vol-1", WALPath: walPath})
@@ -252,8 +283,12 @@ func TestEngineUnlinkThenForget(t *testing.T) {
 	if _, err := engine.Write(node.Inode, 0, []byte("payload")); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if err := engine.Unlink(RootInode, "open.txt"); err != nil {
-		t.Fatalf("Unlink() error = %v", err)
+	unlinkedInode, err := engine.UnlinkWithInode(RootInode, "open.txt")
+	if err != nil {
+		t.Fatalf("UnlinkWithInode() error = %v", err)
+	}
+	if unlinkedInode != node.Inode {
+		t.Fatalf("UnlinkWithInode() inode = %d, want %d", unlinkedInode, node.Inode)
 	}
 	if _, err := engine.Lookup(RootInode, "open.txt"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Lookup() after unlink err = %v, want ErrNotFound", err)
