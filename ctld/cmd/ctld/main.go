@@ -12,14 +12,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	ctldportal "github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/portal"
 	ctldpower "github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/power"
 	ctldserver "github.com/sandbox0-ai/sandbox0/ctld/internal/ctld/server"
+	apiconfig "github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	"github.com/sandbox0-ai/sandbox0/pkg/ctldapi"
+	"github.com/sandbox0-ai/sandbox0/pkg/dbpool"
 	"github.com/sandbox0-ai/sandbox0/pkg/k8s"
 	"github.com/sandbox0-ai/sandbox0/pkg/observability"
 	httpobs "github.com/sandbox0-ai/sandbox0/pkg/observability/http"
 	"github.com/sandbox0-ai/sandbox0/pkg/sandboxprobe"
+	storagedb "github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/db"
 	"go.uber.org/zap"
 )
 
@@ -37,6 +41,8 @@ var (
 	defaultSandboxTTL      time.Duration
 	portalRoot             = "/var/lib/sandbox0/ctld"
 	csiSocket              = "/var/lib/kubelet/plugins/volume.sandbox0.ai/csi.sock"
+	podName                = os.Getenv("POD_NAME")
+	podNamespace           = os.Getenv("POD_NAMESPACE")
 )
 
 func main() {
@@ -84,10 +90,27 @@ func main() {
 		}
 	}
 
+	storageCfg := apiconfig.LoadStorageProxyConfig()
+	var repo *storagedb.Repository
+	var dbPool *pgxpool.Pool
+	if storageCfg.DatabaseURL != "" {
+		dbPool, err = initPortalDatabase(ctx, storageCfg, obsProvider)
+		if err != nil {
+			log.Printf("ctld volume registry disabled: %v", err)
+		} else {
+			repo = storagedb.NewRepository(dbPool)
+			defer dbPool.Close()
+		}
+	}
+
 	portalManager := ctldportal.NewManager(ctldportal.Config{
-		NodeName: nodeName,
-		RootDir:  portalRoot,
-		Logger:   zapLogger,
+		NodeName:      nodeName,
+		RootDir:       portalRoot,
+		Logger:        zapLogger,
+		StorageConfig: storageCfg,
+		Repository:    repo,
+		PodName:       podName,
+		PodNamespace:  podNamespace,
 	})
 	csiServer := ctldportal.NewCSIServer(nodeName, portalManager)
 	go func() {
@@ -174,12 +197,38 @@ func buildPowerController(ctx context.Context, obsProvider *observability.Provid
 	return controller
 }
 
+func initPortalDatabase(ctx context.Context, cfg *apiconfig.StorageProxyConfig, obsProvider *observability.Provider) (*pgxpool.Pool, error) {
+	if cfg == nil || cfg.DatabaseURL == "" {
+		return nil, nil
+	}
+	schema := cfg.DatabaseSchema
+	if schema == "" {
+		schema = "storage_proxy"
+	}
+	var modifier func(*pgxpool.Config) error
+	if obsProvider != nil {
+		modifier = obsProvider.Pgx.ConfigModifier()
+	}
+	return dbpool.New(ctx, dbpool.Options{
+		DatabaseURL:     cfg.DatabaseURL,
+		MaxConns:        int32(cfg.DatabaseMaxConns),
+		MinConns:        int32(cfg.DatabaseMinConns),
+		DefaultMaxConns: 5,
+		DefaultMinConns: 1,
+		Schema:          schema,
+		ConfigModifier:  modifier,
+	})
+}
+
 type combinedController struct {
 	ctldserver.Controller
-	Portal *ctldportal.Manager
+	Portal volumePortalHandler
 }
 
 func (c combinedController) BindVolumePortal(r *http.Request, req ctldapi.BindVolumePortalRequest) (ctldapi.BindVolumePortalResponse, int) {
+	if c.Portal == nil {
+		return ctldapi.BindVolumePortalResponse{Error: "ctld volume portals not implemented"}, http.StatusNotImplemented
+	}
 	resp, err := c.Portal.Bind(r.Context(), req)
 	if err != nil {
 		return ctldapi.BindVolumePortalResponse{Error: err.Error()}, http.StatusBadRequest
@@ -188,6 +237,9 @@ func (c combinedController) BindVolumePortal(r *http.Request, req ctldapi.BindVo
 }
 
 func (c combinedController) UnbindVolumePortal(r *http.Request, req ctldapi.UnbindVolumePortalRequest) (ctldapi.UnbindVolumePortalResponse, int) {
+	if c.Portal == nil {
+		return ctldapi.UnbindVolumePortalResponse{Error: "ctld volume portals not implemented"}, http.StatusNotImplemented
+	}
 	resp, err := c.Portal.Unbind(r.Context(), req)
 	if err != nil {
 		return ctldapi.UnbindVolumePortalResponse{Error: err.Error()}, http.StatusBadRequest
@@ -195,6 +247,19 @@ func (c combinedController) UnbindVolumePortal(r *http.Request, req ctldapi.Unbi
 	return resp, http.StatusOK
 }
 
+func (c combinedController) MountedVolumeHandler() http.Handler {
+	if c.Portal == nil {
+		return nil
+	}
+	return c.Portal.MountedVolumeHandler()
+}
+
 func (c combinedController) Probe(r *http.Request, sandboxID string, kind sandboxprobe.Kind) (sandboxprobe.Response, int) {
 	return c.Controller.Probe(r, sandboxID, kind)
+}
+
+type volumePortalHandler interface {
+	Bind(ctx context.Context, req ctldapi.BindVolumePortalRequest) (ctldapi.BindVolumePortalResponse, error)
+	Unbind(ctx context.Context, req ctldapi.UnbindVolumePortalRequest) (ctldapi.UnbindVolumePortalResponse, error)
+	MountedVolumeHandler() http.Handler
 }
