@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/api/config"
 	obsmetrics "github.com/sandbox0-ai/sandbox0/pkg/observability/metrics"
+	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/db"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/fsmeta"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/legacyfs"
 	"github.com/sandbox0-ai/sandbox0/storage-proxy/pkg/s0fs"
@@ -100,16 +101,16 @@ type Manager struct {
 }
 
 // NewManager creates a new volume manager
-func NewManager(logger *logrus.Logger, cfg *config.StorageProxyConfig) *Manager {
+func NewManager(logger *logrus.Logger, cfg *config.StorageProxyConfig, repo *db.Repository) *Manager {
 	return NewManagerWithBackends(logger, cfg, map[string]Backend{
-		BackendS0FS: NewS0FSBackend(logger, cfg),
+		BackendS0FS: NewS0FSBackend(logger, cfg, repo),
 	}, DefaultBackendType())
 }
 
 // NewManagerWithBackend creates a manager with an explicit storage backend.
-func NewManagerWithBackend(logger *logrus.Logger, cfg *config.StorageProxyConfig, backend Backend) *Manager {
+func NewManagerWithBackend(logger *logrus.Logger, cfg *config.StorageProxyConfig, repo *db.Repository, backend Backend) *Manager {
 	if backend == nil {
-		return NewManager(logger, cfg)
+		return NewManager(logger, cfg, repo)
 	}
 	return NewManagerWithBackends(logger, cfg, map[string]Backend{"default": backend}, "default")
 }
@@ -158,13 +159,6 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID, teamID st
 		return "", time.Time{}, fmt.Errorf("missing team id for volume mount")
 	}
 
-	// Validate mount with coordinator if available.
-	if m.registrar != nil {
-		if err := m.registrar.ValidateMount(ctx, volumeID, accessMode); err != nil {
-			return "", time.Time{}, err
-		}
-	}
-
 	// Check if already mounted
 	if existing, exists := m.volumes[volumeID]; exists {
 		if existing.TeamID != "" && existing.TeamID != teamID {
@@ -186,8 +180,21 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID, teamID st
 
 	m.logger.WithField("volume_id", volumeID).Info("Mounting volume")
 
+	registeredMount := false
+	if m.registrar != nil {
+		if err := m.registrar.RegisterMount(ctx, volumeID, MountOptions{
+			AccessMode: accessMode,
+		}); err != nil {
+			return "", time.Time{}, err
+		}
+		registeredMount = true
+	}
+
 	backend, err := m.selectBackend()
 	if err != nil {
+		if registeredMount {
+			_ = m.registrar.UnregisterMount(ctx, volumeID)
+		}
 		return "", time.Time{}, err
 	}
 
@@ -200,6 +207,9 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID, teamID st
 		Metrics:    m.metrics,
 	})
 	if err != nil {
+		if registeredMount {
+			_ = m.registrar.UnregisterMount(ctx, volumeID)
+		}
 		return "", time.Time{}, err
 	}
 
@@ -211,15 +221,6 @@ func (m *Manager) MountVolume(ctx context.Context, s3Prefix, volumeID, teamID st
 		ID:        sessionID,
 		TeamID:    teamID,
 		CreatedAt: sessionTime,
-	}
-
-	// 7. Register mount for distributed coordination (if registrar is set)
-	if m.registrar != nil {
-		if err := m.registrar.RegisterMount(ctx, volumeID, MountOptions{
-			AccessMode: accessMode,
-		}); err != nil {
-			m.logger.WithError(err).Warn("Failed to register mount for coordination")
-		}
 	}
 
 	m.logger.WithFields(logrus.Fields{

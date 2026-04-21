@@ -37,8 +37,12 @@ func (m *Manager) validateBindableVolume(ctx context.Context, req ctldBindContex
 	if strings.TrimSpace(vol.TeamID) != strings.TrimSpace(req.teamID) {
 		return nil, fmt.Errorf("volume %s does not belong to team %s", req.volumeID, req.teamID)
 	}
-	if volume.NormalizeAccessMode(vol.AccessMode) != volume.AccessModeRWO {
-		return nil, fmt.Errorf("ctld volume portal only supports RWO volumes, got %s", vol.AccessMode)
+	accessMode, err := validateBindableAccessMode(vol.AccessMode)
+	if err != nil {
+		return nil, err
+	}
+	if accessMode == volume.AccessModeROX {
+		return vol, nil
 	}
 
 	heartbeatTimeout := 15
@@ -59,6 +63,18 @@ func (m *Manager) validateBindableVolume(ctx context.Context, req ctldBindContex
 	return vol, nil
 }
 
+func validateBindableAccessMode(raw string) (volume.AccessMode, error) {
+	accessMode := volume.NormalizeAccessMode(raw)
+	switch accessMode {
+	case volume.AccessModeRWO, volume.AccessModeROX:
+		return accessMode, nil
+	case volume.AccessModeRWX:
+		return "", fmt.Errorf("ctld volume portal does not support RWX volumes")
+	default:
+		return "", fmt.Errorf("ctld volume portal does not support access_mode %q", raw)
+	}
+}
+
 func isConflictingMountForCtldBind(mount *db.VolumeMount, selfClusterID, selfPodID string) bool {
 	if mount == nil {
 		return false
@@ -70,13 +86,28 @@ func isConflictingMountForCtldBind(mount *db.VolumeMount, selfClusterID, selfPod
 	return opts.OwnerKind != volume.OwnerKindStorageProxy
 }
 
+func findBoundPortalForVolume(portals map[string]*portalMount, volumeID, exceptKey string) *portalMount {
+	if strings.TrimSpace(volumeID) == "" {
+		return nil
+	}
+	for key, pm := range portals {
+		if key == exceptKey || pm == nil {
+			continue
+		}
+		if pm.volumeID == volumeID {
+			return pm
+		}
+	}
+	return nil
+}
+
 type ctldBindContext struct {
 	volumeID string
 	teamID   string
 }
 
-func (m *Manager) registerOwner(ctx context.Context, pm *portalMount, accessMode volume.AccessMode) error {
-	if m == nil || m.repo == nil || pm == nil || pm.volumeID == "" {
+func (m *Manager) registerOwner(ctx context.Context, bound *boundVolume) error {
+	if m == nil || m.repo == nil || bound == nil || bound.volumeID == "" {
 		return fmt.Errorf("ctld volume registry unavailable")
 	}
 	ownerPodID := m.ownerPodID()
@@ -85,7 +116,7 @@ func (m *Manager) registerOwner(ctx context.Context, pm *portalMount, accessMode
 	}
 
 	opts := volume.MountOptions{
-		AccessMode:   accessMode,
+		AccessMode:   bound.access,
 		OwnerKind:    volume.OwnerKindCtld,
 		OwnerPort:    8095,
 		NodeName:     m.nodeName,
@@ -98,14 +129,18 @@ func (m *Manager) registerOwner(ctx context.Context, pm *portalMount, accessMode
 	rawMsg := json.RawMessage(rawOpts)
 	mount := &db.VolumeMount{
 		ID:            uuid.NewString(),
-		VolumeID:      pm.volumeID,
+		VolumeID:      bound.volumeID,
 		ClusterID:     m.clusterID,
 		PodID:         ownerPodID,
 		LastHeartbeat: time.Now().UTC(),
-		MountedAt:     pm.mountedAt,
+		MountedAt:     bound.mountedAt,
 		MountOptions:  &rawMsg,
 	}
-	if err := m.repo.CreateMount(ctx, mount); err != nil {
+	heartbeatTimeout := 15
+	if m.storage != nil && m.storage.HeartbeatTimeout > 0 {
+		heartbeatTimeout = m.storage.HeartbeatTimeout
+	}
+	if err := m.repo.AcquireMount(ctx, mount, heartbeatTimeout); err != nil {
 		return err
 	}
 
@@ -115,8 +150,8 @@ func (m *Manager) registerOwner(ctx context.Context, pm *portalMount, accessMode
 	}
 	heartbeatCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	pm.heartbeatCancel = cancel
-	pm.heartbeatDone = done
+	bound.heartbeatCancel = cancel
+	bound.heartbeatDone = done
 	go func(volumeID string) {
 		defer close(done)
 		ticker := time.NewTicker(interval)
@@ -131,26 +166,26 @@ func (m *Manager) registerOwner(ctx context.Context, pm *portalMount, accessMode
 				}
 			}
 		}
-	}(pm.volumeID)
+	}(bound.volumeID)
 	return nil
 }
 
-func (m *Manager) unregisterOwner(pm *portalMount, volumeID string) {
-	if m == nil || pm == nil {
+func (m *Manager) unregisterOwner(bound *boundVolume) {
+	if m == nil || bound == nil {
 		return
 	}
-	if pm.heartbeatCancel != nil {
-		pm.heartbeatCancel()
-		pm.heartbeatCancel = nil
+	if bound.heartbeatCancel != nil {
+		bound.heartbeatCancel()
+		bound.heartbeatCancel = nil
 	}
-	if pm.heartbeatDone != nil {
-		<-pm.heartbeatDone
-		pm.heartbeatDone = nil
+	if bound.heartbeatDone != nil {
+		<-bound.heartbeatDone
+		bound.heartbeatDone = nil
 	}
-	if m.repo == nil || volumeID == "" {
+	if m.repo == nil || bound.volumeID == "" {
 		return
 	}
-	if err := m.repo.DeleteMount(context.Background(), volumeID, m.clusterID, m.ownerPodID()); err != nil && m.logger != nil {
-		m.logger.Warn("ctld volume owner unregister failed", zap.String("volume_id", volumeID), zap.Error(err))
+	if err := m.repo.DeleteMount(context.Background(), bound.volumeID, m.clusterID, m.ownerPodID()); err != nil && m.logger != nil {
+		m.logger.Warn("ctld volume owner unregister failed", zap.String("volume_id", bound.volumeID), zap.Error(err))
 	}
 }
