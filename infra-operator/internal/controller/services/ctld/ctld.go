@@ -18,7 +18,6 @@ import (
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/pkg/common"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/database"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/controller/services/storage"
-	infraplan "github.com/sandbox0-ai/sandbox0/infra-operator/internal/plan"
 	"github.com/sandbox0-ai/sandbox0/infra-operator/internal/runtimeconfig"
 	"github.com/sandbox0-ai/sandbox0/pkg/volumeportal"
 )
@@ -31,7 +30,7 @@ func NewReconciler(resources *common.ResourceManager) *Reconciler {
 	return &Reconciler{Resources: resources}
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string, compiledPlan *infraplan.InfraPlan) error {
+func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox0Infra, imageRepo, imageTag string) error {
 	logger := log.FromContext(ctx)
 	if !infrav1alpha1.HasDataPlaneServices(infra) {
 		logger.Info("Data-plane services are disabled, skipping ctld")
@@ -155,37 +154,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 			},
 		})
 	}
-	envVars := []corev1.EnvVar{
-		{
-			Name:  "SERVICE",
-			Value: "ctld",
-		},
-		{
-			Name:  "CONFIG_PATH",
-			Value: "/config/config.yaml",
-		},
-		{
-			Name: "NODE_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
-			},
-		},
-		{
-			Name: "POD_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
-			},
-		},
-		{
-			Name: "POD_NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
-			},
-		},
-	}
-	if compiledPlan != nil {
-		envVars = append(envVars, compiledPlan.ObservabilityEnvVars()...)
-	}
 
 	desired := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -214,7 +182,34 @@ func (r *Reconciler) Reconcile(ctx context.Context, infra *infrav1alpha1.Sandbox
 							Image:           image,
 							ImagePullPolicy: pullPolicy,
 							Args:            args,
-							Env:             envVars,
+							Env: []corev1.EnvVar{
+								{
+									Name:  "SERVICE",
+									Value: "ctld",
+								},
+								{
+									Name:  "CONFIG_PATH",
+									Value: "/config/config.yaml",
+								},
+								{
+									Name: "NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+									},
+								},
+								{
+									Name: "POD_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+									},
+								},
+								{
+									Name: "POD_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+									},
+								},
+							},
 							Ports: []corev1.ContainerPort{{
 								Name:          "http",
 								ContainerPort: ctldHTTPPort,

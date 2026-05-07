@@ -75,7 +75,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 	if err != nil {
 		return err
 	}
-	observabilityQueryEnvVars := compiledPlan.ConfigureGatewayObservability(&config.GatewayConfig)
 	needEnterpriseLicense := compiledPlan.Enterprise.ClusterGateway
 	common.NormalizeEnterpriseLicenseFile(&config.LicenseFile, needEnterpriseLicense)
 	podAnnotations, err := common.ConfigHashAnnotation(config)
@@ -163,18 +162,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 	if needEnterpriseLicense {
 		volumeMounts, volumes = common.AppendEnterpriseLicenseVolumeWithSecretRef(compiledPlan.EnterpriseLicenseSecretRef(), config.LicenseFile, volumeMounts, volumes)
 	}
-	envVars := []corev1.EnvVar{
-		{
-			Name:  "SERVICE",
-			Value: "cluster-gateway",
-		},
-		{
-			Name:  "CONFIG_PATH",
-			Value: "/config/config.yaml",
-		},
-	}
-	envVars = append(envVars, compiledPlan.ObservabilityEnvVars()...)
-	envVars = append(envVars, observabilityQueryEnvVars...)
 
 	if err := r.Resources.ReconcileDeploymentWithScope(ctx, scope, deploymentName, labels, replicas, common.ServiceDefinition{
 		Name:       "cluster-gateway",
@@ -186,8 +173,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 				ContainerPort: httpPort,
 			},
 		},
-		Image:          fmt.Sprintf("%s:%s", imageRepo, imageTag),
-		EnvVars:        envVars,
+		Image: fmt.Sprintf("%s:%s", imageRepo, imageTag),
+		EnvVars: []corev1.EnvVar{
+			{
+				Name:  "SERVICE",
+				Value: "cluster-gateway",
+			},
+			{
+				Name:  "CONFIG_PATH",
+				Value: "/config/config.yaml",
+			},
+		},
 		VolumeMounts:   volumeMounts,
 		Volumes:        volumes,
 		PodAnnotations: podAnnotations,

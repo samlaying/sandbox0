@@ -164,17 +164,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 			},
 		})
 	}
-	envVars := []corev1.EnvVar{
-		{
-			Name:  "SERVICE",
-			Value: "manager",
-		},
-		{
-			Name:  "CONFIG_PATH",
-			Value: "/config/config.yaml",
-		},
-	}
-	envVars = append(envVars, compiledPlan.ObservabilityEnvVars()...)
 
 	// Create deployment
 	if err := r.Resources.ReconcileDeploymentWithScope(ctx, scope, deploymentName, labels, replicas, common.ServiceDefinition{
@@ -196,8 +185,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 				ContainerPort: webhookPort,
 			},
 		},
-		Image:          fmt.Sprintf("%s:%s", imageRepo, imageTag),
-		EnvVars:        envVars,
+		Image: fmt.Sprintf("%s:%s", imageRepo, imageTag),
+		EnvVars: []corev1.EnvVar{
+			{
+				Name:  "SERVICE",
+				Value: "manager",
+			},
+			{
+				Name:  "CONFIG_PATH",
+				Value: "/config/config.yaml",
+			},
+		},
 		VolumeMounts:   volumeMounts,
 		Volumes:        volumes,
 		PodAnnotations: podAnnotations,

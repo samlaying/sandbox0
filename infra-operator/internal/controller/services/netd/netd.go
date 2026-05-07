@@ -195,23 +195,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 			ReadOnly:  true,
 		})
 	}
-	envVars := []corev1.EnvVar{
-		{
-			Name:  "SERVICE",
-			Value: "netd",
-		},
-		{
-			Name:  "CONFIG_PATH",
-			Value: "/config/config.yaml",
-		},
-		{
-			Name: "NODE_NAME",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
-			},
-		},
-	}
-	envVars = append(envVars, compiledPlan.ObservabilityEnvVars()...)
 
 	desired := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -239,7 +222,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, imageRepo, imageTag string, 
 							Name:            "netd",
 							Image:           image,
 							ImagePullPolicy: pullPolicy,
-							Env:             envVars,
+							Env: []corev1.EnvVar{
+								{
+									Name:  "SERVICE",
+									Value: "netd",
+								},
+								{
+									Name:  "CONFIG_PATH",
+									Value: "/config/config.yaml",
+								},
+								{
+									Name: "NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+									},
+								},
+							},
 							Ports: []corev1.ContainerPort{
 								{Name: "metrics", ContainerPort: int32(config.MetricsPort)},
 								{Name: "health", ContainerPort: int32(config.HealthPort)},
