@@ -2,6 +2,7 @@ package cases
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -21,19 +22,29 @@ const (
 	sshFixtureServiceName     = "ssh-server"
 	sshFixtureUserName        = "e2e"
 	sshFixtureImageEnvVar     = "E2E_SSH_FIXTURE_IMAGE"
-	defaultSSHFixtureImageRef = "lscr.io/linuxserver/openssh-server@sha256:68b605929e83b2efe000da09269688f6d82a44579e8a18e2d9e8c8d272917cf7"
+	sshFixtureSourceImageRef  = "lscr.io/linuxserver/openssh-server@sha256:68b605929e83b2efe000da09269688f6d82a44579e8a18e2d9e8c8d272917cf7"
+	defaultSSHFixtureImageRef = "sandbox0ai/e2e-openssh-server:68b605929e83"
 )
 
 const sshFixturePrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACCeHS2S2TgP2rGj/uUDurfNY823uRuI6yNhfo24y+k2PAAAALC/eI5Ov3iO
-TgAAAAtzc2gtZWQyNTUxOQAAACCeHS2S2TgP2rGj/uUDurfNY823uRuI6yNhfo24y+k2PA
-AAAEAMJIibgNCaX3VtNbI9iCpYHFRLs4FaeGbeP+BVxhEhQ54dLZLZOA/asaP+5QO6t81j
-zbe5G4jrI2F+jbjL6TY8AAAALGh1YW5nemhpaGFvQGh1YW5nemhpaGFvZGVNYWNCb29rLV
-Byby0yLmxvY2FsAQ==
+QyNTUxOQAAACBOgie1mnIFBEInHm7z4BVuUiAaFzia5Irj1x5mkBT6ywAAAJA0M/muNDP5
+rgAAAAtzc2gtZWQyNTUxOQAAACBOgie1mnIFBEInHm7z4BVuUiAaFzia5Irj1x5mkBT6yw
+AAAED3v+5SnUyId7/jDlrMYu5c/Jx18a8SQBSCcxTFtnNHEk6CJ7WacgUEQicebvPgFW5S
+IBoXOJrkiuPXHmaQFPrLAAAADHNhbmRib3gwLWUyZQE=
 -----END OPENSSH PRIVATE KEY-----`
 
-const sshFixturePublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ4dLZLZOA/asaP+5QO6t81jzbe5G4jrI2F+jbjL6TY8 sandbox0-e2e"
+const sshFixturePublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE6CJ7WacgUEQicebvPgFW5SIBoXOJrkiuPXHmaQFPrL sandbox0-e2e"
+
+const sshProxyFakePrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACASvDR8ptotozntpt2p9CwRrhplUWStWNc6pBZQmd76JQAAAJji6KuR4uir
+kQAAAAtzc2gtZWQyNTUxOQAAACASvDR8ptotozntpt2p9CwRrhplUWStWNc6pBZQmd76JQ
+AAAEB5X9BIl2QVR3rMJVVSat2i+fYMRxzAiyUnBFLH0WOGlhK8NHym2i2jOe2m3an0LBGu
+GmVRZK1Y1zqkFlCZ3volAAAAEXNhbmRib3gwLWUyZS1mYWtlAQIDBA==
+-----END OPENSSH PRIVATE KEY-----`
+
+const sshProxyFakePublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBK8NHym2i2jOe2m3an0LBGuGmVRZK1Y1zqkFlCZ3vol sandbox0-e2e-fake"
 
 type sshFixture struct {
 	Namespace string
@@ -48,7 +59,7 @@ func setupSSHFixture(env *framework.ScenarioEnv) (*sshFixture, func()) {
 		imageRef = defaultSSHFixtureImageRef
 	}
 
-	if !env.Config.UseExistingCluster && env.TestCtx != nil && env.TestCtx.Cluster != nil {
+	if env.TestCtx != nil && env.TestCtx.Cluster != nil {
 		Expect(preloadSSHFixtureImage(env, imageRef)).To(Succeed())
 	}
 
@@ -172,8 +183,17 @@ spec:
 
 func preloadSSHFixtureImage(env *framework.ScenarioEnv, imageRef string) error {
 	if _, err := framework.RunCommandOutput(env.TestCtx.Context, "docker", "image", "inspect", imageRef); err != nil {
-		if err := framework.RunCommand(env.TestCtx.Context, "docker", "pull", imageRef); err != nil {
+		sourceRef := imageRef
+		if imageRef == defaultSSHFixtureImageRef {
+			sourceRef = sshFixtureSourceImageRef
+		}
+		if err := framework.RunCommand(env.TestCtx.Context, "docker", "pull", sourceRef); err != nil {
 			return err
+		}
+		if sourceRef != imageRef {
+			if err := framework.RunCommand(env.TestCtx.Context, "docker", "tag", sourceRef, imageRef); err != nil {
+				return err
+			}
 		}
 	}
 	return env.TestCtx.Cluster.LoadDockerImage(env.TestCtx.Context, imageRef)
@@ -200,7 +220,7 @@ func assertSSHAppProtocolTrafficRules(env *framework.ScenarioEnv, session *e2eut
 	}()
 
 	serviceCIDR := fixture.ServiceIP + "/32"
-	sshCommand := buildSSHFixtureCommand(fixture)
+	sshCommand := buildSSHFixtureCommand(fixture, "/tmp/sandbox0-e2e-ssh-key")
 
 	_, status, apiErr, err := session.UpdateNetworkPolicy(env.TestCtx.Context, GinkgoT(), sandboxID, clearPolicy)
 	Expect(err).NotTo(HaveOccurred())
@@ -237,19 +257,28 @@ func assertSSHAppProtocolTrafficRules(env *framework.ScenarioEnv, session *e2eut
 }
 
 func installSSHFixturePrivateKey(env *framework.ScenarioEnv, namespace, podName string) error {
+	return installSSHPrivateKey(env, namespace, podName, "/tmp/sandbox0-e2e-ssh-key", sshFixturePrivateKey)
+}
+
+func installSSHProxyFakePrivateKey(env *framework.ScenarioEnv, namespace, podName string) error {
+	return installSSHPrivateKey(env, namespace, podName, "/tmp/sandbox0-e2e-ssh-fake-key", sshProxyFakePrivateKey)
+}
+
+func installSSHPrivateKey(env *framework.ScenarioEnv, namespace, podName, path, privateKey string) error {
 	_, err := execInSandboxPod(env, namespace, podName, fmt.Sprintf(`set -eu
 command -v ssh >/dev/null
-cat <<'EOF' >/tmp/sandbox0-e2e-ssh-key
+cat <<'EOF' >%s
 %s
 EOF
-chmod 600 /tmp/sandbox0-e2e-ssh-key
-`, strings.TrimSpace(sshFixturePrivateKey)))
+chmod 600 %s
+`, path, strings.TrimSpace(privateKey), path))
 	return err
 }
 
-func buildSSHFixtureCommand(fixture *sshFixture) string {
+func buildSSHFixtureCommand(fixture *sshFixture, keyPath string) string {
 	return fmt.Sprintf(
-		"ssh -F /dev/null -i /tmp/sandbox0-e2e-ssh-key -o BatchMode=yes -o ConnectTimeout=5 -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 %s@%s 'printf ok'",
+		"ssh -F /dev/null -i %s -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 %s@%s 'printf ok'",
+		keyPath,
 		fixture.UserName,
 		fixture.ServiceIP,
 	)
@@ -298,6 +327,114 @@ func updateSandboxTrafficRulesPolicy(
 		return fmt.Errorf("updated network policy did not persist the expected traffic rule")
 	}
 	return nil
+}
+
+func assertSSHTransparentEgressAuthProxy(env *framework.ScenarioEnv, session *e2eutils.Session, sandboxID string, fixture *sshFixture) {
+	Expect(sandboxID).NotTo(BeEmpty())
+	Expect(fixture).NotTo(BeNil())
+
+	sandbox, _, err := session.GetSandbox(env.TestCtx.Context, GinkgoT(), sandboxID)
+	Expect(err).NotTo(HaveOccurred())
+	templateNamespace, err := naming.TemplateNamespaceForBuiltin(sandbox.TemplateId)
+	Expect(err).NotTo(HaveOccurred())
+
+	sandbox = waitForSandboxPodReadyEventually(env, session, sandboxID, templateNamespace)
+
+	sourceName := fmt.Sprintf("e2e-ssh-key-%d", time.Now().UnixNano())
+	refName := "api-ssh-proxy"
+	ruleName := "api-ssh-proxy-rule"
+	serviceCIDR := fixture.ServiceIP + "/32"
+	ports := []apispec.PortSpec{{
+		Port:     22,
+		Protocol: ptrTo("tcp"),
+	}}
+
+	clearPolicy := apispec.SandboxNetworkPolicy{
+		Mode:               apispec.AllowAll,
+		CredentialBindings: &[]apispec.CredentialBinding{},
+	}
+	defer func() {
+		_, _, _, _ = session.UpdateNetworkPolicy(env.TestCtx.Context, GinkgoT(), sandboxID, clearPolicy)
+		status, _, deleteErr := session.DeleteCredentialSource(env.TestCtx.Context, sourceName)
+		if deleteErr == nil {
+			Expect(status).To(Or(Equal(http.StatusOK), Equal(http.StatusNotFound)))
+		}
+	}()
+
+	_, status, apiErr, err := session.UpdateNetworkPolicy(env.TestCtx.Context, GinkgoT(), sandboxID, clearPolicy)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(apiErr).To(BeNil())
+	Expect(status).To(Equal(http.StatusOK))
+
+	Expect(installSSHProxyFakePrivateKey(env, templateNamespace, sandbox.PodName)).To(Succeed())
+	fakeKeyCommand := buildSSHFixtureCommand(fixture, "/tmp/sandbox0-e2e-ssh-fake-key")
+	assertSSHFixtureCommandEventuallyFails(env, templateNamespace, sandbox.PodName, fakeKeyCommand)
+
+	knownHosts := scanSSHFixtureKnownHosts(env, templateNamespace, sandbox.PodName, fixture)
+	created, err := session.CreateCredentialSource(env.TestCtx.Context, GinkgoT(), apispec.CredentialSourceWriteRequest{
+		Name:         sourceName,
+		ResolverKind: apispec.StaticSshPrivateKey,
+		Spec: apispec.CredentialSourceWriteSpec{
+			StaticSSHPrivateKey: &apispec.StaticSSHPrivateKeySourceSpec{
+				PrivateKeyPem: ptrTo(sshFixturePrivateKey),
+			},
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(created).NotTo(BeNil())
+	Expect(created.Name).To(Equal(sourceName))
+
+	policy, status, apiErr, err := session.UpdateNetworkPolicy(env.TestCtx.Context, GinkgoT(), sandboxID, apispec.SandboxNetworkPolicy{
+		Mode: apispec.BlockAll,
+		Egress: &apispec.NetworkEgressPolicy{
+			TrafficRules: &[]apispec.TrafficRule{
+				buildTrafficRule("allow-ssh-proxy-fixture", apispec.Allow, serviceCIDR, apispec.TrafficRuleAppProtocolSsh),
+			},
+			CredentialRules: &[]apispec.EgressCredentialRule{{
+				Name:          &ruleName,
+				CredentialRef: refName,
+				Ports:         &ports,
+				Protocol:      ptrTo(apispec.EgressAuthProtocolSsh),
+				Rollout:       ptrTo(apispec.Enabled),
+			}},
+		},
+		CredentialBindings: &[]apispec.CredentialBinding{{
+			Ref:       refName,
+			SourceRef: sourceName,
+			Projection: apispec.ProjectionSpec{
+				Type: apispec.SshProxy,
+				SshProxy: &apispec.SSHProxyProjection{
+					SandboxPublicKeys: &[]string{sshProxyFakePublicKey},
+					UpstreamUsername:  &fixture.UserName,
+					KnownHosts:        &knownHosts,
+				},
+			},
+		}},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(apiErr).To(BeNil())
+	Expect(status).To(Equal(http.StatusOK))
+	Expect(policy).NotTo(BeNil())
+
+	assertSSHFixtureCommandEventuallySucceeds(env, templateNamespace, sandbox.PodName, fakeKeyCommand)
+}
+
+func scanSSHFixtureKnownHosts(env *framework.ScenarioEnv, namespace, podName string, fixture *sshFixture) []string {
+	output, err := execInSandboxPod(env, namespace, podName, fmt.Sprintf(`set -eu
+command -v ssh-keyscan >/dev/null
+ssh-keyscan -T 5 -p 22 %s 2>/dev/null | sed '/^#/d'
+`, fixture.ServiceIP))
+	Expect(err).NotTo(HaveOccurred())
+
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	Expect(lines).NotTo(BeEmpty())
+	return lines
 }
 
 func assertSSHFixtureCommandEventuallySucceeds(env *framework.ScenarioEnv, namespace, podName, command string) {
