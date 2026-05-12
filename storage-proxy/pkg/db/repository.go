@@ -1140,3 +1140,333 @@ func (r *Repository) GetFlushResponses(ctx context.Context, coordID string) ([]*
 
 	return responses, nil
 }
+
+// ============================================================
+// Session Checkpoint Repository Methods
+// ============================================================
+
+// CreateSessionCheckpoint creates a durable session checkpoint record.
+func (r *Repository) CreateSessionCheckpoint(ctx context.Context, checkpoint *SessionCheckpoint) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO session_checkpoints (
+			id, session_id, team_id, user_id,
+			volume_id, snapshot_id, parent_checkpoint_id, event_seq,
+			label, kind, score, created_from_event_id, context_recipe, metadata,
+			created_at
+		) VALUES (
+			$1, $2, $3, $4,
+			$5, $6, $7, $8,
+			$9, $10, $11, $12, $13, $14,
+			$15
+		)
+	`,
+		checkpoint.ID, checkpoint.SessionID, checkpoint.TeamID, checkpoint.UserID,
+		checkpoint.VolumeID, checkpoint.SnapshotID, checkpoint.ParentCheckpointID, checkpoint.EventSeq,
+		checkpoint.Label, checkpoint.Kind, checkpoint.Score, checkpoint.CreatedFromEventID, checkpoint.ContextRecipe, checkpoint.Metadata,
+		checkpoint.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create session checkpoint: %w", err)
+	}
+	return nil
+}
+
+// GetSessionCheckpoint retrieves a checkpoint by ID.
+func (r *Repository) GetSessionCheckpoint(ctx context.Context, id string) (*SessionCheckpoint, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			id, session_id, team_id, user_id,
+			volume_id, snapshot_id, parent_checkpoint_id, event_seq,
+			label, kind, score, created_from_event_id, context_recipe, metadata,
+			created_at
+		FROM session_checkpoints
+		WHERE id = $1
+	`, id)
+	return scanSessionCheckpoint(row)
+}
+
+// ListSessionCheckpoints lists checkpoints for a session in newest-first order.
+func (r *Repository) ListSessionCheckpoints(ctx context.Context, teamID, sessionID string) ([]*SessionCheckpoint, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			id, session_id, team_id, user_id,
+			volume_id, snapshot_id, parent_checkpoint_id, event_seq,
+			label, kind, score, created_from_event_id, context_recipe, metadata,
+			created_at
+		FROM session_checkpoints
+		WHERE team_id = $1 AND session_id = $2
+		ORDER BY created_at DESC
+	`, teamID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("query session checkpoints: %w", err)
+	}
+	defer rows.Close()
+
+	var checkpoints []*SessionCheckpoint
+	for rows.Next() {
+		checkpoint, err := scanSessionCheckpoint(rows)
+		if err != nil {
+			return nil, err
+		}
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("query session checkpoints: %w", err)
+	}
+	return checkpoints, nil
+}
+
+// GetSmartestSessionCheckpoint returns the best baseline checkpoint for cloning.
+func (r *Repository) GetSmartestSessionCheckpoint(ctx context.Context, teamID, sessionID string) (*SessionCheckpoint, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT
+			id, session_id, team_id, user_id,
+			volume_id, snapshot_id, parent_checkpoint_id, event_seq,
+			label, kind, score, created_from_event_id, context_recipe, metadata,
+			created_at
+		FROM session_checkpoints
+		WHERE team_id = $1 AND session_id = $2 AND kind = $3
+		ORDER BY score DESC, created_at DESC
+		LIMIT 1
+	`, teamID, sessionID, SessionCheckpointKindSmartest)
+	return scanSessionCheckpoint(row)
+}
+
+type checkpointScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSessionCheckpoint(row checkpointScanner) (*SessionCheckpoint, error) {
+	var checkpoint SessionCheckpoint
+	err := row.Scan(
+		&checkpoint.ID, &checkpoint.SessionID, &checkpoint.TeamID, &checkpoint.UserID,
+		&checkpoint.VolumeID, &checkpoint.SnapshotID, &checkpoint.ParentCheckpointID, &checkpoint.EventSeq,
+		&checkpoint.Label, &checkpoint.Kind, &checkpoint.Score, &checkpoint.CreatedFromEventID, &checkpoint.ContextRecipe, &checkpoint.Metadata,
+		&checkpoint.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("scan session checkpoint: %w", err)
+	}
+	return &checkpoint, nil
+}
+
+// AppendSessionEvent appends an immutable event with the next per-session sequence.
+func (r *Repository) AppendSessionEvent(ctx context.Context, event *SessionEvent) (*SessionEvent, error) {
+	if event == nil {
+		return nil, fmt.Errorf("session event is required")
+	}
+	if err := r.WithTx(ctx, func(tx pgx.Tx) error {
+		var nextSeq int64
+		if err := tx.QueryRow(ctx, `
+			SELECT COALESCE(MAX(seq), 0) + 1
+			FROM session_events
+			WHERE team_id = $1 AND session_id = $2
+		`, event.TeamID, event.SessionID).Scan(&nextSeq); err != nil {
+			return fmt.Errorf("next session event seq: %w", err)
+		}
+		event.Seq = nextSeq
+		if event.CreatedAt.IsZero() {
+			event.CreatedAt = time.Now().UTC()
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO session_events (
+				id, session_id, team_id, seq,
+				event_type, payload, metadata, created_at
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`,
+			event.ID, event.SessionID, event.TeamID, event.Seq,
+			event.EventType, event.Payload, event.Metadata, event.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("append session event: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+// ListSessionEvents returns raw immutable events in ascending sequence order.
+func (r *Repository) ListSessionEvents(ctx context.Context, teamID, sessionID string, afterSeq, beforeSeq int64, limit int) ([]*SessionEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT
+			id, session_id, team_id, seq,
+			event_type, payload, metadata, created_at
+		FROM session_events
+		WHERE team_id = $1
+			AND session_id = $2
+			AND ($3::BIGINT = 0 OR seq > $3)
+			AND ($4::BIGINT = 0 OR seq <= $4)
+		ORDER BY seq ASC
+		LIMIT $5
+	`, teamID, sessionID, afterSeq, beforeSeq, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query session events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []*SessionEvent
+	for rows.Next() {
+		event, err := scanSessionEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("query session events: %w", err)
+	}
+	return events, nil
+}
+
+// GetLastSessionEventSeq returns the latest event sequence for a session.
+func (r *Repository) GetLastSessionEventSeq(ctx context.Context, teamID, sessionID string) (int64, error) {
+	var seq int64
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(MAX(seq), 0)
+		FROM session_events
+		WHERE team_id = $1 AND session_id = $2
+	`, teamID, sessionID).Scan(&seq); err != nil {
+		return 0, fmt.Errorf("get last session event seq: %w", err)
+	}
+	return seq, nil
+}
+
+func scanSessionEvent(row checkpointScanner) (*SessionEvent, error) {
+	var event SessionEvent
+	err := row.Scan(
+		&event.ID, &event.SessionID, &event.TeamID, &event.Seq,
+		&event.EventType, &event.Payload, &event.Metadata, &event.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("scan session event: %w", err)
+	}
+	return &event, nil
+}
+
+// CreateSessionStageEntry stages a selector for the next session commit.
+func (r *Repository) CreateSessionStageEntry(ctx context.Context, entry *SessionStageEntry) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO session_stage_entries (
+			id, session_id, team_id, selector, note, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6)
+	`, entry.ID, entry.SessionID, entry.TeamID, entry.Selector, entry.Note, entry.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create session stage entry: %w", err)
+	}
+	return nil
+}
+
+// ListSessionStageEntries returns staged selectors for a session.
+func (r *Repository) ListSessionStageEntries(ctx context.Context, teamID, sessionID string) ([]*SessionStageEntry, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, session_id, team_id, selector, note, created_at
+		FROM session_stage_entries
+		WHERE team_id = $1 AND session_id = $2
+		ORDER BY created_at ASC
+	`, teamID, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("query session stage entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []*SessionStageEntry
+	for rows.Next() {
+		var entry SessionStageEntry
+		if err := rows.Scan(&entry.ID, &entry.SessionID, &entry.TeamID, &entry.Selector, &entry.Note, &entry.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan session stage entry: %w", err)
+		}
+		entries = append(entries, &entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("query session stage entries: %w", err)
+	}
+	return entries, nil
+}
+
+// ClearSessionStageEntries clears staged selectors after commit.
+func (r *Repository) ClearSessionStageEntries(ctx context.Context, teamID, sessionID string) error {
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM session_stage_entries
+		WHERE team_id = $1 AND session_id = $2
+	`, teamID, sessionID)
+	if err != nil {
+		return fmt.Errorf("clear session stage entries: %w", err)
+	}
+	return nil
+}
+
+// UpsertSessionRef creates or moves a tag/branch ref.
+func (r *Repository) UpsertSessionRef(ctx context.Context, ref *SessionRef) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO session_refs (
+			session_id, team_id, ref_type, name, checkpoint_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (team_id, session_id, ref_type, name)
+		DO UPDATE SET checkpoint_id = EXCLUDED.checkpoint_id, updated_at = EXCLUDED.updated_at
+	`, ref.SessionID, ref.TeamID, ref.RefType, ref.Name, ref.CheckpointID, ref.CreatedAt, ref.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("upsert session ref: %w", err)
+	}
+	return nil
+}
+
+// GetSessionRef retrieves a tag or branch ref.
+func (r *Repository) GetSessionRef(ctx context.Context, teamID, sessionID, refType, name string) (*SessionRef, error) {
+	var ref SessionRef
+	err := r.pool.QueryRow(ctx, `
+		SELECT session_id, team_id, ref_type, name, checkpoint_id, created_at, updated_at
+		FROM session_refs
+		WHERE team_id = $1 AND session_id = $2 AND ref_type = $3 AND name = $4
+	`, teamID, sessionID, refType, name).Scan(
+		&ref.SessionID, &ref.TeamID, &ref.RefType, &ref.Name, &ref.CheckpointID, &ref.CreatedAt, &ref.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get session ref: %w", err)
+	}
+	return &ref, nil
+}
+
+// UpsertSessionHarnessCursor records the harness recovery position.
+func (r *Repository) UpsertSessionHarnessCursor(ctx context.Context, cursor *SessionHarnessCursor) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO session_harness_cursors (
+			session_id, team_id, harness_id, last_seen_seq, state, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (team_id, session_id, harness_id)
+		DO UPDATE SET last_seen_seq = EXCLUDED.last_seen_seq, state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
+	`, cursor.SessionID, cursor.TeamID, cursor.HarnessID, cursor.LastSeenSeq, cursor.State, cursor.CreatedAt, cursor.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("upsert session harness cursor: %w", err)
+	}
+	return nil
+}
+
+// GetSessionHarnessCursor returns the harness recovery position.
+func (r *Repository) GetSessionHarnessCursor(ctx context.Context, teamID, sessionID, harnessID string) (*SessionHarnessCursor, error) {
+	var cursor SessionHarnessCursor
+	err := r.pool.QueryRow(ctx, `
+		SELECT session_id, team_id, harness_id, last_seen_seq, state, created_at, updated_at
+		FROM session_harness_cursors
+		WHERE team_id = $1 AND session_id = $2 AND harness_id = $3
+	`, teamID, sessionID, harnessID).Scan(
+		&cursor.SessionID, &cursor.TeamID, &cursor.HarnessID, &cursor.LastSeenSeq, &cursor.State, &cursor.CreatedAt, &cursor.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("get session harness cursor: %w", err)
+	}
+	return &cursor, nil
+}

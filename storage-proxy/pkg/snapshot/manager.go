@@ -178,6 +178,17 @@ type ForkVolumeRequest struct {
 	DefaultPosixGID *int64
 }
 
+// ForkSnapshotRequest contains parameters for forking a volume from a snapshot.
+type ForkSnapshotRequest struct {
+	VolumeID        string
+	SnapshotID      string
+	TeamID          string
+	UserID          string
+	AccessMode      *string
+	DefaultPosixUID *int64
+	DefaultPosixGID *int64
+}
+
 // CreateSnapshot creates a new snapshot of a volume using the s0fs snapshot engine.
 func (m *Manager) CreateSnapshot(ctx context.Context, req *CreateSnapshotRequest) (*db.Snapshot, error) {
 	startTime := time.Now()
@@ -279,6 +290,32 @@ func (m *Manager) ForkVolume(ctx context.Context, req *ForkVolumeRequest) (*db.S
 	if metrics != nil {
 		metrics.SnapshotOperationsTotal.WithLabelValues("fork", "success").Inc()
 		metrics.SnapshotOperationDuration.WithLabelValues("fork").Observe(time.Since(startTime).Seconds())
+	}
+
+	return vol, nil
+}
+
+// ForkSnapshot creates a new volume from a point-in-time snapshot state.
+func (m *Manager) ForkSnapshot(ctx context.Context, req *ForkSnapshotRequest) (*db.SandboxVolume, error) {
+	startTime := time.Now()
+	metrics := m.metrics
+	m.logger.WithFields(logrus.Fields{
+		"volume_id":   req.VolumeID,
+		"snapshot_id": req.SnapshotID,
+		"team_id":     req.TeamID,
+	}).Info("Forking snapshot")
+
+	vol, err := m.forkS0FSSnapshot(ctx, req)
+	if err != nil {
+		if metrics != nil {
+			metrics.SnapshotOperationsTotal.WithLabelValues("fork_snapshot", "failure").Inc()
+			metrics.SnapshotOperationDuration.WithLabelValues("fork_snapshot").Observe(time.Since(startTime).Seconds())
+		}
+		return nil, err
+	}
+	if metrics != nil {
+		metrics.SnapshotOperationsTotal.WithLabelValues("fork_snapshot", "success").Inc()
+		metrics.SnapshotOperationDuration.WithLabelValues("fork_snapshot").Observe(time.Since(startTime).Seconds())
 	}
 
 	return vol, nil

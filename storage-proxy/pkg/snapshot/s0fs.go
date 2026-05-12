@@ -496,6 +496,114 @@ func (m *Manager) forkS0FSVolume(ctx context.Context, req *ForkVolumeRequest) (*
 	return newVol, nil
 }
 
+func (m *Manager) forkS0FSSnapshot(ctx context.Context, req *ForkSnapshotRequest) (*db.SandboxVolume, error) {
+	sourceVol, err := m.repo.GetSandboxVolume(ctx, req.VolumeID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return nil, ErrVolumeNotFound
+		}
+		return nil, err
+	}
+	if sourceVol.TeamID != req.TeamID {
+		return nil, ErrVolumeNotFound
+	}
+
+	snapshotRecord, err := m.repo.GetSnapshot(ctx, req.SnapshotID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return nil, ErrSnapshotNotFound
+		}
+		return nil, err
+	}
+	if snapshotRecord.VolumeID != req.VolumeID || snapshotRecord.TeamID != req.TeamID {
+		return nil, ErrSnapshotNotBelongToVolume
+	}
+
+	cfg, err := m.s0fsConfig(req.TeamID, req.VolumeID)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s0fs.LoadSnapshot(ctx, cfg, req.SnapshotID)
+	if err != nil {
+		return nil, err
+	}
+	state, err = s0fs.PrepareForkState(state, req.VolumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	defaultPosixUID := sourceVol.DefaultPosixUID
+	defaultPosixGID := sourceVol.DefaultPosixGID
+	if req.DefaultPosixUID != nil || req.DefaultPosixGID != nil {
+		defaultPosixUID = req.DefaultPosixUID
+		defaultPosixGID = req.DefaultPosixGID
+	}
+
+	accessMode := volume.AccessModeRWO
+	if req.AccessMode != nil && strings.TrimSpace(*req.AccessMode) != "" {
+		parsedMode, ok := volume.ParseAccessMode(*req.AccessMode)
+		if !ok {
+			return nil, ErrInvalidAccessMode
+		}
+		accessMode = parsedMode
+	}
+
+	newVolumeID := uuid.New().String()
+	now := time.Now()
+	sourceID := sourceVol.ID
+	newVol := &db.SandboxVolume{
+		ID:              newVolumeID,
+		TeamID:          req.TeamID,
+		UserID:          req.UserID,
+		SourceVolumeID:  &sourceID,
+		DefaultPosixUID: defaultPosixUID,
+		DefaultPosixGID: defaultPosixGID,
+		AccessMode:      string(accessMode),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := m.repo.WithTx(ctx, func(tx pgx.Tx) error {
+		return m.repo.CreateSandboxVolumeTx(ctx, tx, newVol)
+	}); err != nil {
+		return nil, err
+	}
+	success := false
+	defer func() {
+		if success {
+			return
+		}
+		_ = cleanupS0FSVolume(newVolumeID, m.config)
+		_ = m.repo.WithTx(context.Background(), func(tx pgx.Tx) error {
+			err := m.repo.DeleteSandboxVolumeTx(context.Background(), tx, newVolumeID)
+			if errors.Is(err, db.ErrNotFound) {
+				return nil
+			}
+			return err
+		})
+	}()
+
+	targetEngine, closeTarget, err := m.openS0FSEngine(ctx, req.TeamID, newVolumeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := targetEngine.ReplaceState(state); err != nil {
+		closeTarget()
+		return nil, err
+	}
+	if _, err := targetEngine.SyncMaterialize(ctx); err != nil {
+		closeTarget()
+		return nil, err
+	}
+	_ = closeTarget()
+
+	if err := m.appendMeteringEvent(ctx, volumeForkedEvent(m.regionID(), m.clusterID, newVol)); err != nil {
+		return nil, err
+	}
+	success = true
+	return newVol, nil
+}
+
 func (m *Manager) restoreS0FSSnapshot(ctx context.Context, req *RestoreSnapshotRequest, snapshot *db.Snapshot) error {
 	engine, closeFn, err := m.openS0FSEngine(ctx, snapshot.TeamID, req.VolumeID)
 	if err != nil {

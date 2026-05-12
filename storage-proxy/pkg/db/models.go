@@ -140,3 +140,76 @@ type FlushResponse struct {
 	FlushedAt    *time.Time `json:"flushed_at,omitempty"`
 	ErrorMessage string     `json:"error_message,omitempty"`
 }
+
+const (
+	SessionCheckpointKindManual   = "manual"
+	SessionCheckpointKindSmartest = "smartest"
+)
+
+// SessionCheckpoint binds a durable agent session position to a volume snapshot.
+type SessionCheckpoint struct {
+	ID                 string           `json:"id"`
+	SessionID          string           `json:"session_id"`
+	TeamID             string           `json:"team_id"`
+	UserID             string           `json:"user_id"`
+	VolumeID           string           `json:"volume_id"`
+	SnapshotID         string           `json:"snapshot_id"`
+	ParentCheckpointID *string          `json:"parent_checkpoint_id,omitempty"`
+	EventSeq           int64            `json:"event_seq"`
+	Label              string           `json:"label"`
+	Kind               string           `json:"kind"`
+	Score              float64          `json:"score"`
+	CreatedFromEventID *string          `json:"created_from_event_id,omitempty"`
+	ContextRecipe      *json.RawMessage `json:"context_recipe,omitempty"`
+	Metadata           *json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt          time.Time        `json:"created_at"`
+}
+
+// SessionEvent is an immutable raw event in a durable agent session.
+type SessionEvent struct {
+	ID        string           `json:"id"`
+	SessionID string           `json:"session_id"`
+	TeamID    string           `json:"team_id"`
+	Seq       int64            `json:"seq"`
+	EventType string           `json:"event_type"`
+	Payload   json.RawMessage  `json:"payload"`
+	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt time.Time        `json:"created_at"`
+}
+
+// SessionHarnessCursor records where a harness stopped consuming the event log.
+type SessionHarnessCursor struct {
+	SessionID   string           `json:"session_id"`
+	TeamID      string           `json:"team_id"`
+	HarnessID   string           `json:"harness_id"`
+	LastSeenSeq int64            `json:"last_seen_seq"`
+	State       *json.RawMessage `json:"state,omitempty"`
+	CreatedAt   time.Time        `json:"created_at"`
+	UpdatedAt   time.Time        `json:"updated_at"`
+}
+
+const (
+	SessionRefTypeTag    = "tag"
+	SessionRefTypeBranch = "branch"
+)
+
+// SessionStageEntry is the session equivalent of git index content.
+type SessionStageEntry struct {
+	ID        string          `json:"id"`
+	SessionID string          `json:"session_id"`
+	TeamID    string          `json:"team_id"`
+	Selector  json.RawMessage `json:"selector"`
+	Note      string          `json:"note,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// SessionRef names a checkpoint as a tag or branch.
+type SessionRef struct {
+	SessionID    string    `json:"session_id"`
+	TeamID       string    `json:"team_id"`
+	RefType      string    `json:"ref_type"`
+	Name         string    `json:"name"`
+	CheckpointID string    `json:"checkpoint_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
